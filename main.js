@@ -1,0 +1,342 @@
+'use strict';
+const { app, BrowserWindow, WebContentsView, Menu, ipcMain, shell, session } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+app.setName('PRELUDE-electron');
+
+// SaaS側に「Electron」と見なされてブロックされないよう、普通のChromeのUAにする
+const platToken =
+  process.platform === 'win32' ? 'Windows NT 10.0; Win64; x64'
+  : process.platform === 'darwin' ? 'Macintosh; Intel Mac OS X 10_15_7'
+  : 'X11; Linux x86_64';
+app.userAgentFallback = `Mozilla/5.0 (${platToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+
+const { Config, SCHEMA } = require('./config');
+
+let config;
+let win = null;
+let suspended = false; // true の間、Webビューを全部隠す(メニュー表示中・境界ドラッグ中)
+const views = new Map(); // paneId -> { view, wc, rect }
+
+const send = (channel, payload) => {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+};
+
+// ---------------------------------------------------------------- URL
+function normalizeInput(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return config.get('behavior.homepage');
+  if (/^(https?|file|about):/i.test(s)) return s;
+  if (/^localhost(:\d+)?([/?#]|$)/i.test(s) || /^\d{1,3}(\.\d{1,3}){3}(:\d+)?([/?#]|$)/.test(s)) return 'http://' + s;
+  if (!/\s/.test(s) && /^[^\s/]+\.[a-z]{2,}(:\d+)?([/?#].*)?$/i.test(s)) return 'https://' + s;
+  return String(config.get('behavior.searchEngine')).replace('%s', encodeURIComponent(s));
+}
+
+// ---------------------------------------------------------------- shortcuts
+function parseAccel(s) {
+  const parts = String(s || '').split('+').map((x) => x.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  const key = parts.pop().toLowerCase();
+  const mods = parts.map((m) => m.toLowerCase());
+  return {
+    key,
+    ctrl: mods.includes('ctrl') || mods.includes('control'),
+    shift: mods.includes('shift'),
+    alt: mods.includes('alt'),
+    meta: mods.includes('meta') || mods.includes('cmd'),
+  };
+}
+const accelMatches = (a, input) =>
+  !!a && input.key.toLowerCase() === a.key &&
+  !!input.control === a.ctrl && !!input.shift === a.shift && !!input.alt === a.alt && !!input.meta === a.meta;
+
+function bindings() {
+  return [
+    ['newTab', config.get('shortcuts.newTab')],
+    ['closeTab', config.get('shortcuts.closeTab')],
+    ['fullscreen', config.get('shortcuts.fullscreen')],
+    ['focusAddress', 'Ctrl+L'],
+    ['reload', 'F5'],
+    ['reload', 'Ctrl+R'],
+    ['back', 'Alt+ArrowLeft'],
+    ['forward', 'Alt+ArrowRight'],
+    ['devtools', 'F12'],
+  ].map(([action, accel]) => [action, parseAccel(accel)]);
+}
+
+function hookInput(wc, paneId = null) {
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    // ズーム(Webビューのみ)
+    if (paneId && input.control && !input.alt) {
+      if (input.key === '=' || input.key === '+') { event.preventDefault(); wc.setZoomLevel(wc.getZoomLevel() + 0.5); return; }
+      if (input.key === '-') { event.preventDefault(); wc.setZoomLevel(wc.getZoomLevel() - 0.5); return; }
+      if (input.key === '0') { event.preventDefault(); wc.setZoomLevel(0); return; }
+    }
+    for (const [action, accel] of bindings()) {
+      if (!accelMatches(accel, input)) continue;
+      event.preventDefault();
+      if (action === 'devtools') { wc.toggleDevTools(); return; }
+      if (action === 'focusAddress' && win) win.webContents.focus(); // ネイティブビューからシェルへフォーカスを戻す
+      send('shortcut', { action, paneId });
+      return;
+    }
+  });
+}
+
+// ---------------------------------------------------------------- window
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 640,
+    minHeight: 400,
+    frame: false, // タイトルバーは自前で描く
+    show: false,
+    title: 'PRELUDE',
+    backgroundColor: config.get('appearance.bg'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  win.once('ready-to-show', () => win.show());
+  hookInput(win.webContents);
+  const pushState = () => send('win:state', winState());
+  ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen'].forEach((e) => win.on(e, pushState));
+  win.on('closed', () => { win = null; views.clear(); });
+}
+const winState = () => ({ maximized: !!win?.isMaximized(), fullscreen: !!win?.isFullScreen() });
+
+ipcMain.on('win:cmd', (_e, cmd) => {
+  if (!win) return;
+  if (cmd === 'minimize') win.minimize();
+  else if (cmd === 'toggleMaximize') (win.isMaximized() ? win.unmaximize() : win.maximize());
+  else if (cmd === 'close') win.close();
+  else if (cmd === 'toggleFullscreen') win.setFullScreen(!win.isFullScreen());
+});
+ipcMain.handle('win:state', () => winState());
+
+// ---------------------------------------------------------------- config / workspace / icons
+ipcMain.handle('config:get', () => ({ values: config.data, schema: SCHEMA }));
+ipcMain.handle('config:set', (_e, p, value) => { config.set(p, value); send('config:changed', config.data); });
+ipcMain.handle('config:reset', () => { config.reset(); send('config:changed', config.data); });
+
+const wsFile = () => path.join(app.getPath('userData'), 'workspace.json');
+ipcMain.handle('ws:load', () => { try { return JSON.parse(fs.readFileSync(wsFile(), 'utf8')); } catch { return null; } });
+ipcMain.on('ws:save', (_e, data) => {
+  try { fs.mkdirSync(path.dirname(wsFile()), { recursive: true }); fs.writeFile(wsFile(), JSON.stringify(data), () => {}); } catch {}
+});
+
+ipcMain.handle('icons:get', () => {
+  const dir = path.join(__dirname, 'assets', 'icons');
+  const out = {};
+  for (const f of fs.readdirSync(dir)) if (f.endsWith('.svg')) out[f.slice(0, -4)] = fs.readFileSync(path.join(dir, f), 'utf8');
+  return out;
+});
+
+// ---------------------------------------------------------------- web views
+const navBack = (wc) => (wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack());
+const navFwd = (wc) => (wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward());
+
+function applyView(e) {
+  if (e.rect) {
+    e.view.setBounds({
+      x: Math.round(e.rect.x), y: Math.round(e.rect.y),
+      width: Math.max(0, Math.round(e.rect.width)), height: Math.max(0, Math.round(e.rect.height)),
+    });
+  }
+  e.view.setVisible(!!e.rect && e.rect.width > 0 && e.rect.height > 0 && !suspended);
+}
+
+function createWeb(paneId, input) {
+  if (!win || views.has(paneId)) return;
+  const view = new WebContentsView({
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  const wc = view.webContents;
+  const entry = { view, wc, rect: null };
+  views.set(paneId, entry);
+  win.contentView.addChildView(view);
+  view.setVisible(false);
+  hookInput(wc, paneId);
+
+  const push = () => send('web:state', {
+    paneId, url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(),
+    canBack: navBack(wc), canFwd: navFwd(wc),
+  });
+  ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'dom-ready']
+    .forEach((ev) => wc.on(ev, () => push()));
+  wc.on('page-favicon-updated', (_e, icons) => send('web:favicon', { paneId, icon: icons[0] || '' }));
+  wc.on('focus', () => send('web:focused', { paneId }));
+  wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
+    if (!isMain || code === -3) return; // -3 = ユーザー操作による中断
+    const html = `<meta charset=utf-8><body style="font:14px sans-serif;padding:40px;color:#444"><h2>ページを表示できません</h2><p>${String(url).replace(/</g, '&lt;')}</p><p>${desc} (${code})</p>`;
+    wc.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)).catch(() => {});
+  });
+
+  // target=_blank などの新規タブ要求は分割ペインで開く。
+  // window.open(features付き)のポップアップ(OAuthログイン等)は opener を保つため本物のウィンドウで開く。
+  wc.setWindowOpenHandler(({ url, disposition, features }) => {
+    if (disposition === 'new-window' && features) {
+      return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true } };
+    }
+    send('web:open-request', { fromPaneId: paneId, url });
+    return { action: 'deny' };
+  });
+
+  wc.loadURL(normalizeInput(input)).catch(() => {});
+}
+
+ipcMain.on('web:create', (_e, paneId, url) => createWeb(paneId, url));
+ipcMain.on('web:bounds', (_e, paneId, rect) => {
+  const e = views.get(paneId);
+  if (!e) return;
+  e.rect = rect;
+  applyView(e);
+});
+ipcMain.on('web:suspend', (_e, v) => { suspended = !!v; views.forEach(applyView); });
+ipcMain.on('web:cmd', (_e, paneId, cmd, arg) => {
+  const e = views.get(paneId);
+  if (!e) return;
+  const wc = e.wc;
+  if (cmd === 'navigate') wc.loadURL(normalizeInput(arg)).catch(() => {});
+  else if (cmd === 'back') { if (navBack(wc)) (wc.navigationHistory ? wc.navigationHistory.goBack() : wc.goBack()); }
+  else if (cmd === 'forward') { if (navFwd(wc)) (wc.navigationHistory ? wc.navigationHistory.goForward() : wc.goForward()); }
+  else if (cmd === 'reload') wc.reload();
+  else if (cmd === 'stop') wc.stop();
+  else if (cmd === 'focus') wc.focus();
+});
+ipcMain.on('web:destroy', (_e, paneId) => {
+  const e = views.get(paneId);
+  if (!e) return;
+  views.delete(paneId);
+  try { win?.contentView.removeChildView(e.view); } catch {}
+  try { e.wc.close(); } catch {}
+});
+
+// ---------------------------------------------------------------- file system
+ipcMain.handle('fs:list', async (_e, dir, showHidden) => {
+  try {
+    const abs = path.resolve(dir || os.homedir());
+    const dirents = await fs.promises.readdir(abs, { withFileTypes: true });
+    const entries = await Promise.all(
+      dirents.filter((d) => showHidden || !d.name.startsWith('.')).map(async (d) => {
+        const full = path.join(abs, d.name);
+        let size = 0, mtime = 0, isDir = d.isDirectory();
+        try {
+          const st = await fs.promises.stat(full);
+          size = st.size; mtime = st.mtimeMs; isDir = st.isDirectory();
+        } catch {}
+        return { name: d.name, full, isDir, size, mtime };
+      }),
+    );
+    entries.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    const parent = path.dirname(abs);
+    return { ok: true, path: abs, parent: parent === abs ? null : parent, entries };
+  } catch (e) {
+    return { ok: false, error: e.message, path: dir };
+  }
+});
+ipcMain.handle('fs:open', (_e, p) => shell.openPath(p));
+ipcMain.handle('fs:home', () => os.homedir());
+ipcMain.handle('fs:drives', async () => {
+  const out = [{ label: 'ホーム', path: os.homedir() }];
+  if (process.platform === 'win32') {
+    for (let c = 65; c <= 90; c++) {
+      const p = String.fromCharCode(c) + ':\\';
+      try { await fs.promises.access(p); out.push({ label: p, path: p }); } catch {}
+    }
+  } else {
+    out.push({ label: '/', path: '/' });
+    for (const base of ['/mnt', '/media', path.join('/run/media', os.userInfo().username), path.join('/media', os.userInfo().username)]) {
+      try {
+        for (const d of await fs.promises.readdir(base, { withFileTypes: true })) {
+          if (d.isDirectory()) out.push({ label: path.join(base, d.name), path: path.join(base, d.name) });
+        }
+      } catch {}
+    }
+  }
+  return out;
+});
+
+// ---------------------------------------------------------------- downloads
+// ダウンロード自体は一時フォルダへ保存を始め、フォルダペインで選ばれた場所へ移動する。
+const downloads = new Map();
+let dlSeq = 0;
+const safeName = (n) => String(n).replace(/[\\/:*?"<>|]/g, '_');
+
+function uniquePath(dir, name) {
+  const ext = path.extname(name);
+  const base = path.basename(name, ext);
+  let p = path.join(dir, name);
+  for (let i = 1; fs.existsSync(p); i++) p = path.join(dir, `${base} (${i})${ext}`);
+  return p;
+}
+
+function finalizeDownload(d) {
+  if (!d.done) return;
+  if (d.state !== 'completed') {
+    fs.rm(d.tmpPath, { force: true }, () => {});
+    downloads.delete(d.id);
+    return;
+  }
+  if (!d.dir || d.moved) return;
+  d.moved = true;
+  try {
+    fs.mkdirSync(d.dir, { recursive: true });
+    const dest = uniquePath(d.dir, d.filename);
+    try { fs.renameSync(d.tmpPath, dest); } catch { fs.copyFileSync(d.tmpPath, dest); fs.rmSync(d.tmpPath, { force: true }); }
+    send('dl:saved', { id: d.id, path: dest });
+  } catch (e) {
+    send('dl:error', { id: d.id, message: e.message });
+  }
+  downloads.delete(d.id);
+}
+
+function setupDownloads() {
+  session.defaultSession.on('will-download', (_e, item, wc) => {
+    const id = ++dlSeq;
+    const tmpDir = path.join(app.getPath('temp'), 'prelude-dl');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const filename = item.getFilename();
+    const tmpPath = path.join(tmpDir, `${id}-${safeName(filename)}`);
+    item.setSavePath(tmpPath);
+    const d = { id, item, tmpPath, filename, dir: null, done: false, state: '', moved: false };
+    downloads.set(id, d);
+    let fromPaneId = null;
+    for (const [pid, v] of views) if (v.wc === wc) fromPaneId = pid;
+    send('dl:start', {
+      id, filename, total: item.getTotalBytes(), fromPaneId,
+      defaultDir: config.get('behavior.downloadDir') || app.getPath('downloads'),
+    });
+    item.on('updated', () => send('dl:progress', { id, received: item.getReceivedBytes(), total: item.getTotalBytes() }));
+    item.once('done', (_ev, state) => { d.done = true; d.state = state; send('dl:done', { id, state }); finalizeDownload(d); });
+  });
+}
+ipcMain.handle('dl:choose', (_e, id, dir) => { const d = downloads.get(id); if (d) { d.dir = dir; finalizeDownload(d); } });
+ipcMain.handle('dl:cancel', (_e, id) => {
+  const d = downloads.get(id);
+  if (!d) return;
+  if (d.done) { d.state = 'cancelled'; finalizeDownload(d); } else d.item.cancel();
+});
+
+// ---------------------------------------------------------------- lifecycle
+app.whenReady().then(() => {
+  config = new Config();
+  Menu.setApplicationMenu(null);
+  setupDownloads();
+  createWindow();
+  app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+});
+app.on('window-all-closed', () => app.quit());

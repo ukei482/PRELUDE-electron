@@ -1,0 +1,14 @@
+{
+  "name": "prelude-electron",
+  "version": "0.1.0",
+  "description": "PRELUDE (Electron版): ブラウザ・エクスプローラ・ウィンドウ管理を1つに",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "start:linux": "electron . --no-sandbox"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}
