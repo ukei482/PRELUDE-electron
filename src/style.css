@@ -215,3 +215,15 @@ body.no-sidebar #sidebar { display: none; }
 .qitem:hover { background: var(--panel); }
 .qitem.on { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
 .qmeta { color: var(--dim); font-size: .85em; flex: none; }
+
+/* ---- notification center */
+.nhead { display: flex; align-items: center; gap: 6px; }
+.nitem { display: flex; gap: 8px; padding: 6px 8px; border-radius: 6px; position: relative; }
+.nitem:hover { background: var(--panel); }
+.nitem .ntx { flex: 1; min-width: 0; }
+.nitem .nsum { font-weight: 600; overflow-wrap: anywhere; }
+.nitem .nbody { overflow-wrap: anywhere; white-space: pre-wrap; max-height: 4.5em; overflow: hidden; }
+.nitem .nmeta { color: var(--dim); font-size: .8em; }
+.nitem.new { box-shadow: inset 3px 0 0 var(--accent); }
+.nitem .nx { opacity: 0; width: 22px; height: 22px; flex: none; }
+.nitem:hover .nx { opacity: 1; }

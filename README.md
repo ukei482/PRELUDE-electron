@@ -25,6 +25,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - **下端のステータスバー**（細いバー）：左に「アプリ・検索」ボタン、右に音量（クリックでミュート・ホイールで±5%）・Wi-Fi/有線・電池・時計（Linuxのみ）
 - **クイック設定**（バーの音量・Wi-Fi・電池をクリック）：音量と出力デバイス、明るさ、Wi-Fi（登録済みネットワークへの接続）、Bluetooth、電源プロファイル、ロック・スリープ・ログアウト・再起動・電源オフ（最後の3つはKDEの確認ダイアログ）
 - **再生中メディア**：バー左に表示（MPRIS）。クリックで再生/一時停止、右クリックで前後の曲
+- **通知サーバ**（Linux/KDE）：`org.freedesktop.Notifications` を実装。右上に透明のオーバーレイ窓でトースト表示（アクション・緊急・置き換え・期限に対応。Webビューや取り込みアプリの上にも出る）。履歴・未読数・おやすみモードはバーの「通知」から。**plasmashell が動いている間は名前を取り合わず待機し、止まったら自動で引き継ぐ**
 - **ランチャー**（Ctrl+Shift+P、設定で変更可。どのアプリが前面でも Meta+Space で開く＝KWinのグローバルショートカット）：開いているタブ・ブックマーク・インストール済みアプリ・コマンド・Web検索を1つの入力欄で探す。アプリは**既定でペインに取り込み**（設定「アプリを開く方法」で別ウィンドウにも変更可）
 - **設定タブ**：`config.js` の `SCHEMA` から自動生成（色・文字サイズ・ホームページ・検索エンジン・ショートカット…）
 - **タブの復元**：終了時のタブ・分割配置を次回起動で復元
@@ -42,10 +43,10 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - `main.js` … ウィンドウ、Webビュー(WebContentsView)の管理、ダウンロード、ファイル操作、ショートカット
 - `preload.js` … 画面側に公開する安全なAPI（`window.preludeApi`）
 - `appembed.js` … アプリ取り込み（プロセス起動とKWinスクリプトによるウィンドウ配置）
-- `sys/` … OS連携（Linux）。`bus.js` = D-Bus（`org.prelude.Shell`、KWinスクリプトからの報告を受ける）、`apps.js` = インストール済みアプリ一覧、`status.js` = 電池・音量・ネットワーク（ステータスバー用）、`quick.js` = クイック設定の取得と操作、`media.js` = MPRIS、`keys.js` = KWin経由のグローバルショートカット
+- `sys/` … OS連携（Linux）。`bus.js` = D-Bus（`org.prelude.Shell`、KWinスクリプトからの報告を受ける）、`apps.js` = インストール済みアプリ一覧、`status.js` = 電池・音量・ネットワーク（ステータスバー用）、`quick.js` = クイック設定の取得と操作、`media.js` = MPRIS、`keys.js` = KWin経由のグローバルショートカット、`notify.js` = 通知サーバ、`overlay.js` = オーバーレイ窓（KWinで右上に配置）、`icons.js` = アイコンテーマ→data URL
 - `scripts/shell-mode.sh` / `systemd/` … plasmashell と入れ替えてデスクトップシェルとして使うための切替（設計は `docs/shell-design.md`。段階3まで有効化しないこと）
 - `config.js` … 設定の初期値と設定画面のスキーマ
-- `src/bar.js` / `launcher.js` / `quick.js` … ステータスバーとランチャー（`app.js` の共通関数を使う）
+- `src/bar.js` / `launcher.js` / `quick.js` / `notifications.js`（通知センター）、`src/overlay.*`（トースト窓のページ。`preload-overlay.js` が最小のAPIを出す） … ステータスバーとランチャー（`app.js` の共通関数を使う）
 - `src/index.html` / `style.css` / `app.js` … 画面（縦タブ・分割ツリー・各ペイン）
 - `assets/icons/` … アイコン（Rust版と同じSVG）
 

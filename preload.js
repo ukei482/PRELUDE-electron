@@ -49,6 +49,14 @@ contextBridge.exposeInMainWorld('preludeApi', {
     onMedia: (cb) => on('sys:media', cb),
     mediaCmd: (c) => ipcRenderer.invoke('media:cmd', c),
   },
+  notify: {
+    state: () => ipcRenderer.invoke('notify:state'),
+    onState: (cb) => on('notify:state', cb),
+    seen: () => ipcRenderer.send('notify:seen'),
+    dnd: (v) => ipcRenderer.send('notify:dnd', !!v),
+    remove: (id) => ipcRenderer.send('notify:remove', id),
+    clear: () => ipcRenderer.send('notify:clear'),
+  },
   quick: {
     get: () => ipcRenderer.invoke('quick:get'),
     do: (op, arg) => ipcRenderer.invoke('quick:do', op, arg),

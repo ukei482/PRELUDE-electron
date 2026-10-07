@@ -2,7 +2,7 @@
 // ステータスバー(下端の細いバー)。左: ランチャー / 右: 音量・ネットワーク・電池・時計。
 // app.js より先に読み込まれ、boot() から initBar() が呼ばれる(h / ico / api などは app.js 側の共通定義)。
 
-const bar = { sys: { battery: null, volume: null, net: null }, media: null, el: {} };
+const bar = { sys: { battery: null, volume: null, net: null }, media: null, notify: { history: [], unread: 0, dnd: false, serving: false }, el: {} };
 
 function paintBar() {
   const { battery, volume, net } = bar.sys;
@@ -32,6 +32,13 @@ function paintMedia() {
   }
 }
 
+function paintNotify() {
+  const n = bar.notify;
+  const el = bar.el.notify;
+  el.textContent = `通知${n.unread ? ' ' + n.unread : ''}${n.dnd ? ' (おやすみ)' : ''}`;
+  el.classList.toggle('warn', n.unread > 0);
+}
+
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 function paintClock() {
   const d = new Date();
@@ -51,6 +58,7 @@ function initBar() {
   });
   const netEl = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
   const bat = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
+  const notifyEl = h('span', { class: 'baritem clickable', title: '通知センター', onclick: () => openNotifications() });
   const media = h('span', {
     class: 'baritem clickable', style: { display: 'none' },
     onclick: () => api.sys.mediaCmd('playpause'),
@@ -60,12 +68,14 @@ function initBar() {
     },
   });
   const clock = h('span', { class: 'baritem', title: '' });
-  Object.assign(bar.el, { vol, netEl, bat, clock, media });
-  root.replaceChildren(launch, media, h('span', { class: 'grow' }), vol, netEl, bat, clock);
+  Object.assign(bar.el, { vol, netEl, bat, clock, media, notify: notifyEl });
+  root.replaceChildren(launch, media, h('span', { class: 'grow' }), notifyEl, vol, netEl, bat, clock);
   paintClock();
   setInterval(paintClock, 10000);
   api.sys.status().then((s) => { bar.sys = s || bar.sys; paintBar(); });
   api.sys.onStatus((s) => { bar.sys = s; paintBar(); });
+  api.notify.state().then((s) => { bar.notify = s; paintNotify(); });
+  api.notify.onState((s) => { bar.notify = s; paintNotify(); if (typeof notifUI !== 'undefined' && notifUI) paintNotifications(); });
   api.sys.media().then((m) => { bar.media = m; paintMedia(); });
   api.sys.onMedia((m) => { bar.media = m; paintMedia(); });
 }

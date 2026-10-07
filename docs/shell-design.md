@@ -231,6 +231,20 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
 - 未：夜間モード（KWin の NightLight は on/off の永続設定が D-Bus に無く、kwinrc の書き換えが必要なので見送り）、
   Wi-Fi のパスワード入力（KDE の秘密情報エージェント経由にする設計を段階4で検討）、取り込んでいない窓のタスク表示
 
+## 6.4 段階3a の実装状況（通知サーバ）
+
+- 済：`sys/notify.js`（Notify / CloseNotification / GetCapabilities / GetServerInformation、NotificationClosed / ActionInvoked。
+  置き換え更新・期限・緊急（消えない）・おやすみモード・履歴100件を `userData/notifications.json` に保存）、
+  `sys/overlay.js`（透明・枠なし・最前面の窓。KWinスクリプトがタイトル `PRELUDE-overlay:<種類>` を見て右上に配置）、
+  `sys/icons.js`、`src/notifications.js`（通知センター）
+- 名前の扱い：置き換えずに待ち行列に入る（`requestName(name, 0)`）。plasmashell が止まれば D-Bus が自動で PRELUDE に渡す。
+  テスト時は環境変数 `PRELUDE_NOTIFY_NAME` で別名にできる。
+- 実機確認：別名で、表示・アクション・既定アクション・置き換え・期限・緊急・おやすみ・履歴。さらに `scripts/shell-mode-test.sh` で、
+  plasmashell を止めた状態で本物の名前を PRELUDE が引き継ぎ `notify-send` がトーストになること、元に戻すと plasmashell が取り返すことを確認。
+- 設計上の割り切り：本文はプレーンテキストのみ表示（`body-markup` は広告しない。HTMLは解釈しない）。`image-data` ヒントと
+  サウンドは未対応。オーバーレイは KDE 以外では無効（履歴は残る）。
+- 未（段階3の残り）：OSD（音量・明るさのキー）、壁紙・ホーム画面
+
 ## 7. 決めておきたいこと
 
 - ~~バーは上端か下端か~~ → 下端・細め

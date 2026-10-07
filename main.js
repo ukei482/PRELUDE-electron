@@ -68,6 +68,8 @@ const status = require('./sys/status');
 const quick = require('./sys/quick');
 const media = require('./sys/media');
 const keys = require('./sys/keys');
+const notify = require('./sys/notify');
+const overlay = require('./sys/overlay');
 
 let config;
 let win = null;
@@ -450,9 +452,17 @@ app.whenReady().then(async () => {
     // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。押されたら PRELUDE を前面に出して画面側へ知らせる
     bus.onReport('shortcut', (name) => { if (name === 'launcher') send('shortcut', { action: 'launcher', paneId: null }); });
     keys.load({ launcher: config.get('shortcuts.globalLauncher') });
+    // 通知サーバ。トーストは別窓(オーバーレイ)に、履歴と未読数は本体の通知センターに送る
+    overlay.init();
+    ipcMain.handle('overlay:theme', () => config.data.appearance);
+    notify.init({
+      ipcMain, file: path.join(app.getPath('userData'), 'notifications.json'),
+      onToasts: (list) => overlay.send('notify', 'notify:toasts', list),
+      onState: (s) => send('notify:state', s),
+    });
   }
   createWindow();
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 });
 app.on('window-all-closed', () => app.quit());
-app.on('will-quit', () => { appembed.shutdown(); keys.shutdown(); bus.shutdown(); });
+app.on('will-quit', () => { appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); });
