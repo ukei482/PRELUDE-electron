@@ -9,7 +9,9 @@ StartLimitBurst=3
 OnFailure=prelude-shell-fallback.service
 
 [Service]
-ExecStart=@APPDIR@/node_modules/.bin/electron @APPDIR@ --no-sandbox
+ExecStart=@APPDIR@/node_modules/electron/dist/electron @APPDIR@ --no-sandbox
+# 停止時の SIGTERM はメインプロセスだけに送る(Chromium の子プロセスにも同時に送ると、メインがクラッシュして異常終了扱いになる)
+KillMode=mixed
 Restart=on-failure
 RestartSec=1
 

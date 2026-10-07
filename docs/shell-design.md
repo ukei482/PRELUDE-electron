@@ -194,11 +194,20 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
 通知・OSD は plasmashell と同じ D-Bus 名を取り合うため、**段階3より前には入れない。**
 段階1・2は plasmashell と共存したまま普段使いで試せる。
 
+## 6.0 実機テストで分かったこと（systemd 化）
+
+- 停止時、systemd は Chromium の全子プロセスに同時に SIGTERM を送り、メインプロセスが SIGTRAP でクラッシュして「失敗」扱いになり、
+  OnFailure で plasmashell が復活してしまう → `KillMode=mixed`（メインだけに SIGTERM）＋ `main.js` で SIGTERM を通常終了に。
+  ユニットは npm ラッパー（`.bin/electron`）を経由せず `node_modules/electron/dist/electron` を直接起動する。
+- `org.freedesktop.Notifications` は plasmashell が止まっても「起動可能な名前」として残るが、起動されるのは
+  `plasma_waitforname`（名前が取られるのを待つだけ）。段階3で PRELUDE がこの名前を取れば、それまでの通知は待機後に届く。
+- plasmashell は他のサービスから要求されていないので、止めてもセッションは落ちない。
+
 ## 6.1 段階0の実装状況
 
 - 済：`dbus-next` 導入、`sys/bus.js`（`org.prelude.Shell` を公開。KWinスクリプトは `Report(kind, json)` を呼ぶ）、
   `appembed.js` の `dbus-monitor` 横取りを置換（D-Bus に繋がらない環境では従来のPID監視）、`sys/apps.js`（`XDG_DATA_DIRS` を見る）、
-  `systemd/` と `scripts/shell-mode.sh`（`status` のみ実機確認。`on`/`off` は未実行）
+  `systemd/` と `scripts/shell-mode.sh`（実機確認済み。2026-10-08 に `scripts/shell-mode-test.sh` で、`on --now`→PRELUDE起動→`off --now` と、PRELUDE が落ち続けたときの OnFailure による plasmashell 自動復旧を確認）
 - 未：非常用ショートカットの登録（KDE の設定画面で手動登録が必要。TTY からの `shell-mode.sh off --now` が最後の手段）、
   `sys/` の共通 `init(ctx)` 化（モジュールが2つのうちは見送り。3つ目から導入する）
 

@@ -58,6 +58,9 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
+// systemd(prelude-shell.service)などからの終了要求は、通常の終了として扱う(異常終了扱いだと plasmashell への自動復旧が走ってしまう)
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => app.quit());
+
 const { Config, SCHEMA } = require('./config');
 const appembed = require('./appembed');
 const bus = require('./sys/bus');
