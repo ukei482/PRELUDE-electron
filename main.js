@@ -62,6 +62,9 @@ const { Config, SCHEMA } = require('./config');
 const appembed = require('./appembed');
 const bus = require('./sys/bus');
 const status = require('./sys/status');
+const quick = require('./sys/quick');
+const media = require('./sys/media');
+const keys = require('./sys/keys');
 
 let config;
 let win = null;
@@ -437,9 +440,16 @@ app.whenReady().then(async () => {
     }
     cb({ requestHeaders: h });
   });
-  status.init({ send, ipcMain });
+  const sys = status.init({ send, ipcMain });
+  quick.init({ ipcMain, refreshStatus: sys?.refresh });
+  if (process.platform === 'linux') {
+    media.init({ ipcMain, send });
+    // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。押されたら PRELUDE を前面に出して画面側へ知らせる
+    bus.onReport('shortcut', (name) => { if (name === 'launcher') send('shortcut', { action: 'launcher', paneId: null }); });
+    keys.load({ launcher: config.get('shortcuts.globalLauncher') });
+  }
   createWindow();
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 });
 app.on('window-all-closed', () => app.quit());
-app.on('will-quit', () => { appembed.shutdown(); bus.shutdown(); });
+app.on('will-quit', () => { appembed.shutdown(); keys.shutdown(); bus.shutdown(); });

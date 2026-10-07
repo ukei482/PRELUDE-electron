@@ -57,7 +57,7 @@ function init({ send, ipcMain }) {
   if (process.platform !== 'linux') {
     ipcMain.handle('sys:status', () => last);
     ipcMain.handle('sys:audio', () => {});
-    return;
+    return null;
   }
   push = (s) => send('sys:status', s);
   ipcMain.handle('sys:status', async () => { await refresh(); return last; });
@@ -87,6 +87,7 @@ function init({ send, ipcMain }) {
     process.on('exit', () => { try { sub.kill(); } catch {} });
   } catch {}
   setInterval(() => refresh(['volume']), 15000);
+  return { refresh: () => refresh() };
 }
 
 module.exports = { init };

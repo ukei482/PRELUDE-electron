@@ -212,10 +212,20 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
   （取り込みアプリも同時に隠れる）。通知・OSD のように「他のアプリの上に重ねて出したい」ものは、段階3で透明ウィンドウを作る。
 - 未：Super キーでの起動（KDE 側の Super 割り当てを外す必要がある。決まるまで Ctrl+Shift+P）、ウィンドウ（取り込んでいない窓）のタスク表示、メディア表示
 
+## 6.3 段階2の実装状況（クイック設定・メディア）
+
+- 済：`sys/quick.js`（音量・出力デバイス=wpctl、Wi-Fi=nmcli、Bluetooth=bluetoothctl、明るさ=powerdevil の D-Bus、
+  電源プロファイル=powerprofilesctl、ロック/スリープ=loginctl/systemctl、ログアウト/再起動/電源オフ=`org.kde.LogoutPrompt`）、
+  `sys/media.js`（MPRIS）、`sys/keys.js`（KWinスクリプトの `registerShortcut`。既定 Meta+Space）、`src/quick.js`
+- 方針：Wi-Fi は**登録済みネットワークへの接続のみ**（パスワードを PRELUDE に入力させない。未登録は KDE のネットワーク設定で一度登録）。
+  明るさは下限5%（0%で画面が真っ暗になり戻せなくなるのを防ぐ）。画面側から送る操作は固定の種類だけ受け付け、引数は main 側で検証。
+- 未：夜間モード（KWin の NightLight は on/off の永続設定が D-Bus に無く、kwinrc の書き換えが必要なので見送り）、
+  Wi-Fi のパスワード入力（KDE の秘密情報エージェント経由にする設計を段階4で検討）、取り込んでいない窓のタスク表示
+
 ## 7. 決めておきたいこと
 
 - ~~バーは上端か下端か~~ → 下端・細め
 - ~~アプリ起動の既定~~ → ペインに取り込む
-- Super キーをランチャーに使うか（KDE 側の Super 割り当てを外す必要がある）
+- ~~Super キー~~ → Super 単独ではなく **Meta+Space**（KWin のグローバルショートカット）
 - 外部ディスプレイ（複数画面）を使うか。使うなら PRELUDE 本体を画面ごとに出すか、主画面だけにするか
 - Windows 版との共通化をどこまで残すか（`sys/` は Linux 専用にして、無い環境では機能を隠す想定）

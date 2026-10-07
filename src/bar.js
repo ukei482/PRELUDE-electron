@@ -2,7 +2,7 @@
 // ステータスバー(下端の細いバー)。左: ランチャー / 右: 音量・ネットワーク・電池・時計。
 // app.js より先に読み込まれ、boot() から initBar() が呼ばれる(h / ico / api などは app.js 側の共通定義)。
 
-const bar = { sys: { battery: null, volume: null, net: null }, el: {} };
+const bar = { sys: { battery: null, volume: null, net: null }, media: null, el: {} };
 
 function paintBar() {
   const { battery, volume, net } = bar.sys;
@@ -22,6 +22,16 @@ function paintBar() {
   }
 }
 
+function paintMedia() {
+  const m = bar.media;
+  const el = bar.el.media;
+  el.style.display = m ? '' : 'none';
+  if (m) {
+    el.textContent = `${m.status === 'Playing' ? '再生中' : '一時停止'}: ${[m.title, m.artist].filter(Boolean).join(' - ') || m.name.replace('org.mpris.MediaPlayer2.', '')}`;
+    el.title = 'クリック: 再生/一時停止 / 右クリック: 前後の曲';
+  }
+}
+
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 function paintClock() {
   const d = new Date();
@@ -32,19 +42,30 @@ function paintClock() {
 function initBar() {
   const root = document.getElementById('statusbar');
   const launch = h('button', { class: 'barbtn', title: 'ランチャー', onclick: () => openLauncher() }, ico('window'), 'アプリ・検索');
-  // 音量: クリックでミュート切替、ホイールで±5%
+  // 音量: クリックでクイック設定、ホイールで±5%、中クリックでミュート
   const vol = h('span', {
-    class: 'baritem clickable', title: 'クリック: ミュート / ホイール: 音量',
-    onclick: () => api.sys.audio('mute'),
+    class: 'baritem clickable', title: 'クリック: クイック設定 / ホイール: 音量 / 中クリック: ミュート',
+    onclick: () => openQuick(),
+    onauxclick: (e) => { if (e.button === 1) api.sys.audio('mute'); },
     onwheel: (e) => { e.preventDefault(); api.sys.audio(e.deltaY < 0 ? 'up' : 'down'); },
   });
-  const netEl = h('span', { class: 'baritem' });
-  const bat = h('span', { class: 'baritem' });
+  const netEl = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
+  const bat = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
+  const media = h('span', {
+    class: 'baritem clickable', style: { display: 'none' },
+    onclick: () => api.sys.mediaCmd('playpause'),
+    oncontextmenu: (e) => {
+      e.preventDefault();
+      popup([{ label: '前の曲', run: () => api.sys.mediaCmd('prev') }, { label: '次の曲', run: () => api.sys.mediaCmd('next') }], e.clientX, e.clientY - 70);
+    },
+  });
   const clock = h('span', { class: 'baritem', title: '' });
-  Object.assign(bar.el, { vol, netEl, bat, clock });
-  root.replaceChildren(launch, h('span', { class: 'grow' }), vol, netEl, bat, clock);
+  Object.assign(bar.el, { vol, netEl, bat, clock, media });
+  root.replaceChildren(launch, media, h('span', { class: 'grow' }), vol, netEl, bat, clock);
   paintClock();
   setInterval(paintClock, 10000);
   api.sys.status().then((s) => { bar.sys = s || bar.sys; paintBar(); });
   api.sys.onStatus((s) => { bar.sys = s; paintBar(); });
+  api.sys.media().then((m) => { bar.media = m; paintMedia(); });
+  api.sys.onMedia((m) => { bar.media = m; paintMedia(); });
 }

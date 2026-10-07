@@ -45,6 +45,13 @@ contextBridge.exposeInMainWorld('preludeApi', {
     status: () => ipcRenderer.invoke('sys:status'),
     audio: (cmd) => ipcRenderer.invoke('sys:audio', cmd),
     onStatus: (cb) => on('sys:status', cb),
+    media: () => ipcRenderer.invoke('sys:media'),
+    onMedia: (cb) => on('sys:media', cb),
+    mediaCmd: (c) => ipcRenderer.invoke('media:cmd', c),
+  },
+  quick: {
+    get: () => ipcRenderer.invoke('quick:get'),
+    do: (op, arg) => ipcRenderer.invoke('quick:do', op, arg),
   },
   fs: {
     list: (dir, showHidden) => ipcRenderer.invoke('fs:list', dir, showHidden),

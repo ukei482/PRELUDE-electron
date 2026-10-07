@@ -771,7 +771,7 @@ async function boot() {
   initBar();
 
   new ResizeObserver(() => syncViews()).observe($('#workspace'));
-  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePopup(); closeLauncher(); } });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePopup(); closeLauncher(); closeQuick(); } });
 
   if (ws && Array.isArray(ws.tabs)) restore(ws);
   if (!S.tabs.length) openTab(C.behavior.startKind);

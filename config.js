@@ -51,7 +51,8 @@ const SCHEMA = [
       { path: 'shortcuts.newTab', label: '新しいタブ', type: 'text' },
       { path: 'shortcuts.closeTab', label: 'タブを閉じる', type: 'text' },
       { path: 'shortcuts.fullscreen', label: '全画面', type: 'text' },
-      { path: 'shortcuts.launcher', label: 'ランチャー', type: 'text' },
+      { path: 'shortcuts.launcher', label: 'ランチャー（PRELUDEが前面のとき）', type: 'text' },
+      { path: 'shortcuts.globalLauncher', label: 'グローバルのランチャーキー（初回登録時の既定。以降の変更はKDEのショートカット設定で）', type: 'text' },
     ],
   },
 ];
@@ -76,7 +77,7 @@ function defaults() {
     },
     bookmarks: [],
     appUsage: [],
-    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', fullscreen: 'F11', launcher: 'Ctrl+Shift+P' },
+    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', fullscreen: 'F11', launcher: 'Ctrl+Shift+P', globalLauncher: 'Meta+Space' },
   };
 }
 
