@@ -26,6 +26,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - **クイック設定**（バーの音量・Wi-Fi・電池をクリック）：音量と出力デバイス、明るさ、Wi-Fi（登録済みネットワークへの接続）、Bluetooth、電源プロファイル、ロック・スリープ・ログアウト・再起動・電源オフ（最後の3つはKDEの確認ダイアログ）
 - **再生中メディア**：バー左に表示（MPRIS）。クリックで再生/一時停止、右クリックで前後の曲
 - **通知サーバ**（Linux/KDE）：`org.freedesktop.Notifications` を実装。右上に透明のオーバーレイ窓でトースト表示（アクション・緊急・置き換え・期限に対応。Webビューや取り込みアプリの上にも出る）。履歴・未読数・おやすみモードはバーの「通知」から。**plasmashell が動いている間は名前を取り合わず待機し、止まったら自動で引き継ぐ**
+- **OSD**（Linux/KDE）：音量・明るさが変わると画面中央下に小さく表示（キー操作でも他のアプリからでも）。明るさが0%のまま8秒続いたら20%へ自動で戻し、緊急用に **Meta+Shift+B で明るさ50%**
 - **ランチャー**（Ctrl+Shift+P、設定で変更可。どのアプリが前面でも Meta+Space で開く＝KWinのグローバルショートカット）：開いているタブ・ブックマーク・インストール済みアプリ・コマンド・Web検索を1つの入力欄で探す。アプリは**既定でペインに取り込み**（設定「アプリを開く方法」で別ウィンドウにも変更可）
 - **設定タブ**：`config.js` の `SCHEMA` から自動生成（色・文字サイズ・ホームページ・検索エンジン・ショートカット…）
 - **タブの復元**：終了時のタブ・分割配置を次回起動で復元
@@ -35,6 +36,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 初回起動時に Rust 版の `%APPDATA%\PRELUDE\config.json` があれば、色・ブックマークなどを引き継ぎます。
 
 ## まだ入っていないもの
+- **plasmashell を止めている間のキーボード音量キー**（KDEのkmixが持ったままで受けられない。バーのホイールやクイック設定で操作。詳細は `docs/shell-design.md` 6.5）
 - **アプリ取り込みの制限**：実際には「重ねて配置」なので、他のウィンドウがPRELUDEの上に来ても取り込み中のアプリは最前面のまま。KDE以外（GNOME拡張など）は未対応。Flatpak等でPIDが一致しないアプリはウィンドウクラス(StartupWMClass)で照合します。
 - ブラウザ拡張機能（Chrome拡張）、パスワードマネージャ連携、Webビューの右クリックメニュー。
 - Webの上にHTMLのポップアップは重ねられません（Webビューはネイティブ描画のため）。メニュー表示中・境界ドラッグ中はWebビューを一時的に隠しています。
@@ -43,7 +45,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - `main.js` … ウィンドウ、Webビュー(WebContentsView)の管理、ダウンロード、ファイル操作、ショートカット
 - `preload.js` … 画面側に公開する安全なAPI（`window.preludeApi`）
 - `appembed.js` … アプリ取り込み（プロセス起動とKWinスクリプトによるウィンドウ配置）
-- `sys/` … OS連携（Linux）。`bus.js` = D-Bus（`org.prelude.Shell`、KWinスクリプトからの報告を受ける）、`apps.js` = インストール済みアプリ一覧、`status.js` = 電池・音量・ネットワーク（ステータスバー用）、`quick.js` = クイック設定の取得と操作、`media.js` = MPRIS、`keys.js` = KWin経由のグローバルショートカット、`notify.js` = 通知サーバ、`overlay.js` = オーバーレイ窓（KWinで右上に配置）、`icons.js` = アイコンテーマ→data URL
+- `sys/` … OS連携（Linux）。`bus.js` = D-Bus（`org.prelude.Shell`、KWinスクリプトからの報告を受ける）、`apps.js` = インストール済みアプリ一覧、`status.js` = 電池・音量・ネットワーク（ステータスバー用）、`quick.js` = クイック設定の取得と操作、`media.js` = MPRIS、`keys.js` = KWin経由のグローバルショートカット、`notify.js` = 通知サーバ、`overlay.js` = オーバーレイ窓（KWinで右上/中央下に配置）、`osd.js` = 音量・明るさのOSDと明るさの安全策、`icons.js` = アイコンテーマ→data URL
 - `scripts/shell-mode.sh` / `systemd/` … plasmashell と入れ替えてデスクトップシェルとして使うための切替（設計は `docs/shell-design.md`。段階3まで有効化しないこと）
 - `config.js` … 設定の初期値と設定画面のスキーマ
 - `src/bar.js` / `launcher.js` / `quick.js` / `notifications.js`（通知センター）、`src/overlay.*`（トースト窓のページ。`preload-overlay.js` が最小のAPIを出す） … ステータスバーとランチャー（`app.js` の共通関数を使う）

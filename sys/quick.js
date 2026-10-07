@@ -104,7 +104,7 @@ async function doOp(op, arg) {
       if (!MAC.test(String(arg))) return {};
       return exec('bluetoothctl', [op === 'btConnect' ? 'connect' : 'disconnect', arg], 15000);
     case 'brightness': {
-      const n = num(arg, 5, 100); // 0%だと画面が真っ暗になって戻せなくなるので下限は5%
+      const n = num(arg, 1, 100); // 0%だと画面が真っ暗になって戻せなくなるので下限は1%(暗い部屋で使う人もいるので、見える範囲までは下げられる)
       const max = /(\d+)/.exec((await gdbus('brightnessMax')).out);
       return n == null || !max ? {} : gdbus('setBrightness', String(Math.round((n / 100) * Number(max[1]))));
     }
@@ -123,13 +123,14 @@ async function doOp(op, arg) {
   }
 }
 
-function init({ ipcMain, refreshStatus }) {
+function init({ ipcMain, refreshStatus, onSelfChange }) {
   ipcMain.handle('quick:get', () => get());
   ipcMain.handle('quick:do', async (_e, op, arg) => {
+    if (['volume', 'mute', 'brightness'].includes(String(op))) onSelfChange?.(); // 自分の操作(スライダー)ではOSDを出さない
     const r = await doOp(String(op), arg);
     refreshStatus?.();
     return { error: r?.error || '' };
   });
 }
 
-module.exports = { init };
+module.exports = { init, doOp };

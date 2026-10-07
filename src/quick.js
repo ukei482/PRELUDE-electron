@@ -59,7 +59,7 @@ async function openQuick() {
         a.sinks.length > 1 ? h('select', { class: 'qsel', onchange: (e) => act('sink', Number(e.target.value)) },
           a.sinks.map((s) => h('option', { value: s.id, selected: s.current || null }, s.name))) : null));
     }
-    if (d.brightness) kids.push(section('明るさ', h('div', { class: 'qrow' }, slider(d.brightness.percent, 'brightness', 5))));
+    if (d.brightness) kids.push(section('明るさ', h('div', { class: 'qrow' }, slider(d.brightness.percent, 'brightness', 1))));
     if (d.wifi) {
       kids.push(section('Wi-Fi',
         h('div', { class: 'qrow' }, h('span', { class: 'qgrow' }, d.wifi.enabled ? '有効' : '無効'), toggle(d.wifi.enabled, 'wifiPower')),

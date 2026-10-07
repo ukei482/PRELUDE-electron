@@ -11,7 +11,8 @@ const NAME = 'prelude-keys';
 const supported = process.platform === 'linux' && /kde/i.test(process.env.XDG_CURRENT_DESKTOP || '');
 let file = null;
 
-// keys: { 名前: 'Meta+Space' }。名前は Report('shortcut', JSON文字列) で画面側へ渡る
+// keys: { 名前: { key: 'Meta+Space', raise: true } }。名前は Report('shortcut', JSON文字列) で画面側へ渡る。
+// raise が false のキー(音量キーなど)は、PRELUDE を前面に出さず、今のウィンドウのまま通知だけする
 function script(keys) {
   return `
 var EL_PID = ${process.pid};
@@ -24,21 +25,25 @@ function electron() {
   });
   return best;
 }
-function fire(name) {
+function fire(name, raise) {
   var el = electron();
-  if (el) { el.minimized = false; workspace.activeWindow = el; }
+  if (raise && el) { el.minimized = false; workspace.activeWindow = el; }
   callDBus('org.prelude.Shell', '/org/prelude/Shell', 'org.prelude.Shell', 'Report', 'shortcut', JSON.stringify(name));
 }
 var KEYS = ${JSON.stringify(keys)};
 Object.keys(KEYS).forEach(function (name) {
-  registerShortcut('PRELUDE ' + name, 'PRELUDE: ' + name, KEYS[name], function () { fire(name); });
+  registerShortcut('PRELUDE ' + name, 'PRELUDE: ' + name, KEYS[name].key, function () { fire(name, KEYS[name].raise); });
 });
 `;
 }
 
 const kwin = (obj, method, ...args) => exec('gdbus', ['call', '--session', '--dest', 'org.kde.KWin', '--object-path', obj, '--method', method, ...args]);
 
-async function load(keys) {
+let chain = Promise.resolve();
+// 連続して呼ばれても、読み込み(unload→load)が重ならないよう順番に処理する
+const load = (keys) => (chain = chain.then(() => doLoad(keys)).catch(() => {}));
+
+async function doLoad(keys) {
   if (!supported) return;
   if (!file) file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'prelude-keys-')), 'keys.js');
   await kwin('/Scripting', 'org.kde.kwin.Scripting.unloadScript', NAME);

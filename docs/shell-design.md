@@ -227,7 +227,7 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
   電源プロファイル=powerprofilesctl、ロック/スリープ=loginctl/systemctl、ログアウト/再起動/電源オフ=`org.kde.LogoutPrompt`）、
   `sys/media.js`（MPRIS）、`sys/keys.js`（KWinスクリプトの `registerShortcut`。既定 Meta+Space）、`src/quick.js`
 - 方針：Wi-Fi は**登録済みネットワークへの接続のみ**（パスワードを PRELUDE に入力させない。未登録は KDE のネットワーク設定で一度登録）。
-  明るさは下限5%（0%で画面が真っ暗になり戻せなくなるのを防ぐ）。画面側から送る操作は固定の種類だけ受け付け、引数は main 側で検証。
+  明るさは下限1%（0%は真っ暗で戻せなくなるので不可。暗い部屋では1〜2%を使う人もいる）。画面側から送る操作は固定の種類だけ受け付け、引数は main 側で検証。
 - 未：夜間モード（KWin の NightLight は on/off の永続設定が D-Bus に無く、kwinrc の書き換えが必要なので見送り）、
   Wi-Fi のパスワード入力（KDE の秘密情報エージェント経由にする設計を段階4で検討）、取り込んでいない窓のタスク表示
 
@@ -244,6 +244,22 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
 - 設計上の割り切り：本文はプレーンテキストのみ表示（`body-markup` は広告しない。HTMLは解釈しない）。`image-data` ヒントと
   サウンドは未対応。オーバーレイは KDE 以外では無効（履歴は残る）。
 - 未（段階3の残り）：OSD（音量・明るさのキー）、壁紙・ホーム画面
+
+## 6.5 段階3b の実装状況（OSD）
+
+- 済：`sys/osd.js`（音量=status.js の変化通知、明るさ=powerdevil の `brightnessChanged` シグナル）、オーバーレイの `osd` 種類
+  （画面中央下、約1.5秒）。PRELUDE 自身のスライダー操作では出さない（`quiet`）。
+  緊急用ショートカット Meta+Shift+B で明るさ50%（`keys.js` の `raise:false` = 前面に出さない）。
+  明るさが0%（四捨五入して0）のまま8秒続いたら20%へ自動で戻す安全策（`makeLowGuard`。1〜2%は暗いだけで見えるので対象外）。
+- 不具合の修正：`pactl subscribe` の出力が日本語ロケールだと `sink` に一致せず、音量の変化が最大15秒遅れていた → `LC_ALL=C` で起動。
+- **既知の未対応：plasmashell が止まっている間、キーボードの音量キーが効かない。**
+  `Volume Up/Down/Mute` は kglobalaccel 上で停止中の kmix の持ち物のまま残り、PRELUDE の KWin ショートカットには割り当てられない
+  （実機で `PRELUDE volumeUp=,none` のまま空になることを確認。ショートカットの呼び出しでは動くが、物理キーでは動かない）。
+  音量はバーのホイール・クイック設定・OSD で操作できる。
+  取る方法は kmix コンポーネントになりすます登録（`doRegister` + `setShortcut`）だが、PRELUDE の終了時に KDE が
+  「kmix は無効」と判断すると、plasmashell が動いている通常時の音量キーまで効かなくなる恐れがあり、慎重な検証が要る。
+  明るさキーは powerdevil が処理するので影響なし（OSD は PRELUDE が出す）。
+- 未（段階3の残り）：壁紙・ホーム画面
 
 ## 7. 決めておきたいこと
 

@@ -7,6 +7,7 @@ const fs = require('fs');
 let state = null; // 直近に送った状態(JSON文字列)
 let last = { battery: null, volume: null, net: null };
 let push = () => {};
+let onVolume = () => {};
 
 const run = (cmd, args) => new Promise((resolve) => {
   execFile(cmd, args, { timeout: 3000 }, (err, out) => resolve(err ? null : out));
@@ -46,14 +47,29 @@ async function readNet() {
 async function refresh(parts = ['battery', 'volume', 'net']) {
   if (parts.includes('battery')) last.battery = readBattery();
   const jobs = [];
-  if (parts.includes('volume')) jobs.push(readVolume().then((v) => { last.volume = v; }));
+  if (parts.includes('volume')) {
+    jobs.push(readVolume().then((v) => {
+      const o = last.volume;
+      last.volume = v;
+      if (o && v && (o.percent !== v.percent || o.muted !== v.muted)) onVolume(v); // 起動直後の初回取得では鳴らさない
+    }));
+  }
   if (parts.includes('net')) jobs.push(readNet().then((v) => { last.net = v; }));
   await Promise.all(jobs);
   const json = JSON.stringify(last);
   if (json !== state) { state = json; push(last); }
 }
 
-function init({ send, ipcMain }) {
+async function audio(cmd) {
+  if (cmd === 'up') await run('wpctl', ['set-volume', '-l', '1.0', '@DEFAULT_AUDIO_SINK@', '5%+']);
+  else if (cmd === 'down') await run('wpctl', ['set-volume', '@DEFAULT_AUDIO_SINK@', '5%-']);
+  else if (cmd === 'mute') await run('wpctl', ['set-mute', '@DEFAULT_AUDIO_SINK@', 'toggle']);
+  else return;
+  await refresh(['volume']);
+}
+
+function init({ send, ipcMain, onVolumeChange }) {
+  if (onVolumeChange) onVolume = onVolumeChange;
   if (process.platform !== 'linux') {
     ipcMain.handle('sys:status', () => last);
     ipcMain.handle('sys:audio', () => {});
@@ -63,13 +79,7 @@ function init({ send, ipcMain }) {
   ipcMain.handle('sys:status', async () => { await refresh(); return last; });
 
   // 音量の操作。引数は固定の語だけ受け付ける
-  ipcMain.handle('sys:audio', async (_e, cmd) => {
-    if (cmd === 'up') await run('wpctl', ['set-volume', '-l', '1.0', '@DEFAULT_AUDIO_SINK@', '5%+']);
-    else if (cmd === 'down') await run('wpctl', ['set-volume', '@DEFAULT_AUDIO_SINK@', '5%-']);
-    else if (cmd === 'mute') await run('wpctl', ['set-mute', '@DEFAULT_AUDIO_SINK@', 'toggle']);
-    else return;
-    await refresh(['volume']);
-  });
+  ipcMain.handle('sys:audio', (_e, cmd) => audio(cmd));
 
   refresh();
   setInterval(() => refresh(['battery', 'net']), 5000);
@@ -77,7 +87,7 @@ function init({ send, ipcMain }) {
   // 音量の変化は pactl subscribe で即座に拾う(無ければ定期取得のみ)
   let timer = null;
   try {
-    const sub = spawn('pactl', ['subscribe'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const sub = spawn('pactl', ['subscribe'], { stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } }) // 出力が日本語だと 'sink' を見つけられない;
     sub.on('error', () => {});
     sub.stdout.on('data', (d) => {
       if (!/sink|server/.test(String(d))) return;
@@ -87,7 +97,7 @@ function init({ send, ipcMain }) {
     process.on('exit', () => { try { sub.kill(); } catch {} });
   } catch {}
   setInterval(() => refresh(['volume']), 15000);
-  return { refresh: () => refresh() };
+  return { refresh: () => refresh(), audio };
 }
 
 module.exports = { init };

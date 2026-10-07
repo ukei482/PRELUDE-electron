@@ -70,6 +70,7 @@ const media = require('./sys/media');
 const keys = require('./sys/keys');
 const notify = require('./sys/notify');
 const overlay = require('./sys/overlay');
+const osd = require('./sys/osd');
 
 let config;
 let win = null;
@@ -445,13 +446,21 @@ app.whenReady().then(async () => {
     }
     cb({ requestHeaders: h });
   });
-  const sys = status.init({ send, ipcMain });
-  quick.init({ ipcMain, refreshStatus: sys?.refresh });
+  const sys = status.init({ send, ipcMain, onVolumeChange: (v) => osd.show('volume', v.percent, v.muted) });
+  quick.init({ ipcMain, refreshStatus: sys?.refresh, onSelfChange: () => osd.quiet() });
   if (process.platform === 'linux') {
     media.init({ ipcMain, send });
-    // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。押されたら PRELUDE を前面に出して画面側へ知らせる
-    bus.onReport('shortcut', (name) => { if (name === 'launcher') send('shortcut', { action: 'launcher', paneId: null }); });
-    keys.load({ launcher: config.get('shortcuts.globalLauncher') });
+    // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。
+    // 音量キーは kglobalaccel 上で kmix(plasmashell)の持ち物のままなので PRELUDE は受けられない(docs/shell-design.md 参照)
+    keys.load({
+      launcher: { key: config.get('shortcuts.globalLauncher'), raise: true },
+      brightnessReset: { key: 'Meta+Shift+B', raise: false }, // 緊急用: 画面が暗すぎるとき
+    });
+    bus.onReport('shortcut', (name) => {
+      if (name === 'launcher') send('shortcut', { action: 'launcher', paneId: null });
+      else if (name === 'brightnessReset') osd.resetBrightness();
+    });
+    osd.init();
     // 通知サーバ。トーストは別窓(オーバーレイ)に、履歴と未読数は本体の通知センターに送る
     overlay.init();
     ipcMain.handle('overlay:theme', () => config.data.appearance);

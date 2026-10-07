@@ -10,7 +10,7 @@ const { exec } = require('./util');
 
 const NAME = 'prelude-overlay';
 const supported = process.platform === 'linux' && /kde/i.test(process.env.XDG_CURRENT_DESKTOP || '');
-const KINDS = { notify: { width: 380 } };
+const KINDS = { notify: { width: 380 }, osd: { width: 280 } };
 const wins = new Map(); // kind -> BrowserWindow
 let scriptFile = null;
 
@@ -36,6 +36,7 @@ function place(w) {
   var r = (mw && mw.output ? mw.output : w.output).geometry;
   var g = w.frameGeometry, t = null;
   if (m[1] === 'notify') t = { x: r.x + r.width - g.width - 12, y: r.y + 44, width: g.width, height: g.height };
+  if (m[1] === 'osd') t = { x: r.x + Math.round((r.width - g.width) / 2), y: r.y + r.height - g.height - 72, width: g.width, height: g.height };
   if (t && (g.x !== t.x || g.y !== t.y)) w.frameGeometry = t;
   workspace.raiseWindow(w);
 }
@@ -94,7 +95,10 @@ function init() {
 const send = (kind, channel, payload) => {
   if (!supported) return;
   const win = get(kind);
-  if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  if (win.isDestroyed()) return;
+  const go = () => { if (!win.isDestroyed()) win.webContents.send(channel, payload); };
+  // 作った直後はページがまだ読み込み中で、送っても取りこぼす
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', go); else go();
 };
 
 const shutdown = () => { if (supported) kwin('/Scripting', 'org.kde.kwin.Scripting.unloadScript', NAME); };

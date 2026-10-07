@@ -22,6 +22,7 @@ st() {
 
 cleanup() {
   echo "== CLEANUP"
+  [ -n "${V0:-}" ] && wpctl set-volume @DEFAULT_AUDIO_SINK@ "$(echo "$V0" | grep -o '[0-9.]\+' | head -1)" 2>/dev/null
   "$APP/scripts/shell-mode.sh" off --now
   rm -rf "$DROP" "$UD/prelude-shell.service" "$UD/prelude-shell-fallback.service" "$TMP"
   $SC daemon-reload
@@ -33,7 +34,11 @@ trap cleanup EXIT
 mkdir -p "$DROP" "$TMP/ud"
 echo '{"behavior":{"startFullscreen":false}}' > "$TMP/ud/config.json"
 
+kmixkeys() { grep -E '^(increase_volume|decrease_volume|mute)=' ~/.config/kglobalshortcutsrc 2>/dev/null | tr '\n' ' '; }
+vol() { wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null; }
 echo "== BEFORE"; st
+echo "  kmix keys: $(kmixkeys)"
+V0=$(vol); echo "  volume: $V0"
 "$APP/scripts/shell-mode.sh" on >/dev/null   # ユニットを入れるだけ(--now なし)
 
 # テスト用: 動作中の PRELUDE と衝突しないよう別のデータフォルダで起動する
@@ -71,6 +76,11 @@ http.get('http://127.0.0.1:9666/json', (r) => { let d = ''; r.on('data', (c) => 
 }); }).on('error', (e) => { console.log('  CDP error:', e.message); process.exit(0); });
 JS
 
+echo "== TEST1d: PRELUDE's global shortcuts do not take kmix's keys"
+sleep 2
+grep -E '^PRELUDE (launcher|brightnessReset)' ~/.config/kglobalshortcutsrc | sed 's/^/  /'
+echo "  kmix keys during: $(kmixkeys)"
+
 echo "== TEST1b: clean stop, then off --now"
 # 正常な停止は「失敗」扱いにならない(失敗だと OnFailure で余計な復旧が走る)。reset-failed の前に結果を読む
 $SC stop prelude-shell.service; sleep 4
@@ -78,6 +88,8 @@ echo "  prelude-shell result after clean stop: $($SC show prelude-shell -p Resul
 echo "  OnFailure triggered during clean stop: $(journalctl --user -u prelude-shell --since '-15sec' --no-pager 2>/dev/null | grep -c 'Triggering OnFailure') (期待値: 0)"
 "$APP/scripts/shell-mode.sh" off --now; sleep 3; st
 echo "  owner of org.freedesktop.Notifications after restore: $(busctl --user status org.freedesktop.Notifications 2>/dev/null | grep -E '^Comm=' | tr '\n' ' ')"
+echo "  kmix keys after: $(kmixkeys)"
+echo "  volume after: $(vol) (開始時: $V0)"
 
 echo "== TEST2: fallback (PRELUDE keeps failing)"
 cat > "$DROP/test.conf" <<EOF

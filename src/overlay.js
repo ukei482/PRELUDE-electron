@@ -3,6 +3,7 @@
 const api = window.overlayApi;
 const kind = new URLSearchParams(location.search).get('kind');
 const root = document.getElementById('toasts');
+const osdRoot = document.getElementById('osd');
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -42,9 +43,29 @@ function render(list) {
   api.size(kind, list.length ? Math.ceil(root.getBoundingClientRect().height) + 4 : 0);
 }
 
+// OSD(音量・明るさ)。null が来たら隠す
+function renderOsd(p) {
+  if (!p) { osdRoot.style.display = 'none'; osdRoot.replaceChildren(); api.size(kind, 0); return; }
+  const label = p.kind === 'volume' ? (p.muted ? 'ミュート' : '音量') : '明るさ';
+  const card = el('div', 'osdcard' + (p.muted ? ' muted' : ''));
+  const row = el('div', 'row');
+  row.append(el('span', 'lbl', label), el('span', 'val', p.muted ? '' : `${p.percent}%`));
+  const fill = el('div', 'fill');
+  fill.style.width = `${Math.max(0, Math.min(100, p.muted ? 0 : p.percent))}%`;
+  const track = el('div', 'track');
+  track.append(fill);
+  card.append(row, track);
+  if (p.note) card.append(el('div', 'note', p.note));
+  osdRoot.replaceChildren(card);
+  osdRoot.style.display = 'block';
+  api.size(kind, Math.ceil(osdRoot.getBoundingClientRect().height) + 4);
+}
+
+if (kind === 'osd') { root.style.display = 'none'; api.onOsd(renderOsd); }
+
 api.theme().then((a) => {
   const r = document.documentElement.style;
   for (const k of ['bg', 'panel', 'line', 'text', 'dim', 'accent', 'danger']) if (a[k]) r.setProperty('--' + k, a[k]);
   if (a.fontSize) r.setProperty('--fs', a.fontSize + 'px');
-}).finally(() => api.toasts().then(render));
-api.onToasts(render);
+}).finally(() => { if (kind === 'notify') api.toasts().then(render); });
+if (kind === 'notify') api.onToasts(render);
