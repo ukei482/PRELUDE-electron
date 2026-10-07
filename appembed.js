@@ -4,6 +4,8 @@
 // 「ペインの位置・大きさに外部アプリのウィンドウを重ねて配置」します(枠なし・最前面)。
 // スクリプトは状態(各ペインの矩形・PID)を埋め込んだ常駐スクリプトとして都度読み直します。
 const { spawn, execFile } = require('child_process');
+const bus = require('./sys/bus');
+const apps = require('./sys/apps');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -157,14 +159,14 @@ function raiseEmbedded() {
   });
 }
 // 各ペインのウィンドウ数をNode側へ知らせる(ウィンドウが閉じたら取り込みを終えるため)。
-// 宛先のサービスは無く、dbus-monitor が通信を横取りして読む
+// 宛先は PRELUDE の D-Bus サービス(sys/bus.js)
 function report() {
   var counts = STATE.panes.map(function () { return 0; });
   workspace.windowList().forEach(function (w) {
     var p = paneOf(w);
     if (p) counts[STATE.panes.indexOf(p)]++;
   });
-  callDBus('org.prelude.embed', '/', 'org.prelude.embed', 'windows', JSON.stringify(counts));
+  callDBus('org.prelude.Shell', '/org/prelude/Shell', 'org.prelude.Shell', 'Report', 'windows', JSON.stringify(counts));
 }
 function applyEverything() { applyShell(); applyAll(); raiseEmbedded(); report(); }
 workspace.windowRemoved.connect(function () { report(); });
@@ -196,41 +198,25 @@ async function reload() {
   }
 }
 
-// KWinスクリプトからの報告(ウィンドウ数)を受け取る。dbus-monitor が無い環境では従来のPID監視にフォールバックする
+// KWinスクリプトからの報告(ウィンドウ数)を受け取る。D-Bus に繋がらない環境では従来のPID監視にフォールバックする
 let monitorOk = false;
 let order = []; // 直近のスクリプトでのペインの並び(報告の添字に対応)
 function startMonitor() {
-  if (!supported || monitorOk) return;
-  let mon;
-  try { mon = spawn('dbus-monitor', ['--session', "type='method_call',interface='org.prelude.embed'"], { stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return; }
-  mon.on('error', () => { monitorOk = false; });
-  mon.on('exit', () => { monitorOk = false; });
+  if (!supported || monitorOk || !bus.get()) return;
   monitorOk = true;
-  let buf = '', next = false;
-  mon.stdout.on('data', (d) => {
-    buf += d;
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const ln of lines) {
-      if (/member=windows/.test(ln)) { next = true; continue; }
-      const m = next && /string "(\[.*\])"/.exec(ln);
-      if (!m) continue;
-      next = false;
-      let counts;
-      try { counts = JSON.parse(m[1]); } catch { continue; }
-      counts.forEach((n, i) => {
-        const id = order[i];
-        const e = id && panes.get(id);
-        if (!e) return;
-        if (n > 0) { e.hadWindow = true; e.gone = 0; return; }
-        if (!e.hadWindow) return;
-        // 一瞬の0(ウィンドウの作り直しなど)を避けるため、少し待ってもう一度報告させ、続けて0なら終了とみなす
-        if (++e.gone === 1) setTimeout(() => schedule(0), 800);
-        else if (e.gone === 2) notify('exited', id);
-      });
-    }
+  bus.onReport('windows', (counts) => {
+    if (!Array.isArray(counts)) return;
+    counts.forEach((n, i) => {
+      const id = order[i];
+      const e = id && panes.get(id);
+      if (!e) return;
+      if (n > 0) { e.hadWindow = true; e.gone = 0; return; }
+      if (!e.hadWindow) return;
+      // 一瞬の0(ウィンドウの作り直しなど)を避けるため、少し待ってもう一度報告させ、続けて0なら終了とみなす
+      if (++e.gone === 1) setTimeout(() => schedule(0), 800);
+      else if (e.gone === 2) notify('exited', id);
+    });
   });
-  process.on('exit', () => { try { mon.kill(); } catch {} });
 }
 
 function schedule(ms = 40) {
@@ -300,32 +286,6 @@ function shutdown() {
   if (supported) gdbus('/Scripting', 'org.kde.kwin.Scripting.unloadScript', SCRIPT_NAME);
 }
 
-// .desktop ファイルからインストール済みアプリの一覧を作る
-function listApps() {
-  const dirs = [
-    '/usr/share/applications', '/usr/local/share/applications',
-    path.join(os.homedir(), '.local/share/applications'),
-    '/var/lib/flatpak/exports/share/applications',
-    path.join(os.homedir(), '.local/share/flatpak/exports/share/applications'),
-  ];
-  const map = new Map();
-  for (const dir of dirs) {
-    let files = [];
-    try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.desktop')); } catch { continue; }
-    for (const f of files) {
-      try {
-        const sec = fs.readFileSync(path.join(dir, f), 'utf8').split(/\n\[/)[0];
-        const get = (k) => new RegExp(`^${k}=(.*)$`, 'm').exec(sec)?.[1]?.trim();
-        if (get('Type') !== 'Application' || get('NoDisplay') === 'true' || get('Hidden') === 'true') continue;
-        const exec = (get('Exec') || '').replace(/%[a-zA-Z]/g, '').replace(/\s+/g, ' ').trim();
-        if (!exec) continue;
-        map.set(f, { name: get('Name') || f, exec, cls: (get('StartupWMClass') || '').toLowerCase() });
-      } catch {}
-    }
-  }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
 // 実ブラウザ(Chromium系)をアプリモードで開くコマンド。ペインごとにウィンドウクラスを付けて、取り込み時に見分ける
 function browserCmd(url, cls) {
   const bin = ['/snap/bin/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome']
@@ -345,6 +305,6 @@ function browserCmd(url, cls) {
 
 module.exports = {
   browserCmd,
-  supported, setShell, launch, setBounds, setSuspended, close, shutdown, listApps,
+  supported, setShell, launch, setBounds, setSuspended, close, shutdown, listApps: apps.list,
   onEvent: (cb) => { notify = cb; },
 };

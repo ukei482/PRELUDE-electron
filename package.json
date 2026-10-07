@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "electron": "^44.5.1"
+  },
+  "dependencies": {
+    "dbus-next": "^0.10.2"
   }
 }

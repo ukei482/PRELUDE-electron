@@ -1,0 +1,50 @@
+'use strict';
+// ステータスバー(下端の細いバー)。左: ランチャー / 右: 音量・ネットワーク・電池・時計。
+// app.js より先に読み込まれ、boot() から initBar() が呼ばれる(h / ico / api などは app.js 側の共通定義)。
+
+const bar = { sys: { battery: null, volume: null, net: null }, el: {} };
+
+function paintBar() {
+  const { battery, volume, net } = bar.sys;
+  const { vol, netEl, bat } = bar.el;
+  vol.style.display = volume ? '' : 'none';
+  if (volume) vol.textContent = volume.muted ? '音量 ミュート' : `音量 ${volume.percent}%`;
+  netEl.style.display = net ? '' : 'none';
+  if (net) {
+    netEl.textContent = net.kind === 'wifi' ? `Wi-Fi ${net.name}` : net.kind === 'ethernet' ? '有線接続' : 'オフライン';
+    netEl.classList.toggle('warn', net.kind === 'none');
+  }
+  bat.style.display = battery ? '' : 'none';
+  if (battery) {
+    const chg = battery.status === 'Charging' ? ' 充電中' : battery.status === 'Full' ? ' 満充電' : '';
+    bat.textContent = `電池 ${battery.percent}%${chg}`;
+    bat.classList.toggle('warn', battery.status === 'Discharging' && battery.percent <= 15);
+  }
+}
+
+const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+function paintClock() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  bar.el.clock.textContent = `${d.getMonth() + 1}/${d.getDate()}(${WEEK[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function initBar() {
+  const root = document.getElementById('statusbar');
+  const launch = h('button', { class: 'barbtn', title: 'ランチャー', onclick: () => openLauncher() }, ico('window'), 'アプリ・検索');
+  // 音量: クリックでミュート切替、ホイールで±5%
+  const vol = h('span', {
+    class: 'baritem clickable', title: 'クリック: ミュート / ホイール: 音量',
+    onclick: () => api.sys.audio('mute'),
+    onwheel: (e) => { e.preventDefault(); api.sys.audio(e.deltaY < 0 ? 'up' : 'down'); },
+  });
+  const netEl = h('span', { class: 'baritem' });
+  const bat = h('span', { class: 'baritem' });
+  const clock = h('span', { class: 'baritem', title: '' });
+  Object.assign(bar.el, { vol, netEl, bat, clock });
+  root.replaceChildren(launch, h('span', { class: 'grow' }), vol, netEl, bat, clock);
+  paintClock();
+  setInterval(paintClock, 10000);
+  api.sys.status().then((s) => { bar.sys = s || bar.sys; paintBar(); });
+  api.sys.onStatus((s) => { bar.sys = s; paintBar(); });
+}

@@ -34,6 +34,7 @@ const SCHEMA = [
   {
     title: '動作',
     fields: [
+      { path: 'behavior.appOpen', label: 'アプリを開く方法（ランチャー）', type: 'select', options: [['embed', 'ペインに取り込む'], ['window', '別ウィンドウ']] },
       { path: 'behavior.startKind', label: '新しいタブの種類', type: 'select', options: KINDS },
       { path: 'behavior.homepage', label: 'Webのホームページ', type: 'text' },
       { path: 'behavior.searchEngine', label: '検索エンジン（%s が検索語）', type: 'text' },
@@ -50,6 +51,7 @@ const SCHEMA = [
       { path: 'shortcuts.newTab', label: '新しいタブ', type: 'text' },
       { path: 'shortcuts.closeTab', label: 'タブを閉じる', type: 'text' },
       { path: 'shortcuts.fullscreen', label: '全画面', type: 'text' },
+      { path: 'shortcuts.launcher', label: 'ランチャー', type: 'text' },
     ],
   },
 ];
@@ -63,6 +65,7 @@ function defaults() {
     },
     behavior: {
       startKind: 'files',
+      appOpen: 'embed',
       homepage: 'https://www.google.com',
       searchEngine: 'https://www.google.com/search?q=%s',
       startPath: '',
@@ -73,7 +76,7 @@ function defaults() {
     },
     bookmarks: [],
     appUsage: [],
-    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', fullscreen: 'F11' },
+    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', fullscreen: 'F11', launcher: 'Ctrl+Shift+P' },
   };
 }
 

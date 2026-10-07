@@ -677,6 +677,7 @@ api.onShortcut(({ action, paneId }) => {
   else if (action === 'closeTab') closeTab(tab);
   else if (action === 'fullscreen') api.win.cmd('toggleFullscreen');
   else if (action === 'focusAddress') focusAddress();
+  else if (action === 'launcher') openLauncher();
   else if (cur?.type === 'web' && ['reload', 'back', 'forward'].includes(action)) webCmd(cur, action);
 });
 
@@ -767,9 +768,10 @@ async function boot() {
     { label: '設定', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
+  initBar();
 
   new ResizeObserver(() => syncViews()).observe($('#workspace'));
-  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePopup(); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePopup(); closeLauncher(); } });
 
   if (ws && Array.isArray(ws.tabs)) restore(ws);
   if (!S.tabs.length) openTab(C.behavior.startKind);

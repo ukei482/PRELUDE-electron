@@ -3,6 +3,7 @@ const { app, BrowserWindow, WebContentsView, Menu, ipcMain, shell, session } = r
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { spawn } = require('child_process');
 
 app.setName('PRELUDE-electron');
 
@@ -59,6 +60,8 @@ if (!app.requestSingleInstanceLock()) {
 
 const { Config, SCHEMA } = require('./config');
 const appembed = require('./appembed');
+const bus = require('./sys/bus');
+const status = require('./sys/status');
 
 let config;
 let win = null;
@@ -102,6 +105,7 @@ function bindings() {
     ['newTab', config.get('shortcuts.newTab')],
     ['closeTab', config.get('shortcuts.closeTab')],
     ['fullscreen', config.get('shortcuts.fullscreen')],
+    ['launcher', config.get('shortcuts.launcher')],
     ['focusAddress', 'Ctrl+L'],
     ['reload', 'F5'],
     ['reload', 'Ctrl+R'],
@@ -124,7 +128,7 @@ function hookInput(wc, paneId = null) {
       if (!accelMatches(accel, input)) continue;
       event.preventDefault();
       if (action === 'devtools') { wc.toggleDevTools(); return; }
-      if (action === 'focusAddress' && win) win.webContents.focus(); // ネイティブビューからシェルへフォーカスを戻す
+      if ((action === 'focusAddress' || action === 'launcher') && win) win.webContents.focus(); // ネイティブビューからシェルへフォーカスを戻す
       send('shortcut', { action, paneId });
       return;
     }
@@ -298,6 +302,16 @@ ipcMain.handle('app:list', () => appembed.listApps());
 ipcMain.handle('app:launch', (_e, paneId, cmd, cls) => appembed.launch(paneId, cmd, cls));
 ipcMain.on('app:bounds', (_e, paneId, rect) => appembed.setBounds(paneId, rect));
 ipcMain.on('app:close', (_e, paneId) => appembed.close(paneId));
+// 取り込まずに普通のウィンドウとして起動する(設定「アプリを開く方法」が「別ウィンドウ」のとき)
+ipcMain.handle('app:spawn', (_e, cmd) => {
+  if (typeof cmd !== 'string' || !cmd.trim()) return false;
+  try {
+    const p = spawn('/bin/sh', ['-c', cmd], { detached: true, stdio: 'ignore' });
+    p.on('error', () => {});
+    p.unref();
+    return true;
+  } catch { return false; }
+});
 
 // ---------------------------------------------------------------- file system
 ipcMain.handle('fs:list', async (_e, dir, showHidden) => {
@@ -406,8 +420,9 @@ ipcMain.handle('dl:cancel', (_e, id) => {
 });
 
 // ---------------------------------------------------------------- lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   config = new Config();
+  if (process.platform === 'linux') await bus.init(); // D-Bus が使えなくても続行(シェル機能なしで動く)
   Menu.setApplicationMenu(null);
   setupDownloads();
   // 通信側のClient Hintsヘッダも、全リクエストで本物のChromeと同じブランド構成にそろえる(読み込み開始との競合を避ける)
@@ -422,8 +437,9 @@ app.whenReady().then(() => {
     }
     cb({ requestHeaders: h });
   });
+  status.init({ send, ipcMain });
   createWindow();
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 });
 app.on('window-all-closed', () => app.quit());
-app.on('will-quit', () => appembed.shutdown());
+app.on('will-quit', () => { appembed.shutdown(); bus.shutdown(); });

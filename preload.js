@@ -38,7 +38,13 @@ contextBridge.exposeInMainWorld('preludeApi', {
     launch: (id, cmd, cls) => ipcRenderer.invoke('app:launch', id, cmd, cls),
     bounds: (id, rect) => ipcRenderer.send('app:bounds', id, rect),
     close: (id) => ipcRenderer.send('app:close', id),
+    spawn: (cmd) => ipcRenderer.invoke('app:spawn', cmd),
     onExited: (cb) => on('app:exited', cb),
+  },
+  sys: {
+    status: () => ipcRenderer.invoke('sys:status'),
+    audio: (cmd) => ipcRenderer.invoke('sys:audio', cmd),
+    onStatus: (cb) => on('sys:status', cb),
   },
   fs: {
     list: (dir, showHidden) => ipcRenderer.invoke('fs:list', dir, showHidden),
