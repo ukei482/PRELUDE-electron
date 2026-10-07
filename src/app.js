@@ -64,6 +64,7 @@ function makeLeaf(type, o = {}) {
       mode: o.mode || 'browse', dlId: o.dlId, filename: o.filename || '', dlMsg: '',
     };
   }
+  if (type === 'app') return { k: 'leaf', id, type, cmd: o.cmd || '', cls: o.cls || '', name: o.name || '', webUrl: o.webUrl || '', running: false, apps: null, filter: '' };
   return { k: 'leaf', id, type: 'settings' };
 }
 
@@ -82,9 +83,10 @@ function tabTitle(tab) {
   if (!l) return '';
   if (l.type === 'web') return l.title || hostOf(l.url) || '新しいタブ';
   if (l.type === 'files') return l.mode === 'save' ? '保存先を選択' : baseName(l.path) || 'フォルダ';
+  if (l.type === 'app') return l.name || l.cmd || 'アプリ';
   return '設定';
 }
-const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : 'settings');
+const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : l.type === 'app' ? 'window' : 'settings');
 
 function renderSidebar() {
   const bl = $('#bm-list');
@@ -103,7 +105,7 @@ function renderSidebar() {
           { label: '削除', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((x) => x !== b); saveBookmarks(); renderSidebar(); } },
         ], e.clientX, e.clientY);
       },
-    }, ico(b.kind === 'web' ? 'globe' : 'folder'), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null));
+    }, ico(b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : 'folder'), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null));
   }
 
   const tl = $('#tab-list');
@@ -114,7 +116,7 @@ function renderSidebar() {
     const icon = l.type === 'web' && l.favicon ? h('img', { class: 'fav', src: l.favicon, onerror: (e) => e.target.replaceWith(ico('globe')) }) : ico(leafIcon(l));
     tl.append(h('div', {
       class: 'item' + (tab.id === S.active ? ' active' : ''),
-      onclick: () => { S.active = tab.id; render(); },
+      onclick: () => showTab(tab),
       onauxclick: (e) => { if (e.button === 1) closeTab(tab); },
     }, icon, h('span', { class: 'label' }, tabTitle(tab)), n > 1 ? h('span', { class: 'badge' }, '+' + (n - 1)) : null,
     h('button', { class: 'ibtn x', title: '閉じる', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close'))));
@@ -122,7 +124,15 @@ function renderSidebar() {
 }
 
 // ------------------------------------------------------------------ tabs / panes
+// タブを前面に出す。アプリが終了して空になっているアプリペインは、同じアプリをもう一度起動して全面に出す
+function showTab(tab) {
+  S.active = tab.id;
+  render();
+  for (const l of leaves(tab.root)) if (l.type === 'app' && !l.running && l.dormant) { l.dormant = false; startApp(l, l.cmd, l.cls, l.name); }
+}
+
 function openTab(kind, o = {}) {
+  if (kind === 'app' && !S.appSupported) kind = 'files';
   const leaf = makeLeaf(kind, o);
   const tab = { id: nid('t'), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null };
   S.tabs.push(tab);
@@ -133,6 +143,7 @@ function openTab(kind, o = {}) {
 
 function destroyLeaf(l) {
   if (l.type === 'web' && l.created) api.web.destroy(l.id);
+  if (l.type === 'app' && l.running) api.app.close(l.id);
   if (l.mode === 'save' && l.dlId && !l.dlHandled) { l.dlHandled = true; api.dl.cancel(l.dlId); }
 }
 
@@ -171,18 +182,31 @@ function setActivePane(tab, leaf) {
 }
 
 // ------------------------------------------------------------------ bookmarks
-const bmToJson = (b) => ({ id: b.id, kind: b.kind, title: b.title, [b.kind === 'web' ? 'url' : 'path']: b.target });
+const bmToJson = (b) => (b.kind === 'app'
+  ? { id: b.id, kind: 'app', title: b.title, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' }
+  : { id: b.id, kind: b.kind, title: b.title, [b.kind === 'web' ? 'url' : 'path']: b.target });
 function loadBookmarks() {
   S.bookmarks = [];
   S.foreignBm = [];
   for (const b of C.bookmarks || []) {
-    if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, title: b.title || '', target: b.url || b.path || '' });
+    if (b.kind === 'app' && (b.cmd || b.webUrl)) S.bookmarks.push({ id: b.id, kind: 'app', title: b.title || '', target: b.webUrl || b.cmd, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' });
+    else if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, title: b.title || '', target: b.url || b.path || '' });
     else S.foreignBm.push(b); // Rust版のアプリ取り込みブックマークなどは保持だけする
   }
 }
 const saveBookmarks = () => api.config.set('bookmarks', [...S.bookmarks.map(bmToJson), ...S.foreignBm]);
 
 function addBookmark(leaf) {
+  if (leaf.type === 'app') {
+    const target = leaf.webUrl || leaf.cmd;
+    if (!target) return;
+    if (S.bookmarks.some((b) => b.kind === 'app' && b.target === target)) { toast('登録済みです'); return; }
+    S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind: 'app', title: leaf.name || target, target, cmd: leaf.webUrl ? '' : leaf.cmd, cls: leaf.webUrl ? '' : leaf.cls, webUrl: leaf.webUrl || '' });
+    saveBookmarks();
+    renderSidebar();
+    toast('ブックマークに追加しました');
+    return;
+  }
   const kind = leaf.type === 'web' ? 'web' : 'files';
   const target = kind === 'web' ? leaf.url : leaf.path;
   if (!target) return;
@@ -195,7 +219,12 @@ function addBookmark(leaf) {
 
 function openBookmark(b) {
   const tab = S.tabs.find((t) => t.bookmarkId === b.id);
-  if (tab) { S.active = tab.id; render(); return; } // 1ブックマーク = 最大1タブ
+  if (tab) { showTab(tab); return; } // 1ブックマーク = 最大1タブ
+  if (b.kind === 'app') {
+    const t = openTab('app', { cmd: b.cmd, cls: b.cls, name: b.title, webUrl: b.webUrl, bookmarkId: b.id });
+    startApp(t.root, b.cmd, b.cls, b.title);
+    return;
+  }
   openTab(b.kind, { url: b.target, path: b.target, bookmarkId: b.id });
 }
 
@@ -268,11 +297,13 @@ function syncViews() {
     const at = activeTab();
     for (const tab of S.tabs) {
       for (const l of leaves(tab.root)) {
-        if (l.type !== 'web' || !l.created) continue;
+        const isWeb = l.type === 'web' && l.created;
+        if (!isWeb && !(l.type === 'app' && l.running)) continue;
+        const send = isWeb ? api.web.bounds : api.app.bounds;
         if (tab === at && l.slot && l.slot.isConnected) {
           const r = l.slot.getBoundingClientRect();
-          api.web.bounds(l.id, { x: r.left, y: r.top, width: r.width, height: r.height });
-        } else api.web.bounds(l.id, null);
+          send(l.id, { x: r.left, y: r.top, width: r.width, height: r.height });
+        } else send(l.id, null);
       }
     }
   });
@@ -340,6 +371,7 @@ function buildLeaf(tab, leaf) {
   leaf.el = { pane, head, body };
   leaf.ui = {};
   if (leaf.type === 'web') buildWeb(tab, leaf, head, body);
+  else if (leaf.type === 'app') buildApp(tab, leaf, head, body);
   else if (leaf.type === 'files') buildFiles(tab, leaf, head, body);
   else buildSettings(tab, leaf, head, body);
   return pane;
@@ -351,16 +383,33 @@ function commonButtons(tab, leaf) {
       { header: title },
       { label: 'Web', icon: 'globe', run: () => splitLeaf(tab, leaf, dir, 'web') },
       { label: 'フォルダ', icon: 'folder', run: () => splitLeaf(tab, leaf, dir, 'files') },
+      S.appSupported ? { label: 'アプリ', icon: 'window', run: () => splitLeaf(tab, leaf, dir, 'app') } : null,
       { label: '設定', icon: 'settings', run: () => splitLeaf(tab, leaf, dir, 'settings') },
-    ]));
+    ].filter(Boolean)));
     return b;
   };
+  const realBrowser = leaf.type === 'web' && S.appSupported
+    ? btn('window', '本物のChromiumで開く（Googleなどログインできないサイト用）', () => toRealBrowser(tab, leaf)) : null;
   return [
+    realBrowser,
     splitBtn('split-h', '左右に分割', 'row'),
     splitBtn('split-v', '上下に分割', 'col'),
-    leaf.type !== 'settings' && leaf.mode !== 'save' ? btn('bookmark', 'ブックマークに追加', () => addBookmark(leaf)) : null,
+    leaf.type !== 'settings' && (leaf.type !== 'app' || leaf.running) && leaf.mode !== 'save' ? btn('bookmark', 'ブックマークに追加', () => addBookmark(leaf)) : null,
     btn('close', '閉じる', () => closeLeaf(tab, leaf)),
   ].filter(Boolean);
+}
+
+// ------------------------------------------------------------------ real browser pane
+// ElectronのWebビューは、Googleなどに「サポートされていないブラウザ」と判定されてログインできないことがある。
+// そのときはペインを本物のChromiumのウィンドウ(アプリモード)に置き換える。プロファイルは専用で、ログインは保持される。
+function toRealBrowser(tab, leaf) {
+  const url = leaf.url || C.behavior.homepage;
+  const nl = makeLeaf('app', { webUrl: url });
+  destroyLeaf(leaf);
+  replaceNode(tab, leaf, nl);
+  if (tab.activePane === leaf.id) tab.activePane = nl.id;
+  render();
+  startApp(nl, '');
 }
 
 // ------------------------------------------------------------------ web pane
@@ -391,6 +440,58 @@ function updateWebUI(leaf) {
   u.back.disabled = !leaf.canBack;
   u.fwd.disabled = !leaf.canFwd;
   leaf.el?.pane.classList.toggle('loading', !!leaf.loading);
+}
+
+// ------------------------------------------------------------------ app pane
+// 外部アプリのウィンドウを、この .web-slot の位置に重ねて表示する(main.js / appembed.js が KWin 経由で配置)
+async function startApp(leaf, cmd, cls = '', name = '') {
+  if (leaf.webUrl) { // 実ブラウザ(Chromium)ペイン: ウィンドウの照合用クラスはペインごとに作る
+    ({ cmd, cls } = await api.app.browserCmd(leaf.webUrl, 'prelude-' + leaf.id));
+    name = hostOf(leaf.webUrl) || 'Chromium';
+  }
+  if (!cmd.trim()) return;
+  if (await api.app.launch(leaf.id, cmd, cls)) {
+    Object.assign(leaf, { cmd, cls, name: name || cmd.split(/\s+/)[0].split('/').pop(), running: true, dormant: false });
+    if (!leaf.webUrl) { try { localStorage.setItem('lastApp', JSON.stringify({ cmd, cls, name: leaf.name })); } catch {} }
+    render();
+  } else toast('起動できませんでした');
+}
+
+function buildApp(tab, leaf, head, body) {
+  if (leaf.webUrl && !leaf.running) { head.append(ico('window'), h('span', { class: 'ptitle' }, '起動中…'), ...commonButtons(tab, leaf)); return; }
+  head.append(ico('window'), h('span', { class: 'ptitle' }, leaf.running ? leaf.name : 'アプリを取り込む'), ...commonButtons(tab, leaf));
+  if (leaf.running) {
+    const slot = h('div', { class: 'web-slot app-slot' });
+    body.append(slot);
+    leaf.slot = slot;
+    return;
+  }
+  const cmdIn = h('input', {
+    type: 'text', class: 'addr', spellcheck: 'false', placeholder: '起動コマンド(例: kate, dolphin)',
+    value: leaf.cmd, style: { margin: '0', height: '28px' },
+    onkeydown: (e) => { if (e.key === 'Enter') startApp(leaf, cmdIn.value, leaf.cls); },
+  });
+  const search = h('input', {
+    type: 'text', class: 'addr', spellcheck: 'false', placeholder: 'インストール済みアプリを検索', value: leaf.filter,
+    style: { margin: '0', height: '28px' }, oninput: () => { leaf.filter = search.value; paint(); },
+  });
+  const list = h('div', { class: 'app-list' });
+  const paint = () => {
+    list.replaceChildren();
+    const q = leaf.filter.toLowerCase();
+    for (const a of (leaf.apps || []).filter((x) => !q || x.name.toLowerCase().includes(q)).slice(0, 200)) {
+      list.append(h('div', { class: 'app-row', title: a.exec, ondblclick: () => startApp(leaf, a.exec, a.cls, a.name), onclick: () => { cmdIn.value = a.exec; leaf.cmd = a.exec; leaf.cls = a.cls; } }, a.name));
+    }
+  };
+  let last = null;
+  try { last = JSON.parse(localStorage.getItem('lastApp') || 'null'); } catch {}
+  body.append(h('div', { class: 'app-launcher' },
+    last && last.cmd ? h('div', { class: 'app-bar' }, h('button', { class: 'textbtn', onclick: () => startApp(leaf, last.cmd, last.cls, last.name) }, `前回のアプリ「${last.name}」を起動`)) : null,
+    h('div', { class: 'app-bar' }, cmdIn, h('button', { class: 'textbtn', onclick: () => startApp(leaf, cmdIn.value, leaf.cls) }, '起動')),
+    h('div', { class: 'app-hint' }, 'ダブルクリックで起動。起動したウィンドウはこのペインの位置に重ねて表示されます。'),
+    search, list));
+  if (leaf.apps) paint();
+  else api.app.list().then((l) => { leaf.apps = l; paint(); });
 }
 
 // ------------------------------------------------------------------ folder pane
@@ -542,7 +643,7 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     const ser = (n) => (n.k === 'split'
       ? { k: 'split', dir: n.dir, ratio: n.ratio, a: ser(n.a), b: ser(n.b) }
-      : { k: 'leaf', type: n.type, url: n.url, path: n.path });
+      : { k: 'leaf', type: n.type, url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, webUrl: n.webUrl });
     api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ bookmarkId: t.bookmarkId, root: ser(t.root) })) });
   }, 600);
 }
@@ -550,7 +651,7 @@ function scheduleSave() {
 function restore(ws) {
   const deser = (n) => (n.k === 'split'
     ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deser(n.a), b: deser(n.b) }
-    : makeLeaf(['web', 'files', 'settings'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path }));
+    : makeLeaf(['web', 'files', 'settings', 'app'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, webUrl: n.webUrl }));
   for (const t of ws.tabs) {
     try {
       const root = deser(t.root);
@@ -614,6 +715,15 @@ api.dl.onDone(({ id, state }) => {
 api.dl.onSaved(({ path }) => toast('保存しました: ' + path));
 api.dl.onError(({ message }) => toast('保存に失敗しました: ' + message));
 
+api.app.onExited(({ paneId }) => {
+  const f = findLeaf(paneId);
+  if (!f || !f.leaf.running) return;
+  api.app.close(paneId);
+  f.leaf.running = false;
+  f.leaf.dormant = !!(f.leaf.cmd || f.leaf.webUrl); // 次にこのタブを開いたとき、同じアプリを起動し直す
+  render();
+});
+
 api.config.onChanged((values) => {
   C = values;
   applyTheme();
@@ -635,6 +745,7 @@ async function boot() {
   SCHEMA = cfg.schema;
   applyTheme();
   loadBookmarks();
+  S.appSupported = await api.app.supported();
 
   $('#tb-sidebar').append(ico('menu'));
   $('#tb-fullscreen').append(ico('fullscreen'));
@@ -648,7 +759,13 @@ async function boot() {
   $('#tb-min').onclick = () => api.win.cmd('minimize');
   $('#tb-max').onclick = () => api.win.cmd('toggleMaximize');
   $('#tb-close').onclick = () => api.win.cmd('close');
-  $('#new-tab').onclick = () => openTab(C.behavior.startKind);
+  $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [
+    { header: '新しいタブ' },
+    { label: 'Web', icon: 'globe', run: () => openTab('web') },
+    { label: 'フォルダ', icon: 'folder', run: () => openTab('files') },
+    S.appSupported ? { label: 'アプリ', icon: 'window', run: () => openTab('app') } : null,
+    { label: '設定', icon: 'settings', run: () => openSettings() },
+  ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
 
   new ResizeObserver(() => syncViews()).observe($('#workspace'));
@@ -657,6 +774,8 @@ async function boot() {
   if (ws && Array.isArray(ws.tabs)) restore(ws);
   if (!S.tabs.length) openTab(C.behavior.startKind);
   else render();
+  // 前回取り込んでいたアプリを再起動する
+  if (S.appSupported) for (const t of S.tabs) for (const l of leaves(t.root)) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
 }
 
 window.__prelude = { S, openTab, splitLeaf, activeTab, activeLeaf, leaves }; // デバッグ用

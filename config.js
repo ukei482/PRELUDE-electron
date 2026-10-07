@@ -12,6 +12,7 @@ const { app } = require('electron');
 const KINDS = [
   ['files', 'フォルダ'],
   ['web', 'Web'],
+  ['app', 'アプリ'],
 ];
 
 const SCHEMA = [
@@ -40,6 +41,7 @@ const SCHEMA = [
       { path: 'behavior.downloadDir', label: 'ダウンロードの開始フォルダ（空=ダウンロードフォルダ）', type: 'text' },
       { path: 'behavior.showHidden', label: '隠しファイル（.で始まる）を表示', type: 'bool' },
       { path: 'behavior.sidebarVisible', label: 'サイドバーを表示', type: 'bool' },
+      { path: 'behavior.startFullscreen', label: '起動時に全画面で開く（次回起動から）', type: 'bool' },
     ],
   },
   {
@@ -67,6 +69,7 @@ function defaults() {
       downloadDir: '',
       showHidden: false,
       sidebarVisible: true,
+      startFullscreen: true,
     },
     bookmarks: [],
     appUsage: [],

@@ -13,12 +13,52 @@ const platToken =
   : 'X11; Linux x86_64';
 app.userAgentFallback = `Mozilla/5.0 (${platToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 
+// Googleのログインなどは、Client Hints(sec-ch-ua / navigator.userAgentData)に「Google Chrome」が無い
+// Electronを「サポートされていないブラウザ」として弾く。UAだけでなく Client Hints も本物のChromeに合わせる。
+const chromeFull = process.versions.chrome;
+const chromeMajor = chromeFull.split('.')[0];
+const hintPlatform = process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux';
+async function spoofChrome(wc) {
+  try {
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    const list = (v) => [
+      { brand: 'Not?A_Brand', version: '24' },
+      { brand: 'Chromium', version: v },
+      { brand: 'Google Chrome', version: v },
+    ];
+    await wc.debugger.sendCommand('Emulation.setUserAgentOverride', {
+      userAgent: app.userAgentFallback,
+      acceptLanguage: 'ja,en-US,en',
+      userAgentMetadata: {
+        brands: list(chromeMajor),
+        fullVersionList: list(chromeFull).map((b) => (b.brand === 'Not?A_Brand' ? { ...b, version: '24.0.0.0' } : b)),
+        platform: hintPlatform,
+        platformVersion: process.platform === 'win32' ? '10.0.0' : process.platform === 'darwin' ? '10.15.7' : '6.0.0',
+        architecture: 'x86',
+        model: '',
+        mobile: false,
+        bitness: '64',
+        wow64: false,
+      },
+    });
+    // 通常のChromeには window.chrome.{app,csi,loadTimes} がある
+    await wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(() => { const c = window.chrome || (window.chrome = {});
+        if (!c.app) c.app = { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } };
+        if (!c.csi) c.csi = () => ({ onloadT: Date.now(), startE: Date.now(), pageT: performance.now(), tran: 15 });
+        if (!c.loadTimes) c.loadTimes = () => ({ requestTime: Date.now() / 1000, startLoadTime: Date.now() / 1000, commitLoadTime: Date.now() / 1000, finishDocumentLoadTime: 0, finishLoadTime: 0, firstPaintTime: 0, firstPaintAfterLoadTime: 0, navigationType: 'Other', wasFetchedViaSpdy: true, wasNpnNegotiated: true, npnNegotiatedProtocol: 'h2', wasAlternateProtocolAvailable: false, connectionInfo: 'h2' });
+      })();`,
+    });
+  } catch {}
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   process.exit(0);
 }
 
 const { Config, SCHEMA } = require('./config');
+const appembed = require('./appembed');
 
 let config;
 let win = null;
@@ -110,20 +150,41 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    if (config.get('behavior.startFullscreen')) setFullscreen(true);
+  });
   hookInput(win.webContents);
   const pushState = () => send('win:state', winState());
   ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen'].forEach((e) => win.on(e, pushState));
+  win.on('resize', () => {
+    if (pseudoFs || win.isMaximized() || win.isFullScreen()) return;
+    const [width, height] = win.getSize();
+    normalSize = { width, height };
+  });
   win.on('closed', () => { win = null; views.clear(); });
 }
-const winState = () => ({ maximized: !!win?.isMaximized(), fullscreen: !!win?.isFullScreen() });
+// KDE(Wayland)では本物の全画面にすると取り込んだアプリが後ろに隠れるので、KWinスクリプトで画面いっぱいに広げる疑似全画面にする
+let pseudoFs = false;
+let normalSize = { width: 1400, height: 900 }; // 疑似全画面を解除したときに戻す大きさ(通常時の大きさを覚えておく)
+const isFullscreen = () => pseudoFs || !!win?.isFullScreen();
+function setFullscreen(on) {
+  if (!win) return;
+  if (appembed.supported) {
+    if (on === pseudoFs) return;
+    pseudoFs = on;
+    appembed.setShell(on, normalSize);
+    send('win:state', winState());
+  } else win.setFullScreen(on);
+}
+const winState = () => ({ maximized: !!win?.isMaximized(), fullscreen: isFullscreen() });
 
 ipcMain.on('win:cmd', (_e, cmd) => {
   if (!win) return;
   if (cmd === 'minimize') win.minimize();
   else if (cmd === 'toggleMaximize') (win.isMaximized() ? win.unmaximize() : win.maximize());
   else if (cmd === 'close') win.close();
-  else if (cmd === 'toggleFullscreen') win.setFullScreen(!win.isFullScreen());
+  else if (cmd === 'toggleFullscreen') setFullscreen(!isFullscreen());
 });
 ipcMain.handle('win:state', () => winState());
 
@@ -195,7 +256,11 @@ function createWeb(paneId, input) {
     return { action: 'deny' };
   });
 
-  wc.loadURL(normalizeInput(input)).catch(() => {});
+  wc.on('did-create-window', (child) => spoofChrome(child.webContents));
+  // 先に空ページを読んで描画プロセスを作り、Client Hintsを上書きしてから本当のURLへ進む
+  wc.loadURL('about:blank').catch(() => {})
+    .then(() => spoofChrome(wc))
+    .then(() => { if (!wc.isDestroyed()) wc.loadURL(normalizeInput(input)).catch(() => {}); });
 }
 
 ipcMain.on('web:create', (_e, paneId, url) => createWeb(paneId, url));
@@ -205,7 +270,7 @@ ipcMain.on('web:bounds', (_e, paneId, rect) => {
   e.rect = rect;
   applyView(e);
 });
-ipcMain.on('web:suspend', (_e, v) => { suspended = !!v; views.forEach(applyView); });
+ipcMain.on('web:suspend', (_e, v) => { suspended = !!v; views.forEach(applyView); appembed.setSuspended(suspended); });
 ipcMain.on('web:cmd', (_e, paneId, cmd, arg) => {
   const e = views.get(paneId);
   if (!e) return;
@@ -224,6 +289,15 @@ ipcMain.on('web:destroy', (_e, paneId) => {
   try { win?.contentView.removeChildView(e.view); } catch {}
   try { e.wc.close(); } catch {}
 });
+
+// ---------------------------------------------------------------- app embed
+appembed.onEvent((ev, paneId) => send('app:' + ev, { paneId }));
+ipcMain.handle('app:supported', () => appembed.supported);
+ipcMain.handle('app:browser-cmd', (_e, url, cls) => appembed.browserCmd(url, cls));
+ipcMain.handle('app:list', () => appembed.listApps());
+ipcMain.handle('app:launch', (_e, paneId, cmd, cls) => appembed.launch(paneId, cmd, cls));
+ipcMain.on('app:bounds', (_e, paneId, rect) => appembed.setBounds(paneId, rect));
+ipcMain.on('app:close', (_e, paneId) => appembed.close(paneId));
 
 // ---------------------------------------------------------------- file system
 ipcMain.handle('fs:list', async (_e, dir, showHidden) => {
@@ -336,7 +410,20 @@ app.whenReady().then(() => {
   config = new Config();
   Menu.setApplicationMenu(null);
   setupDownloads();
+  // 通信側のClient Hintsヘッダも、全リクエストで本物のChromeと同じブランド構成にそろえる(読み込み開始との競合を避ける)
+  const hintBrands = `"Not?A_Brand";v="24", "Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}"`;
+  const hintFull = `"Not?A_Brand";v="24.0.0.0", "Chromium";v="${chromeFull}", "Google Chrome";v="${chromeFull}"`;
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, cb) => {
+    const h = details.requestHeaders;
+    for (const k of Object.keys(h)) {
+      const lk = k.toLowerCase();
+      if (lk === 'sec-ch-ua') h[k] = hintBrands;
+      else if (lk === 'sec-ch-ua-full-version-list') h[k] = hintFull;
+    }
+    cb({ requestHeaders: h });
+  });
   createWindow();
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 });
 app.on('window-all-closed', () => app.quit());
+app.on('will-quit', () => appembed.shutdown());

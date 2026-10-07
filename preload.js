@@ -31,6 +31,15 @@ contextBridge.exposeInMainWorld('preludeApi', {
     onFocused: (cb) => on('web:focused', cb),
     onOpenRequest: (cb) => on('web:open-request', cb),
   },
+  app: {
+    supported: () => ipcRenderer.invoke('app:supported'),
+    list: () => ipcRenderer.invoke('app:list'),
+    browserCmd: (url, cls) => ipcRenderer.invoke('app:browser-cmd', url, cls),
+    launch: (id, cmd, cls) => ipcRenderer.invoke('app:launch', id, cmd, cls),
+    bounds: (id, rect) => ipcRenderer.send('app:bounds', id, rect),
+    close: (id) => ipcRenderer.send('app:close', id),
+    onExited: (cb) => on('app:exited', cb),
+  },
   fs: {
     list: (dir, showHidden) => ipcRenderer.invoke('fs:list', dir, showHidden),
     open: (p) => ipcRenderer.invoke('fs:open', p),
