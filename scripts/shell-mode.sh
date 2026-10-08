@@ -3,6 +3,7 @@
 #
 #   shell-mode.sh status        今の状態を表示
 #   shell-mode.sh on  [--now]   plasmashell を止め(mask)、PRELUDE を次回ログインから自動起動
+#                               起動するコードは、リリース(scripts/release.sh の current)があればそれ、無ければこの作業フォルダ
 #   shell-mode.sh off [--now]   元に戻す(unmask して plasmashell を起動、PRELUDE の自動起動を解除)
 #
 # --now を付けると、ログインし直さずその場で切り替える。
@@ -10,6 +11,7 @@
 set -euo pipefail
 
 APPDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${PRELUDE_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/prelude}"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SHELL_UNITS=(prelude-shell.service prelude-shell-fallback.service)
 PLASMA=plasma-plasmashell.service
@@ -24,12 +26,20 @@ need_systemd_boot() {
   fi
 }
 
+# サービスが起動するコードの場所。リリース(current)があればそれ、無ければこの作業フォルダ
+run_dir() {
+  if [[ -L "$ROOT/current" && -x "$ROOT/current/node_modules/electron/dist/electron" ]]; then echo "$ROOT/current"; else echo "$APPDIR"; fi
+}
+
 install_units() {
   mkdir -p "$UNIT_DIR"
+  "$APPDIR/scripts/release.sh" install-bin   # 新しい版が壊れていても動くフォールバックを $ROOT/bin に置く
+  local dir; dir="$(run_dir)"
   for u in "${SHELL_UNITS[@]}"; do
-    sed "s|@APPDIR@|$APPDIR|g" "$APPDIR/systemd/$u" > "$UNIT_DIR/$u"
+    sed -e "s|@APPDIR@|$dir|g" -e "s|@ROOT@|$ROOT|g" "$APPDIR/systemd/$u" > "$UNIT_DIR/$u"
   done
   sc daemon-reload
+  echo "起動するコード: $dir"
 }
 
 case "${1:-status}" in

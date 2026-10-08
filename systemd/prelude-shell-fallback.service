@@ -3,4 +3,5 @@ Description=Restore plasmashell because PRELUDE shell keeps failing
 
 [Service]
 Type=oneshot
-ExecStart=@APPDIR@/scripts/shell-mode.sh off --now
+Environment=PRELUDE_ROOT=@ROOT@
+ExecStart=@ROOT@/bin/prelude-fallback.sh
