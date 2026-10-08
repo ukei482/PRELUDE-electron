@@ -24,6 +24,8 @@ cleanup() {
   echo "== CLEANUP"
   [ -n "${V0:-}" ] && wpctl set-volume @DEFAULT_AUDIO_SINK@ "$(echo "$V0" | grep -o '[0-9.]\+' | head -1)" 2>/dev/null
   "$APP/scripts/shell-mode.sh" off --now
+  git -C "$APP" worktree remove --force "${PRELUDE_ROOT:-/nonexistent}/releases/good" >/dev/null 2>&1; git -C "$APP" worktree prune
+  rm -f "${XDG_STATE_HOME:-$HOME/.local/state}/prelude/last-rollback"
   rm -rf "$DROP" "$UD/prelude-shell.service" "$UD/prelude-shell-fallback.service" "$TMP"
   $SC daemon-reload
   $SC reset-failed prelude-shell.service prelude-shell-fallback.service 2>/dev/null
@@ -31,6 +33,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+export PRELUDE_ROOT="$TMP/root"   # 実際の ~/.local/share/prelude には触らない
 mkdir -p "$DROP" "$TMP/ud"
 echo '{"behavior":{"startFullscreen":false}}' > "$TMP/ud/config.json"
 
@@ -107,3 +110,55 @@ for i in $(seq 1 15); do
 done
 st
 journalctl --user -u prelude-shell-fallback --no-pager -n 5 2>&1 | tail -5
+
+# ---- TEST3: 新しい版(current)が壊れているとき、1つ前の版(previous)へ自動で戻る
+STATEF="${XDG_STATE_HOME:-$HOME/.local/state}/prelude/last-rollback"
+setup_releases() {  # $1=current にする名前 $2=previous にする名前(good=本物 / bad・bad2=すぐ終了する偽物)
+  local R="$PRELUDE_ROOT/releases" b
+  mkdir -p "$R"
+  if [ ! -d "$R/good" ]; then
+    git -C "$APP" worktree add --detach "$R/good" HEAD >/dev/null 2>&1
+    ln -s "$APP/node_modules" "$R/good/node_modules"   # テスト用: 実行ファイルは開発フォルダのものを使い回す
+  fi
+  for b in bad bad2; do
+    mkdir -p "$R/$b/node_modules/electron/dist"
+    printf '#!/bin/sh\nexit 1\n' > "$R/$b/node_modules/electron/dist/electron"
+    chmod +x "$R/$b/node_modules/electron/dist/electron"
+  done
+  ln -sfn "$R/$1" "$PRELUDE_ROOT/current"
+  if [ -n "$2" ]; then ln -sfn "$R/$2" "$PRELUDE_ROOT/previous"; else rm -f "$PRELUDE_ROOT/previous"; fi
+}
+use_current_dropin() {  # current のリンク経由で起動する(テストでは別のデータフォルダで)
+  cat > "$DROP/test.conf" <<EOT
+[Service]
+ExecStart=
+ExecStart=$PRELUDE_ROOT/current/node_modules/electron/dist/electron $PRELUDE_ROOT/current --no-sandbox --user-data-dir=$TMP/ud
+EOT
+  $SC daemon-reload
+}
+wait_for() {  # wait_for <秒> <条件コマンド...>
+  local n=$1; shift
+  for _ in $(seq 1 "$n"); do sleep 1; "$@" && return 0; done
+  return 1
+}
+cur_is() { [ "$(basename "$(readlink "$PRELUDE_ROOT/current" 2>/dev/null)")" = "$1" ]; }
+plasma_up() { [ "$($SC is-active plasma-plasmashell)" = active ]; }
+
+echo "== TEST3A: broken new release -> rolls back to the previous release"
+"$APP/scripts/shell-mode.sh" off --now >/dev/null 2>&1; sleep 2
+setup_releases bad good; use_current_dropin
+"$APP/scripts/shell-mode.sh" on --now | tail -1
+wait_for 30 cur_is good && echo "  current -> good (戻った)" || echo "  current is still: $(readlink "$PRELUDE_ROOT/current") (NG)"
+sleep 8
+echo "  previous link removed: $([ -e "$PRELUDE_ROOT/previous" ] && echo NG || echo yes)"
+echo "  prelude-shell (good) running: $($SC is-active prelude-shell) (期待値: active)"
+echo "  plasmashell: $($SC is-active plasma-plasmashell) / $($SC is-enabled plasma-plasmashell) (期待値: inactive / masked = シェルモードのまま)"
+echo "  記録: $(cat "$STATEF" 2>/dev/null)"
+
+echo "== TEST3B: previous also broken -> plasmashell is restored"
+"$APP/scripts/shell-mode.sh" off --now >/dev/null 2>&1; sleep 2
+setup_releases bad bad2; use_current_dropin
+"$APP/scripts/shell-mode.sh" on --now | tail -1
+wait_for 40 plasma_up && echo "  plasmashell restored" || echo "  plasmashell NOT restored (NG)"
+echo "  prelude-shell: $($SC is-active prelude-shell) / $($SC is-enabled prelude-shell 2>&1) (期待値: inactive / disabled)"
+echo "  記録: $(cat "$STATEF" 2>/dev/null)"

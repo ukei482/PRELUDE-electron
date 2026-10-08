@@ -47,6 +47,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - `preload.js` … 画面側に公開する安全なAPI（`window.preludeApi`）
 - `appembed.js` … アプリ取り込み（プロセス起動とKWinスクリプトによるウィンドウ配置）
 - `sys/` … OS連携（Linux）。`bus.js` = D-Bus（`org.prelude.Shell`、KWinスクリプトからの報告を受ける）、`apps.js` = インストール済みアプリ一覧、`status.js` = 電池・音量・ネットワーク（ステータスバー用）、`quick.js` = クイック設定の取得と操作、`media.js` = MPRIS、`keys.js` = KWin経由のグローバルショートカット、`notify.js` = 通知サーバ、`overlay.js` = オーバーレイ窓（KWinで右上/中央下に配置）、`osd.js` = 音量・明るさのOSDと明るさの安全策、`icons.js` = アイコンテーマ→data URL
+- `scripts/release.sh` / `scripts/prelude-fallback.sh` … 常用する版と開発版の分離、1つ前の版への切替・自動ロールバック（手順は `docs/release.md`、変更履歴は `CHANGELOG.md`）
 - `scripts/shell-mode.sh` / `systemd/` … plasmashell と入れ替えてデスクトップシェルとして使うための切替（設計は `docs/shell-design.md`。段階3まで有効化しないこと）
 - `config.js` … 設定の初期値と設定画面のスキーマ
 - `src/bar.js` / `launcher.js` / `quick.js` / `notifications.js`（通知センター）/ `home.js`（ホーム画面）、`src/overlay.*`（トースト窓のページ。`preload-overlay.js` が最小のAPIを出す） … ステータスバーとランチャー（`app.js` の共通関数を使う）
