@@ -65,6 +65,7 @@ function makeLeaf(type, o = {}) {
     };
   }
   if (type === 'app') return { k: 'leaf', id, type, cmd: o.cmd || '', cls: o.cls || '', name: o.name || '', webUrl: o.webUrl || '', running: false, apps: null, filter: '' };
+  if (type === 'home') return { k: 'leaf', id, type };
   return { k: 'leaf', id, type: 'settings' };
 }
 
@@ -84,9 +85,10 @@ function tabTitle(tab) {
   if (l.type === 'web') return l.title || hostOf(l.url) || '新しいタブ';
   if (l.type === 'files') return l.mode === 'save' ? '保存先を選択' : baseName(l.path) || 'フォルダ';
   if (l.type === 'app') return l.name || l.cmd || 'アプリ';
+  if (l.type === 'home') return 'ホーム';
   return '設定';
 }
-const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : l.type === 'app' ? 'window' : 'settings');
+const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : l.type === 'app' ? 'window' : l.type === 'home' ? 'home' : 'settings');
 
 function renderSidebar() {
   const bl = $('#bm-list');
@@ -373,6 +375,7 @@ function buildLeaf(tab, leaf) {
   if (leaf.type === 'web') buildWeb(tab, leaf, head, body);
   else if (leaf.type === 'app') buildApp(tab, leaf, head, body);
   else if (leaf.type === 'files') buildFiles(tab, leaf, head, body);
+  else if (leaf.type === 'home') buildHome(tab, leaf, head, body);
   else buildSettings(tab, leaf, head, body);
   return pane;
 }
@@ -394,7 +397,7 @@ function commonButtons(tab, leaf) {
     realBrowser,
     splitBtn('split-h', '左右に分割', 'row'),
     splitBtn('split-v', '上下に分割', 'col'),
-    leaf.type !== 'settings' && (leaf.type !== 'app' || leaf.running) && leaf.mode !== 'save' ? btn('bookmark', 'ブックマークに追加', () => addBookmark(leaf)) : null,
+    leaf.type !== 'settings' && leaf.type !== 'home' && (leaf.type !== 'app' || leaf.running) && leaf.mode !== 'save' ? btn('bookmark', 'ブックマークに追加', () => addBookmark(leaf)) : null,
     btn('close', '閉じる', () => closeLeaf(tab, leaf)),
   ].filter(Boolean);
 }
@@ -651,7 +654,7 @@ function scheduleSave() {
 function restore(ws) {
   const deser = (n) => (n.k === 'split'
     ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deser(n.a), b: deser(n.b) }
-    : makeLeaf(['web', 'files', 'settings', 'app'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, webUrl: n.webUrl }));
+    : makeLeaf(['web', 'files', 'settings', 'app', 'home'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, webUrl: n.webUrl }));
   for (const t of ws.tabs) {
     try {
       const root = deser(t.root);
@@ -762,6 +765,7 @@ async function boot() {
   $('#tb-close').onclick = () => api.win.cmd('close');
   $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [
     { header: '新しいタブ' },
+    { label: 'ホーム', icon: 'home', run: () => openTab('home') },
     { label: 'Web', icon: 'globe', run: () => openTab('web') },
     { label: 'フォルダ', icon: 'folder', run: () => openTab('files') },
     S.appSupported ? { label: 'アプリ', icon: 'window', run: () => openTab('app') } : null,

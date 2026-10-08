@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('preludeApi', {
     onChanged: (cb) => on('config:changed', cb),
   },
   icons: () => ipcRenderer.invoke('icons:get'),
+  wallpaper: () => ipcRenderer.invoke('wallpaper:get'),
+  appIcon: (name) => ipcRenderer.invoke('icon:get', name),
   win: {
     cmd: (c) => ipcRenderer.send('win:cmd', c),
     state: () => ipcRenderer.invoke('win:state'),

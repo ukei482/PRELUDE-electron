@@ -26,7 +26,7 @@ function list() {
         if (get('Type') !== 'Application' || get('NoDisplay') === 'true' || get('Hidden') === 'true') continue;
         const exec = (get('Exec') || '').replace(/%[a-zA-Z]/g, '').replace(/\s+/g, ' ').trim();
         if (!exec) continue;
-        map.set(f, { name: get('Name') || f, exec, cls: (get('StartupWMClass') || '').toLowerCase() });
+        map.set(f, { name: get('Name') || f, exec, cls: (get('StartupWMClass') || '').toLowerCase(), icon: get('Icon') || '' });
       } catch {}
     }
   }

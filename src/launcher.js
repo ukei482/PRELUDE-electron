@@ -27,6 +27,7 @@ function launchApp(a) {
 
 const LAUNCHER_COMMANDS = [
   { name: '設定', keys: 'settings せってい', run: () => openSettings() },
+  { name: 'ホーム画面', keys: 'home ほーむ', run: () => openTab('home') },
   { name: '新しいタブ(Web)', keys: 'new tab web あたらしい', run: () => openTab('web') },
   { name: '新しいタブ(フォルダ)', keys: 'new tab folder files あたらしい', run: () => openTab('files') },
   { name: '全画面の切り替え', keys: 'fullscreen ぜんがめん', run: () => api.win.cmd('toggleFullscreen') },

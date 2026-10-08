@@ -26,6 +26,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - **クイック設定**（バーの音量・Wi-Fi・電池をクリック）：音量と出力デバイス、明るさ、Wi-Fi（登録済みネットワークへの接続）、Bluetooth、電源プロファイル、ロック・スリープ・ログアウト・再起動・電源オフ（最後の3つはKDEの確認ダイアログ）
 - **再生中メディア**：バー左に表示（MPRIS）。クリックで再生/一時停止、右クリックで前後の曲
 - **通知サーバ**（Linux/KDE）：`org.freedesktop.Notifications` を実装。右上に透明のオーバーレイ窓でトースト表示（アクション・緊急・置き換え・期限に対応。Webビューや取り込みアプリの上にも出る）。履歴・未読数・おやすみモードはバーの「通知」から。**plasmashell が動いている間は名前を取り合わず待機し、止まったら自動で引き継ぐ**
+- **ホーム画面**（ペイン種類「ホーム」。新しいタブの既定）：壁紙（設定の「ホーム画面の壁紙」に画像ファイルのパス）・時計・最近使ったアプリ（アイコン付き）・ブックマーク・クイック操作
 - **OSD**（Linux/KDE）：音量・明るさが変わると画面中央下に小さく表示（キー操作でも他のアプリからでも）。明るさが0%のまま8秒続いたら20%へ自動で戻し、緊急用に **Meta+Shift+B で明るさ50%**
 - **ランチャー**（Ctrl+Shift+P、設定で変更可。どのアプリが前面でも Meta+Space で開く＝KWinのグローバルショートカット）：開いているタブ・ブックマーク・インストール済みアプリ・コマンド・Web検索を1つの入力欄で探す。アプリは**既定でペインに取り込み**（設定「アプリを開く方法」で別ウィンドウにも変更可）
 - **設定タブ**：`config.js` の `SCHEMA` から自動生成（色・文字サイズ・ホームページ・検索エンジン・ショートカット…）
@@ -48,7 +49,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - `sys/` … OS連携（Linux）。`bus.js` = D-Bus（`org.prelude.Shell`、KWinスクリプトからの報告を受ける）、`apps.js` = インストール済みアプリ一覧、`status.js` = 電池・音量・ネットワーク（ステータスバー用）、`quick.js` = クイック設定の取得と操作、`media.js` = MPRIS、`keys.js` = KWin経由のグローバルショートカット、`notify.js` = 通知サーバ、`overlay.js` = オーバーレイ窓（KWinで右上/中央下に配置）、`osd.js` = 音量・明るさのOSDと明るさの安全策、`icons.js` = アイコンテーマ→data URL
 - `scripts/shell-mode.sh` / `systemd/` … plasmashell と入れ替えてデスクトップシェルとして使うための切替（設計は `docs/shell-design.md`。段階3まで有効化しないこと）
 - `config.js` … 設定の初期値と設定画面のスキーマ
-- `src/bar.js` / `launcher.js` / `quick.js` / `notifications.js`（通知センター）、`src/overlay.*`（トースト窓のページ。`preload-overlay.js` が最小のAPIを出す） … ステータスバーとランチャー（`app.js` の共通関数を使う）
+- `src/bar.js` / `launcher.js` / `quick.js` / `notifications.js`（通知センター）/ `home.js`（ホーム画面）、`src/overlay.*`（トースト窓のページ。`preload-overlay.js` が最小のAPIを出す） … ステータスバーとランチャー（`app.js` の共通関数を使う）
 - `src/index.html` / `style.css` / `app.js` … 画面（縦タブ・分割ツリー・各ペイン）
 - `assets/icons/` … アイコン（Rust版と同じSVG）
 

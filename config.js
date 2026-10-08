@@ -10,6 +10,7 @@ const path = require('path');
 const { app } = require('electron');
 
 const KINDS = [
+  ['home', 'ホーム'],
   ['files', 'フォルダ'],
   ['web', 'Web'],
   ['app', 'アプリ'],
@@ -27,6 +28,7 @@ const SCHEMA = [
       { path: 'appearance.text', label: '文字色', type: 'color' },
       { path: 'appearance.dim', label: '補助文字色', type: 'color' },
       { path: 'appearance.danger', label: '警告色', type: 'color' },
+      { path: 'appearance.wallpaper', label: 'ホーム画面の壁紙（画像ファイルのパス。空=なし）', type: 'text' },
       { path: 'appearance.fontSize', label: '文字サイズ (px)', type: 'number', min: 10, max: 22 },
       { path: 'appearance.sidebarWidth', label: 'サイドバー幅 (px)', type: 'number', min: 140, max: 400 },
     ],
@@ -62,10 +64,10 @@ function defaults() {
     appearance: {
       bg: '#faf3e0', panel: '#d7bfae', panel2: '#a1887f', line: '#a1887f',
       text: '#3e2f2a', dim: '#6f5a52', accent: '#5d4037', danger: '#9c4a3a',
-      fontSize: 13, sidebarWidth: 220,
+      wallpaper: '', fontSize: 13, sidebarWidth: 220,
     },
     behavior: {
-      startKind: 'files',
+      startKind: 'home',
       appOpen: 'embed',
       homepage: 'https://www.google.com',
       searchEngine: 'https://www.google.com/search?q=%s',

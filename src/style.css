@@ -227,3 +227,29 @@ body.no-sidebar #sidebar { display: none; }
 .nitem.new { box-shadow: inset 3px 0 0 var(--accent); }
 .nitem .nx { opacity: 0; width: 22px; height: 22px; flex: none; }
 .nitem:hover .nx { opacity: 1; }
+
+/* ---- home */
+.home {
+  position: absolute; inset: 0; overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 18px;
+  padding: 36px 24px 48px; background: var(--bg) center / cover no-repeat;
+}
+.hhero { text-align: center; margin-bottom: 6px; }
+.hclock { font-size: 72px; font-weight: 300; line-height: 1.05; letter-spacing: .02em; }
+.hdate { font-size: 1.3em; color: var(--dim); }
+.home.has-wall .hhero { color: #fff; text-shadow: 0 2px 12px rgba(0, 0, 0, .65); }
+.home.has-wall .hdate { color: #fff; }
+.hcard {
+  width: min(760px, 100%); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(6px);
+}
+.hh { color: var(--dim); font-size: .85em; margin-bottom: 8px; }
+.hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.htile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border-radius: 8px; cursor: pointer; text-align: center; }
+.htile:hover { background: var(--panel); }
+.hicowrap { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.hicowrap .ico, .hicowrap .ico svg { width: 32px; height: 32px; }
+.hicon { width: 44px; height: 44px; object-fit: contain; }
+.hname { font-size: .9em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.hchip { border: 1px solid var(--line); }
+.hquick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }

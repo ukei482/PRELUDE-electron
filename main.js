@@ -69,6 +69,7 @@ const quick = require('./sys/quick');
 const media = require('./sys/media');
 const keys = require('./sys/keys');
 const notify = require('./sys/notify');
+const iconTheme = require('./sys/icons');
 const overlay = require('./sys/overlay');
 const osd = require('./sys/osd');
 
@@ -211,6 +212,21 @@ ipcMain.handle('ws:load', () => { try { return JSON.parse(fs.readFileSync(wsFile
 ipcMain.on('ws:save', (_e, data) => {
   try { fs.mkdirSync(path.dirname(wsFile()), { recursive: true }); fs.writeFile(wsFile(), JSON.stringify(data), () => {}); } catch {}
 });
+
+// ホーム画面の壁紙(設定のパスの画像を data URL で渡す。画面側のCSPは file: を読めない)
+const IMG_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml' };
+ipcMain.handle('wallpaper:get', async () => {
+  const file = String(config.get('appearance.wallpaper') || '').trim();
+  const mime = IMG_MIME[path.extname(file).toLowerCase()];
+  if (!file || !mime) return { path: file, url: null };
+  try {
+    const st = await fs.promises.stat(file);
+    if (!st.isFile() || st.size > 15 * 1024 * 1024) return { path: file, url: null };
+    return { path: file, url: `data:${mime};base64,${(await fs.promises.readFile(file)).toString('base64')}` };
+  } catch { return { path: file, url: null }; }
+});
+// アプリのアイコン(アイコンテーマの名前 → data URL)
+ipcMain.handle('icon:get', (_e, name) => iconTheme.toDataUrl(String(name || '')));
 
 ipcMain.handle('icons:get', () => {
   const dir = path.join(__dirname, 'assets', 'icons');
