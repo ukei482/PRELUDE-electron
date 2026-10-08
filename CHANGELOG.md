@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.2.0] - 2026-10-08
+
 ### 追加
 - システムトレイ（StatusNotifierItem のホスト）。アイコン・ツールチップ・メニュー（DBusMenu）・注意状態。plasmashell が止まっても表示される
 - リリース用の配置（`scripts/release.sh`）と、起動に失敗し続けたときに1つ前の版へ自動で戻るフォールバック（`scripts/prelude-fallback.sh`）。手順は `docs/release.md`
@@ -32,5 +34,6 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - plasmashell を止めている間、キーボードの音量キーが効かない（`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.1.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ukei482/PRELUDE-electron/releases/tag/v0.1.0
