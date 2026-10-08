@@ -252,4 +252,16 @@ body.no-sidebar #sidebar { display: none; }
 .hname { font-size: .9em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hchips { display: flex; flex-wrap: wrap; gap: 6px; }
 .hchip { border: 1px solid var(--line); }
+.hgrid .empty { grid-column: 1 / -1; }
 .hquick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+
+.menu .mi.dis { opacity: .45; cursor: default; }
+.menu .mi.dis:hover { background: transparent; }
+
+/* ---- tray */
+.traybox { display: inline-flex; align-items: center; gap: 2px; }
+.trayicon { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; }
+.trayicon:hover { background: var(--panel2); }
+.trayicon img { width: 16px; height: 16px; object-fit: contain; }
+.trayicon.attn { box-shadow: inset 0 -2px 0 var(--danger); }
+.trayicon .tfb { font-size: .8em; color: var(--dim); }

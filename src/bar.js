@@ -58,6 +58,7 @@ function initBar() {
   });
   const netEl = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
   const bat = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
+  const trayEl = h('span', { class: 'traybox', style: { display: 'none' } });
   const notifyEl = h('span', { class: 'baritem clickable', title: '通知センター', onclick: () => openNotifications() });
   const media = h('span', {
     class: 'baritem clickable', style: { display: 'none' },
@@ -68,12 +69,14 @@ function initBar() {
     },
   });
   const clock = h('span', { class: 'baritem', title: '' });
-  Object.assign(bar.el, { vol, netEl, bat, clock, media, notify: notifyEl });
-  root.replaceChildren(launch, media, h('span', { class: 'grow' }), notifyEl, vol, netEl, bat, clock);
+  Object.assign(bar.el, { vol, netEl, bat, clock, media, notify: notifyEl, tray: trayEl });
+  root.replaceChildren(launch, media, h('span', { class: 'grow' }), trayEl, notifyEl, vol, netEl, bat, clock);
   paintClock();
   setInterval(paintClock, 10000);
   api.sys.status().then((s) => { bar.sys = s || bar.sys; paintBar(); });
   api.sys.onStatus((s) => { bar.sys = s; paintBar(); });
+  api.tray.items().then((l) => { bar.tray = l; paintTray(); });
+  api.tray.onItems((l) => { bar.tray = l; paintTray(); });
   api.notify.state().then((s) => { bar.notify = s; paintNotify(); });
   api.notify.onState((s) => { bar.notify = s; paintNotify(); if (typeof notifUI !== 'undefined' && notifUI) paintNotifications(); });
   api.sys.media().then((m) => { bar.media = m; paintMedia(); });

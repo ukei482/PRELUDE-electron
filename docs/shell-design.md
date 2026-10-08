@@ -279,6 +279,23 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
 - 見つけたこと: Electron 44 は `npm ci` だけでは実行ファイルを取得しない。`release.sh create` が `electron/install.js` を明示的に実行する。
 - プラグイン機構・自動更新・パッケージ配布は、今は作らない（`sys/` の分割が境界。配布する相手ができてから）。
 
+## 6.8 段階4a の実装状況（システムトレイ）
+
+- 済：`sys/tray.js`（StatusNotifierItem のホスト）、`src/tray.js`（バー右側のアイコンとメニュー）。
+  ウォッチャー `org.kde.StatusNotifierWatcher` は **kded6** が持っているので plasmashell が止まっても残り、PRELUDE は
+  `org.kde.StatusNotifierHost-<pid>` を取って登録するだけ（plasmashell と並んでホストになれる）。
+  アイコンは `IconName`（`IconThemePath` も探す）→ 無ければ `IconPixmap`（ARGB32 → PNG の data URL）。
+  メニューは DBusMenu の `GetLayout` を読んで既存のポップアップに出し、クリックは `Event` で返す。
+- 実機で分かったこと：Chromium/Electron 系のアイテム（Claude など）は**自己記述（イントロスペクション）を返さない**ので、
+  `dbus-next` のプロキシは使えず、生のメッセージで呼ぶ。`GetLayout` は深さ `-1` を受け付けないアプリがあるので、深さ10で呼び、失敗したら `-1`。
+  `dbus-next` に公開の `addMatch` は無く、`org.freedesktop.DBus.AddMatch` を直接呼ぶ。
+- 確認：実際の Claude のトレイ（アイコン・メニュー）、ダミーのアイテムでアクティブ化・中クリック・メニュー項目・サブメニュー・チェック・無効項目・
+  更新通知（注意状態）・終了時の消滅。シェルモード（plasmashell 停止中）でも、Claude と日本語入力のアイコンが出ることを `shell-mode-test.sh` で確認。
+- 設計上の割り切り：`Passive` のアイテムは出さない（Plasma と同じ）。画面側から送るのは「アイテム ID と操作の種類」だけで、ID は登録済みのものに限る。
+  アイテムの上限は40、メニューの項目は300。ツールチップはタイトル属性（ホバーの文字）のみ。
+- **要確認（未検証）**：シェルモードの PRELUDE は疑似全画面で「最前面」に置かれるため、トレイの「開く」で出た通常のウィンドウ
+  （取り込まれていないもの）が PRELUDE の後ろに隠れる可能性がある。常用で確かめて、必要なら「取り込まれていない新しい窓が出たら前に出す」処理を足す。
+
 ## 7. 決めておきたいこと
 
 - ~~バーは上端か下端か~~ → 下端・細め
