@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/home/ukeiyamada/PRELUDE-electron/scripts/shell-mode-test.sh)"
+    ]
+  }
+}

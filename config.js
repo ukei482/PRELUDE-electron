@@ -10,8 +10,10 @@ const path = require('path');
 const { app } = require('electron');
 
 const KINDS = [
+  ['home', 'ホーム'],
   ['files', 'フォルダ'],
   ['web', 'Web'],
+  ['app', 'アプリ'],
 ];
 
 const SCHEMA = [
@@ -26,6 +28,7 @@ const SCHEMA = [
       { path: 'appearance.text', label: '文字色', type: 'color' },
       { path: 'appearance.dim', label: '補助文字色', type: 'color' },
       { path: 'appearance.danger', label: '警告色', type: 'color' },
+      { path: 'appearance.wallpaper', label: 'ホーム画面の壁紙（画像ファイルのパス。空=なし）', type: 'text' },
       { path: 'appearance.fontSize', label: '文字サイズ (px)', type: 'number', min: 10, max: 22 },
       { path: 'appearance.sidebarWidth', label: 'サイドバー幅 (px)', type: 'number', min: 140, max: 400 },
     ],
@@ -33,6 +36,7 @@ const SCHEMA = [
   {
     title: '動作',
     fields: [
+      { path: 'behavior.appOpen', label: 'アプリを開く方法（ランチャー）', type: 'select', options: [['embed', 'ペインに取り込む'], ['window', '別ウィンドウ']] },
       { path: 'behavior.startKind', label: '新しいタブの種類', type: 'select', options: KINDS },
       { path: 'behavior.homepage', label: 'Webのホームページ', type: 'text' },
       { path: 'behavior.searchEngine', label: '検索エンジン（%s が検索語）', type: 'text' },
@@ -40,6 +44,7 @@ const SCHEMA = [
       { path: 'behavior.downloadDir', label: 'ダウンロードの開始フォルダ（空=ダウンロードフォルダ）', type: 'text' },
       { path: 'behavior.showHidden', label: '隠しファイル（.で始まる）を表示', type: 'bool' },
       { path: 'behavior.sidebarVisible', label: 'サイドバーを表示', type: 'bool' },
+      { path: 'behavior.startFullscreen', label: '起動時に全画面で開く（次回起動から）', type: 'bool' },
     ],
   },
   {
@@ -48,6 +53,8 @@ const SCHEMA = [
       { path: 'shortcuts.newTab', label: '新しいタブ', type: 'text' },
       { path: 'shortcuts.closeTab', label: 'タブを閉じる', type: 'text' },
       { path: 'shortcuts.fullscreen', label: '全画面', type: 'text' },
+      { path: 'shortcuts.launcher', label: 'ランチャー（PRELUDEが前面のとき）', type: 'text' },
+      { path: 'shortcuts.globalLauncher', label: 'グローバルのランチャーキー（初回登録時の既定。以降の変更はKDEのショートカット設定で）', type: 'text' },
     ],
   },
 ];
@@ -57,20 +64,22 @@ function defaults() {
     appearance: {
       bg: '#faf3e0', panel: '#d7bfae', panel2: '#a1887f', line: '#a1887f',
       text: '#3e2f2a', dim: '#6f5a52', accent: '#5d4037', danger: '#9c4a3a',
-      fontSize: 13, sidebarWidth: 220,
+      wallpaper: '', fontSize: 13, sidebarWidth: 220,
     },
     behavior: {
-      startKind: 'files',
+      startKind: 'home',
+      appOpen: 'embed',
       homepage: 'https://www.google.com',
       searchEngine: 'https://www.google.com/search?q=%s',
       startPath: '',
       downloadDir: '',
       showHidden: false,
       sidebarVisible: true,
+      startFullscreen: true,
     },
     bookmarks: [],
     appUsage: [],
-    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', fullscreen: 'F11' },
+    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', fullscreen: 'F11', launcher: 'Ctrl+Shift+P', globalLauncher: 'Meta+Space' },
   };
 }
 
