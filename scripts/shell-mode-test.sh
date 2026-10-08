@@ -75,10 +75,12 @@ http.get('http://127.0.0.1:9666/json', (r) => { let d = ''; r.on('data', (c) => 
   };
   console.log('  toast text:', await ev(/overlay\.html/, "document.getElementById('toasts').innerText.replace(/\\n/g, ' | ')"));
   console.log('  notify state (serving):', await ev(/index\.html/, 'bar.notify.serving'));
+  console.log('  tray items while plasmashell is down:', await ev(/index\.html/, "bar.tray.map((t) => t.title + (t.icon ? '(icon)' : '(no icon)')).join(', ')"));
   process.exit(0);
 }); }).on('error', (e) => { console.log('  CDP error:', e.message); process.exit(0); });
 JS
 
+echo "  StatusNotifierHost owners: $(busctl --user list 2>/dev/null | grep -c 'org.kde.StatusNotifierHost') (期待値: 1 = PRELUDE のみ)"
 echo "== TEST1d: PRELUDE's global shortcuts do not take kmix's keys"
 sleep 2
 grep -E '^PRELUDE (launcher|brightnessReset)' ~/.config/kglobalshortcutsrc | sed 's/^/  /'

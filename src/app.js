@@ -251,15 +251,15 @@ function closePopup() {
   pop = null;
   suspend(-1);
 }
-function popup(items, x, y) {
+function popup(items, x, y, opt = {}) {
   closePopup();
   const bd = h('div', { class: 'backdrop', onpointerdown: closePopup, oncontextmenu: (e) => { e.preventDefault(); closePopup(); } });
   const m = h('div', { class: 'menu' }, items.map((it) => (it.header ? h('div', { class: 'mh' }, it.header)
     : it.sep ? h('div', { class: 'sep' })
-    : h('div', { class: 'mi' + (it.danger ? ' danger' : ''), style: it.danger ? { color: 'var(--danger)' } : null, onclick: () => { closePopup(); it.run(); } }, it.icon ? ico(it.icon) : null, it.label))));
+    : h('div', { class: 'mi' + (it.danger ? ' danger' : '') + (it.disabled ? ' dis' : ''), style: it.danger ? { color: 'var(--danger)' } : null, onclick: () => { if (it.disabled) return; closePopup(); it.run(); } }, it.icon ? ico(it.icon) : null, it.label))));
   overlay.append(bd, m);
   m.style.left = clamp(x, 4, innerWidth - m.offsetWidth - 4) + 'px';
-  m.style.top = clamp(y, 4, innerHeight - m.offsetHeight - 4) + 'px';
+  m.style.top = clamp(y, 4, innerHeight - m.offsetHeight - (opt.bottom || 4)) + 'px';
   pop = { bd, m };
   suspend(+1);
 }

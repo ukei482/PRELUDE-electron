@@ -6,10 +6,12 @@
 ## [未リリース]
 
 ### 追加
+- システムトレイ（StatusNotifierItem のホスト）。アイコン・ツールチップ・メニュー（DBusMenu）・注意状態。plasmashell が止まっても表示される
 - リリース用の配置（`scripts/release.sh`）と、起動に失敗し続けたときに1つ前の版へ自動で戻るフォールバック（`scripts/prelude-fallback.sh`）。手順は `docs/release.md`
 - `scripts/shell-mode-test.sh` に自動ロールバックの実機テスト（TEST3）
 
 ### 変更
+- ホームの「最近使ったアプリ」が空のときの案内文が、狭い列に折り返されていた表示を修正
 - `scripts/shell-mode.sh on` は、リリース（`current`）があればそれを、無ければ作業フォルダを起動する
 - フォールバックは、plasmashell に戻す前に、まず1つ前の版を試す
 
@@ -29,7 +31,6 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 
 ### 既知の未対応
 - plasmashell を止めている間、キーボードの音量キーが効かない（`docs/shell-design.md` 6.5）
-- システムトレイ
 
 [未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/ukei482/PRELUDE-electron/releases/tag/v0.1.0

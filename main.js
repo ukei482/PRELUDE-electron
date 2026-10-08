@@ -72,6 +72,7 @@ const notify = require('./sys/notify');
 const iconTheme = require('./sys/icons');
 const overlay = require('./sys/overlay');
 const osd = require('./sys/osd');
+const tray = require('./sys/tray');
 
 let config;
 let win = null;
@@ -477,6 +478,7 @@ app.whenReady().then(async () => {
       else if (name === 'brightnessReset') osd.resetBrightness();
     });
     osd.init();
+    tray.init({ ipcMain, onItems: (list) => send('tray:items', list) });
     // 通知サーバ。トーストは別窓(オーバーレイ)に、履歴と未読数は本体の通知センターに送る
     overlay.init();
     ipcMain.handle('overlay:theme', () => config.data.appearance);

@@ -51,6 +51,14 @@ contextBridge.exposeInMainWorld('preludeApi', {
     onMedia: (cb) => on('sys:media', cb),
     mediaCmd: (c) => ipcRenderer.invoke('media:cmd', c),
   },
+  tray: {
+    items: () => ipcRenderer.invoke('tray:items'),
+    onItems: (cb) => on('tray:items', cb),
+    menu: (id) => ipcRenderer.invoke('tray:menu', id),
+    menuClick: (id, menuId) => ipcRenderer.send('tray:menu-click', id, menuId),
+    activate: (id, x, y) => ipcRenderer.send('tray:activate', id, x, y),
+    secondary: (id, x, y) => ipcRenderer.send('tray:secondary', id, x, y),
+  },
   notify: {
     state: () => ipcRenderer.invoke('notify:state'),
     onState: (cb) => on('notify:state', cb),

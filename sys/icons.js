@@ -24,8 +24,8 @@ function fileToDataUrl(file) {
   } catch { return null; }
 }
 
-function findInTheme(name) {
-  for (const root of ROOTS) {
+function findInTheme(name, extraRoots = []) {
+  for (const root of [...extraRoots, ...ROOTS]) {
     for (const theme of THEMES) {
       for (const size of SIZES) {
         for (const ctx of CONTEXTS) {
@@ -40,22 +40,25 @@ function findInTheme(name) {
       }
     }
   }
-  for (const ext of ['.png', '.svg']) {
-    const f = path.join('/usr/share/pixmaps', name + ext);
-    if (fs.existsSync(f)) return f;
+  for (const dir of [...extraRoots, '/usr/share/pixmaps']) { // アプリ自身が持つアイコンのフォルダ(IconThemePath)は、直下も探す
+    for (const ext of ['.png', '.svg']) {
+      const f = path.join(dir, name + ext);
+      if (fs.existsSync(f)) return f;
+    }
   }
   return null;
 }
 
-// name: 絶対パス / file:// URL / アイコン名。見つからなければ null
-function toDataUrl(name) {
+// name: 絶対パス / file:// URL / アイコン名。見つからなければ null。extraRoots: アプリ指定のアイコンフォルダ
+function toDataUrl(name, extraRoots = []) {
   if (!name || typeof name !== 'string') return null;
-  if (cache.has(name)) return cache.get(name);
+  const key = extraRoots.length ? `${extraRoots.join('|')}::${name}` : name;
+  if (cache.has(key)) return cache.get(key);
   let r = null;
   if (name.startsWith('file://')) { try { r = fileToDataUrl(decodeURIComponent(new URL(name).pathname)); } catch {} }
   else if (path.isAbsolute(name)) r = fileToDataUrl(name);
-  else if (/^[\w.+-]+$/.test(name)) { const f = findInTheme(name); r = f && fileToDataUrl(f); }
-  cache.set(name, r);
+  else if (/^[\w.+-]+$/.test(name)) { const f = findInTheme(name, extraRoots); r = f && fileToDataUrl(f); }
+  cache.set(key, r);
   return r;
 }
 
