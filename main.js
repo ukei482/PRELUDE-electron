@@ -272,13 +272,23 @@ const GOOGLE_SIGNIN = /^\/(v3\/signin|signin|ServiceLogin|AddSession|Interactive
 function isGoogleSignin(u) {
   try { const x = new URL(u); return x.hostname === 'accounts.google.com' && GOOGLE_SIGNIN.test(x.pathname); } catch { return false; }
 }
+// 設定の「最初から Chromium で開くサイト」に当たるか(そのホスト自身かサブドメイン)。Chromium のプロファイルはログイン済みなので、開いた時からログインした状態になる
+function isChromiumSite(u) {
+  let host;
+  try { host = new URL(u).hostname.toLowerCase(); } catch { return false; }
+  return String(config.get('behavior.chromiumSites') || '').toLowerCase().split(/[\s,]+/).filter(Boolean)
+    .some((s) => host === s || host.endsWith('.' + s));
+}
+
 // ペイン(またはそのポップアップ)が Google のログインへ進むのを止め、画面側にペインの切り替えを頼む。
 // ポップアップ(他サイトの「Googleでログイン」)は、元のページごと Chromium で開き直す(ログイン結果を元のページに返せないため)
 function guardGoogleSignin(wc, paneId, popup) {
   let handled = false; // 1回の移動で will-navigate と did-start-navigation の両方が来るので、1度だけ処理する
   const check = (e, url, _inPlace, isMain) => {
     const u = e?.url ?? url;
-    if (handled || !(e?.isMainFrame ?? isMain) || !isGoogleSignin(u) || !appembed.supported || !appembed.hasBrowser()) return;
+    // ポップアップは Google のログインだけを扱う(サイト単位の振り分けは、タブとして開いたものだけ)
+    const site = !popup && isChromiumSite(u);
+    if (handled || !(e?.isMainFrame ?? isMain) || !(isGoogleSignin(u) || site) || !appembed.supported || !appembed.hasBrowser()) return;
     handled = true;
     e.preventDefault?.();
     const opener = views.get(paneId)?.wc;
@@ -287,7 +297,7 @@ function guardGoogleSignin(wc, paneId, popup) {
     // 移動の途中のポップアップと、その開き元を同時に壊すと Electron が落ちる(SIGTRAP)ので、
     // 先にポップアップを閉じ、閉じ終わってから切り替えを頼む。イベントの中では何も壊さない
     setImmediate(() => {
-      if (!popup) { if (!wc.isDestroyed()) wc.stop(); send('web:to-chromium', { paneId, url: target, popup: false }); return; }
+      if (!popup) { if (!wc.isDestroyed()) wc.stop(); send('web:to-chromium', { paneId, url: target, popup: false, site }); return; }
       const ask = () => send('web:to-chromium', { paneId, url: target, popup: true });
       if (wc.isDestroyed()) { ask(); return; }
       wc.once('destroyed', () => setImmediate(ask));

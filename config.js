@@ -40,6 +40,7 @@ const SCHEMA = [
       { path: 'behavior.startKind', label: '新しいタブの種類', type: 'select', options: KINDS },
       { path: 'behavior.homepage', label: 'Webのホームページ', type: 'text' },
       { path: 'behavior.searchEngine', label: '検索エンジン（%s が検索語）', type: 'text' },
+      { path: 'behavior.chromiumSites', label: '最初から Chromium で開くサイト（空白区切り。サブドメインも含む。Google のログインを共有）', type: 'text' },
       { path: 'behavior.startPath', label: 'フォルダの開始位置（空=ホーム）', type: 'text' },
       { path: 'behavior.downloadDir', label: 'ダウンロードの開始フォルダ（空=ダウンロードフォルダ）', type: 'text' },
       { path: 'behavior.showHidden', label: '隠しファイル（.で始まる）を表示', type: 'bool' },
@@ -71,6 +72,9 @@ function defaults() {
       appOpen: 'embed',
       homepage: 'https://www.google.com',
       searchEngine: 'https://www.google.com/search?q=%s',
+      // Web ペイン(Electron)は Google にログインできないので、ログインが要る Google のサービスは最初から Chromium のペインで開く。
+      // 検索(www.google.com)は含めない(新しいタブや検索のたびに Chromium になり、アドレス欄などが使えなくなるため)
+      chromiumSites: 'mail.google.com drive.google.com docs.google.com sheets.google.com slides.google.com calendar.google.com photos.google.com keep.google.com meet.google.com chat.google.com contacts.google.com myaccount.google.com gemini.google.com notebooklm.google.com youtube.com',
       startPath: '',
       downloadDir: '',
       showHidden: false,
