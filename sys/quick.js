@@ -9,6 +9,10 @@ const MAC = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/i;
 const num = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : null; };
 
 // ---- 音量 / 出力デバイス
+// スクリーンショットの種類 → Spectacle のショートカット名(KDE の「ショートカット」設定の Spectacle の項目)
+// screen は「マウスのある画面」だけ(FullScreenScreenShot はすべての画面をつないだ1枚になり、画面が2台あると何も映っていない側まで写る)
+const SHOTS = { open: '_launch', region: 'RectangularRegionScreenShot', screen: 'CurrentMonitorScreenShot', window: 'ActiveWindowScreenShot' };
+
 async function audio() {
   const [vol, st] = await Promise.all([exec('wpctl', ['get-volume', '@DEFAULT_AUDIO_SINK@']), exec('wpctl', ['status'])]);
   const m = vol.ok && /Volume:\s*([\d.]+)/.exec(vol.out);
@@ -111,6 +115,16 @@ async function doOp(op, arg) {
     case 'profile': {
       const p = await profile();
       return p && p.available.includes(arg) ? exec('powerprofilesctl', ['set', arg]) : {};
+    }
+    // スクリーンショット。Spectacle のグローバルショートカットを呼ぶ(Print キーを押したのと同じ。plasmashell が無くても動く)。
+    // 押したパネルやランチャーが写り込まないよう、閉じて描き直されるのを少し待ってから撮る
+    case 'screenshot': {
+      const action = Object.hasOwn(SHOTS, arg) ? SHOTS[arg] : null;
+      if (!action) return {};
+      if (arg !== 'open') await new Promise((r) => setTimeout(r, 350));
+      const r = await exec('gdbus', ['call', '--session', '--dest', 'org.kde.kglobalaccel', '--object-path', '/component/org_kde_spectacle_desktop',
+        '--method', 'org.kde.kglobalaccel.Component.invokeShortcut', action]);
+      return r.ok ? {} : { error: 'スクリーンショットを撮れませんでした(Spectacle が見つかりません)' };
     }
     case 'lock': return exec('loginctl', ['lock-session']);
     case 'suspend': return exec('systemctl', ['suspend']);
