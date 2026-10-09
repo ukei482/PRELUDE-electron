@@ -58,9 +58,19 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
+// 捕まらなかった例外。Electron の既定ではモーダルのエラーダイアログが出て、閉じるまでメインの処理が止まる
+// (シェルとして動いているとき、それで終了も切り替えもできなくなる)。ダイアログは出さずに記録し、終了処理中ならそのまま終わる
+let quitting = false;
+process.on('uncaughtException', (e) => {
+  console.error('uncaught exception', e);
+  qlog(`uncaught exception: ${e?.stack || e}`);
+  if (quitting) process.exit(0);
+});
+
+// 終了処理の各段階の時刻(PRELUDE_DEBUG のときだけ。固まった場所を後から追えるよう同期で書く)
+const qlog = (msg) => { if (process.env.PRELUDE_DEBUG) try { require('fs').appendFileSync('/tmp/prelude-quit.log', `${new Date().toISOString()} ${msg}\n`); } catch {} };
 // systemd(prelude-shell.service)などからの終了要求は、通常の終了として扱う(異常終了扱いだと plasmashell への自動復旧が走ってしまう)
-// 終了処理が固まっても、systemd に SIGKILL される(=失敗扱い)前に自分で正常終了する。TimeoutStopSec(20秒)より短く
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { app.quit(); setTimeout(() => process.exit(0), 14000).unref(); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { qlog(sig); app.quit(); });
 
 const { Config, SCHEMA } = require('./config');
 const appembed = require('./appembed');
@@ -529,9 +539,16 @@ app.on('window-all-closed', () => app.quit());
 // 終了前に、取り込んだアプリを穏やかに閉じる(待つのは最大8秒)。終わってからもう一度 quit する
 let closingApps = false;
 app.on('before-quit', (e) => {
+  qlog(`before-quit closingApps=${closingApps}`);
+  // 終了処理が固まっても、systemd に SIGKILL される(=失敗扱い)前に自分で正常終了する。TimeoutStopSec(20秒)より短く。
+  // (SIGTERM は Electron が自分で受けて quit するため、下の process.on('SIGTERM') には来ないことがある。ここで必ず仕掛ける)
+  if (!quitting) setTimeout(() => { qlog('fallback exit'); process.exit(0); }, 14000).unref();
+  quitting = true;
   if (closingApps) return;
   closingApps = true;
   e.preventDefault();
-  appembed.closeAll(8000).catch(() => {}).finally(() => app.quit());
+  appembed.closeAll(8000).catch(() => {}).finally(() => { qlog('closeAll done'); app.quit(); });
 });
-app.on('will-quit', () => { appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); });
+app.on('will-quit', () => { qlog('will-quit'); appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); qlog('will-quit done'); });
+app.on('quit', () => qlog('quit'));
+process.on('exit', () => qlog('process exit'));

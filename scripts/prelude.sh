@@ -41,9 +41,24 @@ is_service() {
   [[ -n "$1" && "$1" == "$main" ]]
 }
 
+# D-Bus の名前を持たずに残っている、作業フォルダの PRELUDE(普段のプロファイル)の本体
+stuck_pid() {
+  local p a
+  for p in $(pgrep -f 'node_modules/electron/dist/electron' || true); do
+    a="$(tr '\0' ' ' </proc/"$p"/cmdline 2>/dev/null)" || continue
+    [[ "$a" == *"$APPDIR"* && "$a" != *--type=* && "$a" != *--user-data-dir=* ]] || continue
+    is_service "$p" || { echo "$p"; return; }
+  done
+}
+
 # 起動前の確認: 既に動いていれば、二重起動にせず知らせる(Electron の単一インスタンスで、後から起動した方はすぐ終わる)
 check_not_running() {
   local pid; pid="$(running_pid)"
+  # D-Bus の名前を持たずに残っている PRELUDE(終了処理の途中で固まったものなど)も、同じプロファイルなら二重起動になる
+  if [[ -z "$pid" ]]; then
+    pid="$(stuck_pid)"
+    [[ -n "$pid" ]] && die "応答のない PRELUDE が残っています(pid $pid)。終了させるなら: prelude.sh stop"
+  fi
   [[ -z "$pid" ]] && return
   if is_service "$pid"; then die "PRELUDE はデスクトップシェルとして動いています(pid $pid)。止めるなら: prelude.sh return"; fi
   die "PRELUDE は既に動いています(pid $pid)。再起動するなら: prelude.sh restart"
@@ -83,6 +98,7 @@ cmd_debug() {
 
 cmd_stop() {
   local pid; pid="$(running_pid)"
+  [[ -z "$pid" ]] && pid="$(stuck_pid)"
   [[ -z "$pid" ]] && { echo "PRELUDE は動いていません"; return 0; }
   is_service "$pid" && die "PRELUDE はデスクトップシェルとして動いています。Kubuntu に戻るなら: prelude.sh return"
   # SIGTERM = 通常の終了(取り込んだアプリを最大8秒待って閉じる)。20秒で終わらなければ強制終了

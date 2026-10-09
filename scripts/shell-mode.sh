@@ -33,6 +33,34 @@ run_dir() {
   if [[ -L "$ROOT/current" && -x "$ROOT/current/node_modules/electron/dist/electron" ]]; then echo "$ROOT/current"; else echo "$APPDIR"; fi
 }
 
+# サービス以外で動いている PRELUDE の本体プロセス(手で起動したもの、固まって残っているもの)。
+# Electron は同じプロファイルで2つ目を起動するとすぐ終わるので、これが居るとサービスの PRELUDE は起動できない
+manual_prelude_pids() {
+  local main; main="$(sc show -p MainPID --value prelude-shell.service 2>/dev/null || true)"
+  local pid args
+  for pid in $(pgrep -f 'node_modules/electron/dist/electron' || true); do
+    args="$(tr '\0' ' ' </proc/"$pid"/cmdline 2>/dev/null)" || continue
+    [[ "$args" == *--type=* ]] && continue                      # Chromium の子プロセス
+    [[ "$args" == *"$APPDIR"* || "$args" == *"$ROOT/"* ]] || continue # PRELUDE 以外の Electron アプリ
+    [[ "$args" == *--user-data-dir=* ]] && continue             # 別プロファイル(prelude.sh debug など)は衝突しない
+    [[ "$pid" == "$main" ]] && continue
+    echo "$pid"
+  done
+}
+
+# サービスが起動するコードが、この作業フォルダのコードと違えば知らせる(リリースを切り替え忘れて、古い版がシェルになるのを防ぐ)
+warn_release() {
+  local dir; dir="$(run_dir)"
+  [[ "$dir" == "$APPDIR" ]] && return
+  local cur work
+  cur="$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  work="$(git -C "$APPDIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  if [[ "$cur" != "$work" ]]; then
+    echo "注意: シェルとして起動するのはリリース $(basename "$(readlink -f "$dir")")($cur)で、作業フォルダ($work)とは違うコードです。" >&2
+    echo "      作業フォルダの変更を使うなら: scripts/release.sh create <tag> → scripts/release.sh switch <tag>" >&2
+  fi
+}
+
 install_units() {
   mkdir -p "$UNIT_DIR"
   "$APPDIR/scripts/release.sh" install-bin   # 新しい版が壊れていても動くフォールバックを $ROOT/bin に置く
@@ -51,7 +79,16 @@ case "${1:-status}" in
     ;;
   on)
     need_systemd_boot
+    if [[ "${2:-}" == "--now" ]]; then
+      pids="$(manual_prelude_pids)"
+      if [[ -n "$pids" ]]; then
+        echo "手で起動した PRELUDE が動いています(pid: $(echo $pids))。このままではサービスの PRELUDE が二重起動として終了します。" >&2
+        echo "先に終了してください: scripts/prelude.sh stop(固まっているなら kill $(echo $pids))" >&2
+        exit 1
+      fi
+    fi
     install_units
+    warn_release
     sc enable prelude-shell.service
     sc mask "$PLASMA"
     if [[ "${2:-}" == "--now" ]]; then
