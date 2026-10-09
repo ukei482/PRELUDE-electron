@@ -12,6 +12,22 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 ```
 必要なもの：Node.js 20 以上。
 
+Linux（KDE Plasma）では、起動・停止・シェルの切り替えを `scripts/prelude.sh` 1つで行える（`prelude.sh help` で一覧）。
+
+| コマンド | すること |
+|---|---|
+| `prelude.sh start [-f]` | 作業フォルダの PRELUDE を起動（`-f` で端末に出してログを表示） |
+| `prelude.sh debug [port]` | 別プロファイル＋取り込みのデバッグログ（`/tmp/prelude-embed.log`）で起動。`port` で DevTools も開く |
+| `prelude.sh stop` / `restart` | 手で起動した PRELUDE を終了／再起動 |
+| `prelude.sh status` | シェルモード・動いている PRELUDE・リリースの状態 |
+| `prelude.sh log [embed]` | シェルのログ（journalctl）／取り込みのログを追う |
+| `prelude.sh shell on --now` | PRELUDE をデスクトップシェルにする（plasmashell の代わり） |
+| `prelude.sh return` | Kubuntu（plasmashell）に安全に戻る（画面の「Kubuntuに戻る」と同じ） |
+| `prelude.sh shell off --now` | 確認なしで即座に plasmashell に戻す（画面が操作不能な時は TTY から） |
+| `prelude.sh release …` | リリース管理（`create` / `switch` / `rollback` / `status` / `prune`。`docs/release.md`） |
+
+Docker などのコンテナでは動かない（ホストの KWin・セッションの D-Bus・systemd --user・インストール済みアプリを直接使うため）。
+
 ## できること
 - **自前のタイトルバー**（最小化・最大化・全画面・閉じる、ドラッグで移動）
 - **縦タブ** + **ブックマーク**（Web / フォルダ。1ブックマーク = 最大1タブ。右クリックで名前変更・削除）
@@ -50,6 +66,7 @@ npm run start:linux  # Linux（サンドボックスで起動できない環境�
 - `appembed.js` … アプリ取り込み（プロセス起動とKWinスクリプトによるウィンドウ配置）
 - `sys/` … OS連携（Linux）。`bus.js` = D-Bus（`org.prelude.Shell`、KWinスクリプトからの報告を受ける）、`apps.js` = インストール済みアプリ一覧、`status.js` = 電池・音量・ネットワーク（ステータスバー用）、`quick.js` = クイック設定の取得と操作、`media.js` = MPRIS、`keys.js` = KWin経由のグローバルショートカット、`notify.js` = 通知サーバ、`overlay.js` = オーバーレイ窓（KWinで右上/中央下に配置）、`osd.js` = 音量・明るさのOSDと明るさの安全策、`icons.js` = アイコンテーマ→data URL、`tray.js` = システムトレイ
 - `scripts/release.sh` / `scripts/prelude-fallback.sh` … 常用する版と開発版の分離、1つ前の版への切替・自動ロールバック（手順は `docs/release.md`、変更履歴は `CHANGELOG.md`）
+- `scripts/prelude-return.sh` / `sys/session.js` … 「Kubuntuに戻る」。PRELUDE を穏やかに終了し、キーリングの応答と plasmashell の準備を確かめてから戻る（失敗したら PRELUDE のまま。`docs/shell-design.md` 6.6.1）
 - `scripts/shell-mode.sh` / `systemd/` … plasmashell と入れ替えてデスクトップシェルとして使うための切替（設計は `docs/shell-design.md`。段階3まで有効化しないこと）
 - `config.js` … 設定の初期値と設定画面のスキーマ
 - `src/tray.js`（トレイ表示とメニュー）/ `src/bar.js` / `launcher.js` / `quick.js` / `notifications.js`（通知センター）/ `home.js`（ホーム画面）、`src/overlay.*`（トースト窓のページ。`preload-overlay.js` が最小のAPIを出す） … ステータスバーとランチャー（`app.js` の共通関数を使う）

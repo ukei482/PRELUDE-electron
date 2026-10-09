@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('preludeApi', {
     onFavicon: (cb) => on('web:favicon', cb),
     onFocused: (cb) => on('web:focused', cb),
     onOpenRequest: (cb) => on('web:open-request', cb),
+    onToChromium: (cb) => on('web:to-chromium', cb),
   },
   app: {
     supported: () => ipcRenderer.invoke('app:supported'),
@@ -70,6 +71,10 @@ contextBridge.exposeInMainWorld('preludeApi', {
   quick: {
     get: () => ipcRenderer.invoke('quick:get'),
     do: (op, arg) => ipcRenderer.invoke('quick:do', op, arg),
+  },
+  session: {
+    state: () => ipcRenderer.invoke('session:state'),
+    returnToKde: () => ipcRenderer.invoke('session:return'),
   },
   fs: {
     list: (dir, showHidden) => ipcRenderer.invoke('fs:list', dir, showHidden),

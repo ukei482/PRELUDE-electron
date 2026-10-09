@@ -31,7 +31,8 @@ input:focus, select:focus { border-color: var(--accent); }
   display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--text);
   padding: 5px 8px; border-radius: 5px; cursor: pointer;
 }
-.textbtn:hover { background: var(--panel2); }
+.textbtn:hover:not(:disabled) { background: var(--panel2); }
+.textbtn:disabled { opacity: .4; cursor: default; }
 .textbtn.primary { background: var(--accent); color: var(--bg); }
 .textbtn.primary:hover { filter: brightness(1.15); background: var(--accent); }
 .textbtn.danger { color: var(--danger); }
@@ -127,6 +128,7 @@ body.no-sidebar #sidebar { display: none; }
 .frm input[type=number] { width: 90px; }
 .frm input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; }
 .frm .hex { width: 96px !important; font-family: monospace; }
+.frm .hint { color: var(--dim); font-size: .85em; }
 
 /* ---- popups */
 #overlay { position: fixed; inset: 0; pointer-events: none; z-index: 50; }

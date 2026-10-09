@@ -270,6 +270,30 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
 - 不具合の修正：ペインは画面に取り付く前に作られるので、時計の描画を `isConnected` で判定すると初回に止まっていた。
 - 未：KDE の壁紙設定の取り込み、スライドショー、最近使ったファイル、ウィジェット
 
+## 6.6.1 「Kubuntuに戻る」（安全に戻る手順）
+
+2026-10-08 の実機で、PRELUDE から plasmashell に戻した直後に Claude Desktop のウィンドウが出なくなった。原因の流れ：
+
+1. `prelude-shell` の停止（SIGTERM）が終わらず、90秒後に systemd が SIGKILL。取り込んでいたアプリ（Claude Desktop など）も道連れに強制終了された。
+2. SIGKILL は「失敗」扱いなので `OnFailure` のフォールバックが動き、PRELUDE が（1つ前の版で）再起動してしまった。
+3. その後 Claude Desktop がキーリング（kwalletd6）を開こうとすると、パスワード入力ダイアログが見えない状態で kwalletd6 が入力待ちのまま応答しなくなり、Claude Desktop は起動の途中で止まった（ウィンドウが出ない）。
+
+そこで、切り替えを `scripts/prelude-return.sh` にまとめた（画面のボタンとコマンドはこれを呼ぶだけ）。
+
+| 段階 | やること | 失敗したら |
+|---|---|---|
+| 0 | 事前確認（plasmashell を起動できるか）。`--check` で何も変えずに確認できる | 何も触らずに終了 |
+| 1 | `systemctl --user stop prelude-shell`。PRELUDE は取り込みアプリを SIGTERM で閉じ、最大8秒待つ（`appembed.closeAll`）。全体は `TimeoutStopSec=20` で必ず終わる | PRELUDE を再開 |
+| 2 | kwalletd6 が起動していて応答しなければ再起動（起動していなければ触らない） | 続行（警告のみ） |
+| 3 | plasmashell を unmask → 起動。`org.freedesktop.Notifications` の持ち主が plasmashell になり、`StatusNotifierHost` が現れるまで最大30秒待つ | plasmashell を止めて mask し直し、PRELUDE を再開 |
+| 4 | `prelude-shell` の自動起動を解除（次回ログインから plasmashell） | — |
+
+- スクリプトは `systemd-run --user` の一時ユニット（`prelude-return`）で動く。`prelude-shell` の中で動くと、止めた時に自分も消えるため。
+- 動作中は `~/.local/state/prelude/returning` を置き、`prelude-fallback.sh`（OnFailure）が割り込まないようにする。
+- 経過は `~/.local/state/prelude/return.log`。失敗はデスクトップ通知でも知らせる。
+- 画面側：クイック設定の「デスクトップ」→「Kubuntuに戻る」（誤操作防止に2度押し）、ランチャーのコマンド。`sys/session.js` が「自分が `prelude-shell.service` の本体か」を `InvocationID` で確かめ、シェルとして動いていないとき（開発版など）はボタンを出さず、実行も拒否する。
+- 画面が操作不能のときの最後の手段は従来どおり TTY（Ctrl+Alt+F3）からの `scripts/shell-mode.sh off --now`（確認なしで即座に入れ替える）。
+
 ## 6.7 運用（更新と巻き戻し）
 
 - 常用する安定版（タグ付き・`$PRELUDE_ROOT/current`）と開発版（作業フォルダ）を分け、更新で壊れても戻れるようにした。手順は `docs/release.md`。

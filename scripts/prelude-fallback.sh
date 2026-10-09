@@ -11,6 +11,10 @@ sc() { systemctl --user "$@"; }
 log() { echo "$*"; logger -t prelude-fallback -- "$*" 2>/dev/null || true; }
 
 mkdir -p "$STATE"
+
+# 「Kubuntuに戻る」(prelude-return.sh)で意図して止めている間は、失敗扱いで呼ばれても何もしない
+[[ -e "$STATE/returning" ]] && { log "returning to Kubuntu; skipping"; exit 0; }
+
 cur="$(readlink "$ROOT/current" 2>/dev/null || true)"
 prev="$(readlink "$ROOT/previous" 2>/dev/null || true)"
 

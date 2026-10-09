@@ -4,6 +4,8 @@
 #   shell-mode.sh status        今の状態を表示
 #   shell-mode.sh on  [--now]   plasmashell を止め(mask)、PRELUDE を次回ログインから自動起動
 #                               起動するコードは、リリース(scripts/release.sh の current)があればそれ、無ければこの作業フォルダ
+#   shell-mode.sh return       PRELUDE を穏やかに終了し、plasmashell が準備できるのを確かめて戻る(失敗したら PRELUDE のまま)。
+#                               画面の「Kubuntuに戻る」と同じ。`off --now` は確認なしで即座に入れ替える
 #   shell-mode.sh off [--now]   元に戻す(unmask して plasmashell を起動、PRELUDE の自動起動を解除)
 #
 # --now を付けると、ログインし直さずその場で切り替える。
@@ -69,8 +71,13 @@ case "${1:-status}" in
     fi
     echo "シェルモード OFF(plasmashell に戻しました)"
     ;;
+  return)
+    need_systemd_boot
+    "$APPDIR/scripts/release.sh" install-bin
+    exec "$ROOT/bin/prelude-return.sh" "${2:-}"
+    ;;
   *)
-    echo "usage: $0 {status|on [--now]|off [--now]}" >&2
+    echo "usage: $0 {status|on [--now]|off [--now]|return}" >&2
     exit 2
     ;;
 esac
