@@ -10,7 +10,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const SCRIPT_NAME = 'prelude-embed';
+const { instanceTag, cleanShell } = require('./sys/util');
+const SCRIPT_NAME = 'prelude-embed' + instanceTag; // 別プロファイルの PRELUDE(デバッグ用)はシェルのスクリプトを上書きしない
 const supported = process.platform === 'linux' && /kde/i.test(process.env.XDG_CURRENT_DESKTOP || '');
 
 const panes = new Map(); // paneId -> { proc, cmd, keys, rect, wids, owned, old, ... }
@@ -133,13 +134,19 @@ function buildScript() {
       activate: !!p.activate,
     })),
     close: closeWids, // 閉じたペインのウィンドウ(プロセスを殺さずに閉じる)
+    closePids: closePids, // 終了の合図を送れなかったプロセス(snap の Chromium など)。そのウィンドウを閉じる
     release: releaseWids, // 閉じたペインが借りていた、起動前からあったウィンドウ(閉じずに普通の窓に戻す)
   };
   closeWids = [];
   releaseWids = [];
+  closePids = [];
   return `
 var STATE = ${JSON.stringify(state)};
 var EL_PID = ${process.pid};
+// 報告先(org.prelude.Shell)を自分が持っているときだけ報告する。持っていない(別の PRELUDE がシェルとして動いている)ときに報告すると、
+// ペインの番号が重なって、そちらのペインに別のウィンドウが混ざる
+var REPORT = ${monitorOk};
+function send(kind, data) { if (REPORT) callDBus('org.prelude.Shell', '/org/prelude/Shell', 'org.prelude.Shell', 'Report', kind, JSON.stringify(data)); }
 function electron(skip) {
   var best = null, area = 0;
   workspace.windowList().forEach(function (w) {
@@ -162,7 +169,7 @@ function keyHit(p, w) {
 // ウィンドウをペインのものにする。以後はウィンドウID で照合し続ける(Node 側にも知らせて、次のスクリプトに引き継ぐ)
 function claim(p, w, how) {
   p.wids.push(wid(w));
-  callDBus('org.prelude.Shell', '/org/prelude/Shell', 'org.prelude.Shell', 'Report', 'claim', JSON.stringify({ pane: p.id, wid: wid(w), pid: w.pid, how: how }));
+  send('claim', { pane: p.id, wid: wid(w), pid: w.pid, how: how });
   return p;
 }
 // ウィンドウの属するペイン。順に: 取り込み済みのウィンドウID → 起動したプロセスのPID → (まだウィンドウが無いペインだけ)起動後に現れた同じアプリのウィンドウ
@@ -258,7 +265,7 @@ function report() {
     var p = paneOf(w);
     if (p) counts[p.id]++;
   });
-  callDBus('org.prelude.Shell', '/org/prelude/Shell', 'org.prelude.Shell', 'Report', 'windows', JSON.stringify({ counts: counts, all: all }));
+  send('windows', { counts: counts, all: all });
 }
 function applyEverything() { applyShell(); applyAll(); raiseEmbedded(); report(); }
 workspace.windowRemoved.connect(function (w) {
@@ -272,7 +279,7 @@ workspace.windowActivated.connect(function (w) {
 });
 workspace.windowList().forEach(function (w) {
   var id = wid(w);
-  if (STATE.close.indexOf(id) >= 0) w.closeWindow();
+  if (STATE.close.indexOf(id) >= 0 || STATE.closePids.indexOf(w.pid) >= 0) w.closeWindow();
   else if (STATE.release.indexOf(id) >= 0) {
     w.keepAbove = false; w.noBorder = false; w.skipTaskbar = false; w.skipPager = false; w.skipSwitcher = false; w.minimized = false;
   }
@@ -293,11 +300,13 @@ async function reload() {
   try {
     if (!scriptFile) scriptFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'prelude-embed-')), 'embed.js');
     await gdbus('/Scripting', 'org.kde.kwin.Scripting.unloadScript', SCRIPT_NAME);
-    if (!panes.size && !shell.fs && !shell.restore && !waiters.length && !closeWids.length && !releaseWids.length) return;
+    if (!panes.size && !shell.fs && !shell.restore && !waiters.length && !closeWids.length && !releaseWids.length && !closePids.length) return;
     fs.writeFileSync(scriptFile, buildScript());
     const out = await gdbus('/Scripting', 'org.kde.kwin.Scripting.loadScript', scriptFile, SCRIPT_NAME);
-    const id = out && /(\d+)/.exec(out)?.[1];
-    if (id != null) await gdbus(`/Scripting/Script${id}`, 'org.kde.kwin.Script.run');
+    const id = out && /(-?\d+)/.exec(out)?.[1];
+    // 読み込んだ番号の Script{id}.run は使わない。KWin は番号を「今の本数」で振るので、途中のスクリプトを外したあとに読み込むと
+    // 既にある別のスクリプトと番号が重なり、run がそちらに届いて新しいスクリプトが動かないことがある。start は未実行のものを全部動かす
+    if (id != null && Number(id) >= 0) await gdbus('/Scripting', 'org.kde.kwin.Scripting.start');
   } finally {
     reloading = false;
     if (again) { again = false; schedule(); }
@@ -309,11 +318,16 @@ let monitorOk = false;
 let known = []; // 直近の報告にあった全ウィンドウのID
 let waiters = []; // 次の報告を待っている launch
 let closeWids = [];
+let closePids = [];
+// 終了の合図(SIGTERM)を送る。snap のアプリ(Chromium など)は AppArmor で拒まれる(EACCES・EPERM)ので、そのウィンドウを閉じて終わらせる
+function terminate(pid) {
+  try { process.kill(pid, 'SIGTERM'); } catch (e) { log(`terminate ${pid}: ${e.code}`); if (e.code === 'EPERM' || e.code === 'EACCES') closePids.push(pid); }
+}
 let releaseWids = [];
 
 // 取り込み中のウィンドウIDの控え。PRELUDE が後始末できずに終わったとき、次の起動で普通の窓に戻すために使う
 // (KWin スクリプト側でも戻すが、スクリプトの読み直しの合間に落ちた場合の保険)。ログアウトで消える場所に置く
-const widsFile = path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), 'prelude-embed-wids.json');
+const widsFile = path.join(process.env.XDG_RUNTIME_DIR || os.tmpdir(), `prelude-embed-wids${instanceTag}.json`);
 function saveWids() {
   const all = [...panes.values()].flatMap((e) => e.wids);
   try { if (all.length) fs.writeFileSync(widsFile, JSON.stringify(all)); else fs.rmSync(widsFile, { force: true }); } catch {}
@@ -390,7 +404,7 @@ async function launch(paneId, cmd, cls) {
   const old = monitorOk ? [...(await snapshot())] : null;
   starting.delete(paneId);
   if (panes.has(paneId)) return false;
-  const proc = spawn('/bin/sh', ['-c', cmd], { detached: true, stdio: 'ignore', env: childEnv(), cwd: os.homedir() });
+  const proc = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: childEnv(), cwd: os.homedir() });
   const e = { proc, cmd, keys: keysOf(cmd, cls), wids: [], owned: new Set(), adopted: [], old, rect: null, launchedAt: uptime(), t0: Date.now(), hadWindow: false, gone: 0 };
   log(`launch ${paneId} ${cmd} keys=${e.keys}`);
   panes.set(paneId, e);
@@ -452,7 +466,7 @@ function close(paneId) {
   saveWids();
   // ウィンドウは閉じる操作で閉じ、PRELUDE が起動したプロセスだけを終了させる(他の窓も持つ既存のプロセスは残す)
   release(e);
-  for (const pid of ownPids(e).reverse()) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+  for (const pid of ownPids(e).reverse()) terminate(pid);
   schedule();
 }
 
@@ -463,7 +477,7 @@ async function closeAll(ms) {
   const pids = new Set();
   for (const e of panes.values()) for (const p of ownPids(e)) pids.add(p);
   log(`closeAll panes=${panes.size} pids=${[...pids]}`);
-  for (const p of pids) { try { process.kill(p, 'SIGTERM'); } catch {} }
+  for (const p of pids) terminate(p);
   // 既存のプロセスのウィンドウ(Zed・システム設定など)は、プロセスを残してウィンドウだけ閉じる
   for (const e of panes.values()) release(e);
   await reload();
@@ -498,7 +512,7 @@ function browserCmd(url, cls) {
   // 既に同じプロファイルのChromiumが動いていると、新しいプロセスは作られず既存プロセスにウィンドウだけ増える。
   // PIDでは見つからないので、アプリモードのウィンドウクラス(chrome-<host>__<path>-Default)でも照合できるようにしておく
   let winClass = '';
-  try { const u = new URL(url); winClass = `chrome-${u.host}__${u.pathname.replace(/^\//, '').replace(/\//g, '_')}-Default`.toLowerCase(); } catch {}
+  try { const u = new URL(url); winClass = `chrome-${u.hostname}__${u.pathname.replace(/^\//, '').replace(/\//g, '_')}-Default`.toLowerCase(); } catch {}
   return {
     cmd: `${q(bin)} --app=${q(url)} --user-data-dir=${q(profile)} --class=${q(cls)} --no-first-run --no-default-browser-check`,
     cls: winClass,
