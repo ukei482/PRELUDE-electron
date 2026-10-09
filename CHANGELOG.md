@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.3.5] - 2026-10-09
+
 ### 追加
 - スクリーンショット：クイック設定の「スクリーンショット」（範囲を選ぶ・今の画面・Spectacle を開く）と、ランチャーのコマンド（範囲・今の画面・前面の窓）。
   Spectacle のグローバルショートカットを呼ぶ（Print キーと同じ。plasmashell が無くても動く）。押したパネルが写らないよう、閉じてから撮る。
@@ -131,7 +133,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.4...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.1...v0.3.2
