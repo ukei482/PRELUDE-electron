@@ -5,6 +5,9 @@
 
 ## [未リリース]
 
+### 変更
+- 設計メモの「plasmashell を止めている間は音量キーが効かない」を訂正。kded6 の `audioshortcutsservice` が処理していて、シェルモードでも効く。PRELUDE 側では処理しない（二重に変わるため）
+
 ## [0.3.1] - 2026-10-09
 
 ### 修正
@@ -82,7 +85,7 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 - plasmashell との入れ替え（`scripts/shell-mode.sh`、systemd ユニット）
 
 ### 既知の未対応
-- plasmashell を止めている間、キーボードの音量キーが効かない（`docs/shell-design.md` 6.5）
+- ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
 [未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.0...v0.3.1
