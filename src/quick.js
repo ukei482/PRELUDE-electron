@@ -4,6 +4,40 @@
 
 let quickUI = null;
 
+// PRELUDE が plasmashell の代わり(prelude-shell.service)として動いているときだけ、Kubuntu(plasmashell)に戻せる
+let sessionShell = false;
+api.session.state().then((s) => { sessionShell = !!s?.shell; });
+
+// 戻る手順(scripts/prelude-return.sh)を始める。成功すると PRELUDE 自身が終了するので、その間は画面に案内を出す
+let returning = false;
+async function returnToKde() {
+  if (returning) return;
+  returning = true;
+  toast('Kubuntuに戻っています…(数秒かかります。失敗したら PRELUDE のままです)');
+  const r = await api.session.returnToKde();
+  if (r?.error) { returning = false; toast(r.error); }
+}
+
+// 「Kubuntuに戻る」ボタン(クイック設定と設定ペインで共通)。
+// 誤クリックで画面が切り替わらないよう、押すと「もう一度押すと実行」に変わる(3秒で元に戻る)
+function returnButton(cls, before) {
+  const back = h('button', { class: cls, title: 'PRELUDE を終了して、Kubuntu(plasmashell)のデスクトップに戻ります' }, 'Kubuntuに戻る');
+  let armed = 0;
+  back.onclick = () => {
+    if (!armed) {
+      back.textContent = 'もう一度押すと戻ります';
+      back.classList.add('danger');
+      armed = setTimeout(() => { armed = 0; back.textContent = 'Kubuntuに戻る'; back.classList.remove('danger'); }, 3000);
+      return;
+    }
+    clearTimeout(armed);
+    armed = 0;
+    before?.();
+    returnToKde();
+  };
+  return back;
+}
+
 function closeQuick() {
   if (!quickUI) return;
   quickUI.bd.remove();
@@ -82,6 +116,7 @@ async function openQuick() {
     kids.push(section('セッション', h('div', { class: 'qrow qwrap' },
       [['ロック', 'lock'], ['スリープ', 'suspend'], ['ログアウト', 'logout'], ['再起動', 'reboot'], ['電源オフ', 'shutdown']].map(([l, op]) =>
         h('button', { class: 'textbtn', onclick: () => { closeQuick(); act(op, null, false); } }, l)))));
+    if (sessionShell) kids.push(section('デスクトップ', h('div', { class: 'qrow' }, returnButton('textbtn qgrow', closeQuick))));
     const top = box.scrollTop;
     box.replaceChildren(...kids);
     box.scrollTop = top;

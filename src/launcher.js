@@ -31,6 +31,7 @@ const LAUNCHER_COMMANDS = [
   { name: '新しいタブ(Web)', keys: 'new tab web あたらしい', run: () => openTab('web') },
   { name: '新しいタブ(フォルダ)', keys: 'new tab folder files あたらしい', run: () => openTab('files') },
   { name: '全画面の切り替え', keys: 'fullscreen ぜんがめん', run: () => api.win.cmd('toggleFullscreen') },
+  { name: 'Kubuntuに戻る', keys: 'kubuntu plasma desktop return もどる', when: () => sessionShell, run: () => returnToKde() },
 ];
 
 // 前方一致を先に、部分一致を後に
@@ -61,7 +62,7 @@ function launcherEntries(q) {
   for (const { x: tab } of pick(S.tabs, tabTitle)) out.push({ kind: 'タブ', name: tabTitle(tab), run: () => showTab(tab) });
   for (const { x: b } of pick(S.bookmarks, (b) => b.title || b.target)) out.push({ kind: 'ブックマーク', name: b.title || b.target, run: () => openBookmark(b) });
   for (const { x: a } of pick(S.appList || [], (a) => a.name, usedRank).slice(0, 8)) out.push({ kind: 'アプリ', name: a.name, run: () => launchApp(a) });
-  for (const { x: c } of pick(LAUNCHER_COMMANDS, (c) => c.name + ' ' + c.keys)) out.push({ kind: 'コマンド', name: c.name, run: c.run });
+  for (const { x: c } of pick(LAUNCHER_COMMANDS.filter((c) => !c.when || c.when()), (c) => c.name + ' ' + c.keys)) out.push({ kind: 'コマンド', name: c.name, run: c.run });
   out.push({ kind: 'Web', name: `Webで開く／検索: ${q}`, run: () => openTab('web', { url: q }) });
   return out.slice(0, 14);
 }

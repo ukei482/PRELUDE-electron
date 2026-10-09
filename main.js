@@ -58,14 +58,28 @@ if (!app.requestSingleInstanceLock()) {
   process.exit(0);
 }
 
+// 捕まらなかった例外。Electron の既定ではモーダルのエラーダイアログが出て、閉じるまでメインの処理が止まる
+// (シェルとして動いているとき、それで終了も切り替えもできなくなる)。ダイアログは出さずに記録し、終了処理中ならそのまま終わる
+let quitting = false;
+process.on('uncaughtException', (e) => {
+  console.error('uncaught exception', e);
+  qlog(`uncaught exception: ${e?.stack || e}`);
+  if (quitting) process.exit(0);
+});
+
+// 終了処理の各段階の時刻(PRELUDE_DEBUG のときだけ。固まった場所を後から追えるよう同期で書く)
+const qlog = (msg) => { if (process.env.PRELUDE_DEBUG) try { require('fs').appendFileSync('/tmp/prelude-quit.log', `${new Date().toISOString()} ${msg}\n`); } catch {} };
 // systemd(prelude-shell.service)などからの終了要求は、通常の終了として扱う(異常終了扱いだと plasmashell への自動復旧が走ってしまう)
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => app.quit());
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { qlog(sig); app.quit(); });
 
 const { Config, SCHEMA } = require('./config');
 const appembed = require('./appembed');
 const bus = require('./sys/bus');
 const status = require('./sys/status');
 const quick = require('./sys/quick');
+const sessionCtl = require('./sys/session');
+let shellMode = false; // prelude-shell.service として動いているか(起動後に判定)
+sessionCtl.isShell().then((v) => { shellMode = v; });
 const media = require('./sys/media');
 const keys = require('./sys/keys');
 const notify = require('./sys/notify');
@@ -170,6 +184,9 @@ function createWindow() {
     if (config.get('behavior.startFullscreen')) setFullscreen(true);
   });
   hookInput(win.webContents);
+  // シェルとして動いている間は、閉じる・最小化を受け付けない(Alt+F4 などで閉じると、画面に何も無くなる)。戻るときは「Kubuntuに戻る」
+  win.on('close', (e) => { if (shellMode && !closingApps) e.preventDefault(); });
+  win.on('minimize', () => { if (shellMode) win.restore(); });
   const pushState = () => send('win:state', winState());
   ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen'].forEach((e) => win.on(e, pushState));
   win.on('resize', () => {
@@ -196,9 +213,7 @@ const winState = () => ({ maximized: !!win?.isMaximized(), fullscreen: isFullscr
 
 ipcMain.on('win:cmd', (_e, cmd) => {
   if (!win) return;
-  if (cmd === 'minimize') win.minimize();
-  else if (cmd === 'toggleMaximize') (win.isMaximized() ? win.unmaximize() : win.maximize());
-  else if (cmd === 'close') win.close();
+  if (cmd === 'toggleMaximize') (win.isMaximized() ? win.unmaximize() : win.maximize());
   else if (cmd === 'toggleFullscreen') setFullscreen(!isFullscreen());
 });
 ipcMain.handle('win:state', () => winState());
@@ -250,6 +265,29 @@ function applyView(e) {
   e.view.setVisible(!!e.rect && e.rect.width > 0 && e.rect.height > 0 && !suspended);
 }
 
+// Google のログイン画面。Electron(埋め込みブラウザ)は「このブラウザは安全でない可能性があります」と弾かれ、UA などの偽装でも安定して通らない。
+// そこで、このページに進もうとしたペインは本物の Chromium のペイン(ログインはそのプロファイルに保存される)に切り替える
+const GOOGLE_SIGNIN = /^\/(v3\/signin|signin|ServiceLogin|AddSession|InteractiveLogin|AccountChooser|o\/oauth2|CheckCookie)/i;
+function isGoogleSignin(u) {
+  try { const x = new URL(u); return x.hostname === 'accounts.google.com' && GOOGLE_SIGNIN.test(x.pathname); } catch { return false; }
+}
+// ペイン(またはそのポップアップ)が Google のログインへ進むのを止め、画面側にペインの切り替えを頼む。
+// ポップアップ(他サイトの「Googleでログイン」)は、元のページごと Chromium で開き直す(ログイン結果を元のページに返せないため)
+function guardGoogleSignin(wc, paneId, popup) {
+  const check = (e, url, _inPlace, isMain) => {
+    const u = e?.url ?? url;
+    if (!(e?.isMainFrame ?? isMain) || !isGoogleSignin(u) || !appembed.supported || !appembed.hasBrowser()) return;
+    e.preventDefault?.();
+    wc.stop();
+    const opener = views.get(paneId)?.wc;
+    send('web:to-chromium', { paneId, url: popup ? (opener && !opener.isDestroyed() ? opener.getURL() : u) : u, popup: !!popup });
+    if (popup) setImmediate(() => { try { wc.close(); } catch {} });
+  };
+  wc.on('will-navigate', check);
+  wc.on('will-redirect', check);
+  wc.on('did-start-navigation', check); // loadURL(アドレス欄・ブックマーク)は will-navigate を通らない
+}
+
 function createWeb(paneId, input) {
   if (!win || views.has(paneId)) return;
   const view = new WebContentsView({
@@ -278,7 +316,12 @@ function createWeb(paneId, input) {
 
   // target=_blank などの新規タブ要求は分割ペインで開く。
   // window.open(features付き)のポップアップ(OAuthログイン等)は opener を保つため本物のウィンドウで開く。
+  guardGoogleSignin(wc, paneId, false);
   wc.setWindowOpenHandler(({ url, disposition, features }) => {
+    if (disposition === 'new-window' && features && isGoogleSignin(url) && appembed.supported && appembed.hasBrowser()) {
+      send('web:to-chromium', { paneId, url: wc.getURL(), popup: true });
+      return { action: 'deny' };
+    }
     if (disposition === 'new-window' && features) {
       return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true } };
     }
@@ -286,7 +329,7 @@ function createWeb(paneId, input) {
     return { action: 'deny' };
   });
 
-  wc.on('did-create-window', (child) => spoofChrome(child.webContents));
+  wc.on('did-create-window', (child) => { spoofChrome(child.webContents); guardGoogleSignin(child.webContents, paneId, true); });
   // 先に空ページを読んで描画プロセスを作り、Client Hintsを上書きしてから本当のURLへ進む
   wc.loadURL('about:blank').catch(() => {})
     .then(() => spoofChrome(wc))
@@ -321,7 +364,7 @@ ipcMain.on('web:destroy', (_e, paneId) => {
 });
 
 // ---------------------------------------------------------------- app embed
-appembed.onEvent((ev, paneId) => send('app:' + ev, { paneId }));
+appembed.onEvent((ev, paneId, extra) => send('app:' + ev, { paneId, ...extra }));
 ipcMain.handle('app:supported', () => appembed.supported);
 ipcMain.handle('app:browser-cmd', (_e, url, cls) => appembed.browserCmd(url, cls));
 ipcMain.handle('app:list', () => appembed.listApps());
@@ -332,7 +375,7 @@ ipcMain.on('app:close', (_e, paneId) => appembed.close(paneId));
 ipcMain.handle('app:spawn', (_e, cmd) => {
   if (typeof cmd !== 'string' || !cmd.trim()) return false;
   try {
-    const p = spawn('/bin/sh', ['-c', cmd], { detached: true, stdio: 'ignore' });
+    const p = spawn('/bin/sh', ['-c', cmd], { detached: true, stdio: 'ignore', env: appembed.childEnv(), cwd: require('os').homedir() });
     p.on('error', () => {});
     p.unref();
     return true;
@@ -465,6 +508,7 @@ app.whenReady().then(async () => {
   });
   const sys = status.init({ send, ipcMain, onVolumeChange: (v) => osd.show('volume', v.percent, v.muted) });
   quick.init({ ipcMain, refreshStatus: sys?.refresh, onSelfChange: () => osd.quiet() });
+  sessionCtl.init({ ipcMain });
   if (process.platform === 'linux') {
     media.init({ ipcMain, send });
     // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。
@@ -492,4 +536,19 @@ app.whenReady().then(async () => {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 });
 app.on('window-all-closed', () => app.quit());
-app.on('will-quit', () => { appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); });
+// 終了前に、取り込んだアプリを穏やかに閉じる(待つのは最大8秒)。終わってからもう一度 quit する
+let closingApps = false;
+app.on('before-quit', (e) => {
+  qlog(`before-quit closingApps=${closingApps}`);
+  // 終了処理が固まっても、systemd に SIGKILL される(=失敗扱い)前に自分で正常終了する。TimeoutStopSec(20秒)より短く。
+  // (SIGTERM は Electron が自分で受けて quit するため、下の process.on('SIGTERM') には来ないことがある。ここで必ず仕掛ける)
+  if (!quitting) setTimeout(() => { qlog('fallback exit'); process.exit(0); }, 14000).unref();
+  quitting = true;
+  if (closingApps) return;
+  closingApps = true;
+  e.preventDefault();
+  appembed.closeAll(8000).catch(() => {}).finally(() => { qlog('closeAll done'); app.quit(); });
+});
+app.on('will-quit', () => { qlog('will-quit'); appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); qlog('will-quit done'); });
+app.on('quit', () => qlog('quit'));
+process.on('exit', () => qlog('process exit'));

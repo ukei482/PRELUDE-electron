@@ -30,6 +30,7 @@ point() { ln -sfn "$2" "$ROOT/.$1.tmp" && mv -T "$ROOT/.$1.tmp" "$ROOT/$1"; }
 cmd_install_bin() {
   mkdir -p "$ROOT/bin"
   install -m 755 "$REPO/scripts/prelude-fallback.sh" "$ROOT/bin/prelude-fallback.sh"
+  install -m 755 "$REPO/scripts/prelude-return.sh" "$ROOT/bin/prelude-return.sh"
 }
 
 cmd_create() {

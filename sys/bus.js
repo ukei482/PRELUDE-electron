@@ -29,6 +29,11 @@ async function init() {
   try {
     bus = dbus.sessionBus();
     bus.on('error', (e) => console.error('session bus error', e.message));
+    // 切断した後に届いたメソッド呼び出しへ dbus-next が返事を送ろうとすると、例外(stream is closed)が投げられて
+    // 誰にも捕まらない。終了処理中にこれが起きると Electron のエラーダイアログで止まり、PRELUDE が終われなくなるので、切断後の送信は捨てる
+    const send = bus.send.bind(bus);
+    const b = bus;
+    bus.send = (msg) => { if (b.closed) return; try { send(msg); } catch (e) { console.error('session bus send failed', e.message); } };
     bus.export(PATH, new ShellInterface(NAME));
     const reply = await bus.requestName(NAME, 0);
     if (reply !== dbus.RequestNameReply.PRIMARY_OWNER) throw new Error('name already owned');
@@ -45,6 +50,10 @@ async function init() {
 const onReport = (kind, cb) => { handlers.set(kind, cb); };
 
 const get = () => bus;
-function shutdown() { try { bus?.disconnect(); } catch {} bus = null; }
+function shutdown() {
+  if (bus) bus.closed = true;
+  try { bus?.disconnect(); } catch {}
+  bus = null;
+}
 
 module.exports = { NAME, PATH, init, onReport, get, shutdown };

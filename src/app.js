@@ -405,8 +405,7 @@ function commonButtons(tab, leaf) {
 // ------------------------------------------------------------------ real browser pane
 // ElectronのWebビューは、Googleなどに「サポートされていないブラウザ」と判定されてログインできないことがある。
 // そのときはペインを本物のChromiumのウィンドウ(アプリモード)に置き換える。プロファイルは専用で、ログインは保持される。
-function toRealBrowser(tab, leaf) {
-  const url = leaf.url || C.behavior.homepage;
+function toRealBrowser(tab, leaf, url = leaf.url || C.behavior.homepage) {
   const nl = makeLeaf('app', { webUrl: url });
   destroyLeaf(leaf);
   replaceNode(tab, leaf, nl);
@@ -634,6 +633,16 @@ function buildSettings(tab, leaf, head, body) {
       wrap.append(h('div', { class: 'frm' }, h('label', {}, f.label), ctl));
     }
   }
+  // デスクトップ(セッション)。シェルとして動いていないとき(開発版を手で起動した時など)は押せないようにして理由を出す
+  const back = returnButton('textbtn');
+  back.disabled = true;
+  const note = h('span', { class: 'hint' }, '確認中…');
+  wrap.append(h('h3', {}, 'デスクトップ'), h('div', { class: 'frm' }, h('label', {}, 'Kubuntu(plasmashell)のデスクトップに戻る'), back, note));
+  api.session.state().then((s) => {
+    sessionShell = !!s?.shell;
+    back.disabled = !sessionShell;
+    note.textContent = sessionShell ? 'PRELUDE を終了します。次回ログインも Kubuntu になります' : 'PRELUDE がデスクトップシェルとして動いている時だけ使えます(shell-mode.sh on --now)';
+  });
   wrap.append(h('div', { style: { marginTop: '24px' } },
     h('button', { class: 'textbtn danger', onclick: async () => { await api.config.reset(); render(); } }, '初期値に戻す')));
   body.append(wrap);
@@ -693,6 +702,15 @@ api.web.onState((s) => {
 });
 api.web.onFavicon(({ paneId, icon }) => { const f = findLeaf(paneId); if (f) { f.leaf.favicon = icon; renderSidebar(); } });
 api.web.onFocused(({ paneId }) => { const f = findLeaf(paneId); if (f && f.tab === activeTab()) setActivePane(f.tab, f.leaf); });
+// Google のログインに進んだ Web ペインは、本物の Chromium のペインに切り替える(main.js の guardGoogleSignin)
+api.web.onToChromium(({ paneId, url, popup }) => {
+  const f = findLeaf(paneId);
+  if (!f || f.leaf.type !== 'web') return;
+  toRealBrowser(f.tab, f.leaf, url);
+  toast(popup ? 'Google でのログインは Chromium で行います。このページを Chromium で開き直しました'
+    : 'Google のログインは Chromium で行います(このタブは以後 Chromium で表示されます)');
+});
+
 api.web.onOpenRequest(({ fromPaneId, url }) => {
   const f = findLeaf(fromPaneId);
   if (f) splitLeaf(f.tab, f.leaf, 'row', 'web', { url });
@@ -719,12 +737,14 @@ api.dl.onDone(({ id, state }) => {
 api.dl.onSaved(({ path }) => toast('保存しました: ' + path));
 api.dl.onError(({ message }) => toast('保存に失敗しました: ' + message));
 
-api.app.onExited(({ paneId }) => {
+api.app.onExited(({ paneId, hadWindow }) => {
   const f = findLeaf(paneId);
   if (!f || !f.leaf.running) return;
   api.app.close(paneId);
   f.leaf.running = false;
-  f.leaf.dormant = !!(f.leaf.cmd || f.leaf.webUrl); // 次にこのタブを開いたとき、同じアプリを起動し直す
+  // 次にこのタブを開いたとき、同じアプリを起動し直す。ウィンドウが一度も見つからなかったときは、起動し直しても同じなので知らせるだけ
+  f.leaf.dormant = !!hadWindow && !!(f.leaf.cmd || f.leaf.webUrl);
+  if (!hadWindow) toast(`「${f.leaf.name || f.leaf.cmd}」のウィンドウが見つかりませんでした`);
   render();
 });
 
@@ -753,16 +773,12 @@ async function boot() {
 
   $('#tb-sidebar').append(ico('menu'));
   $('#tb-fullscreen').append(ico('fullscreen'));
-  $('#tb-min').append(ico('minimize'));
   $('#tb-max').append(ico('maximize'));
-  $('#tb-close').append(ico('close'));
   $('#new-tab').append(ico('plus'));
   $('#open-settings').append(ico('settings'), '設定');
   $('#tb-sidebar').onclick = () => api.config.set('behavior.sidebarVisible', !C.behavior.sidebarVisible);
   $('#tb-fullscreen').onclick = () => api.win.cmd('toggleFullscreen');
-  $('#tb-min').onclick = () => api.win.cmd('minimize');
   $('#tb-max').onclick = () => api.win.cmd('toggleMaximize');
-  $('#tb-close').onclick = () => api.win.cmd('close');
   $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [
     { header: '新しいタブ' },
     { label: 'ホーム', icon: 'home', run: () => openTab('home') },
