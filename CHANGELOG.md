@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.3.1] - 2026-10-09
+
 ### 修正
 - 「Kubuntuに戻る」が押しても何も起きなかった。`src/quick.js` が読み込み時に、まだ使えない `api` を呼んで例外になり、ファイルの残り（`returning` の初期化）が実行されていなかったため。
   状態の取得は起動処理（`boot`）から行う。クイック設定・設定ペイン・ランチャーのどれから押しても同じ原因で動いていなかった
@@ -82,7 +84,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - plasmashell を止めている間、キーボードの音量キーが効かない（`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ukei482/PRELUDE-electron/releases/tag/v0.1.0
