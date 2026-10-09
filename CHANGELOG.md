@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.3.3] - 2026-10-09
+
 ### 追加
 - ログインが要る Google のサービス（Gmail・ドライブ・ドキュメント・カレンダー・フォト・YouTube など）は、Web タブで開いても最初から Chromium のペインで開く。
   Chromium の専用プロファイルは一度ログインすればログインしたままなので、開いた時からログインした状態になる。
@@ -109,7 +111,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.2...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.2.0...v0.3.0
