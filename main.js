@@ -309,10 +309,32 @@ function guardGoogleSignin(wc, paneId, popup) {
   wc.on('did-start-navigation', check); // loadURL(アドレス欄・ブックマーク)は will-navigate を通らない
 }
 
+// サイトの単位(登録ドメインのおおよそ)。mail.google.com と accounts.google.com は同じ google.com、example.co.jp は example.co.jp
+function siteOf(u) {
+  let host;
+  try { host = new URL(u).hostname.toLowerCase(); } catch { return ''; }
+  const p = host.split('.');
+  const n = p.length >= 3 && p[p.length - 1].length === 2 && p[p.length - 2].length <= 3 ? 3 : 2;
+  return p.slice(-n).join('.');
+}
+
+// ブックマーク(ピン留め)のタブ: 別のサイトへ移ろうとしたら、タブはそのサイトのまま残し、移り先は設定に従って新しいタブか分割で開く(Arc と同じ考え方)。
+// Google のログイン・Chromium で開くサイトは、そちらの切り替えに任せる
+function guardPinned(wc, paneId) {
+  wc.on('will-navigate', (e) => {
+    const entry = views.get(paneId);
+    if (!entry?.pin || e.defaultPrevented || !e.isMainFrame || config.get('tabs.pinnedOtherSite') === 'stay') return;
+    const site = siteOf(e.url);
+    if (!site || site === entry.pin || isGoogleSignin(e.url) || isChromiumSite(e.url)) return;
+    e.preventDefault();
+    send('web:open-request', { fromPaneId: paneId, url: e.url, disposition: 'pinned' });
+  });
+}
+
 function createWeb(paneId, input) {
   if (!win || views.has(paneId)) return;
   const view = new WebContentsView({
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, 'preload-web.js') },
   });
   const wc = view.webContents;
   const entry = { view, wc, rect: null };
@@ -335,9 +357,10 @@ function createWeb(paneId, input) {
     wc.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)).catch(() => {});
   });
 
-  // target=_blank などの新規タブ要求は分割ペインで開く。
+  // target=_blank などの新規タブ要求は、画面側が設定(タブ → 別のタブで開くリンク)に従って新しいタブか分割で開く。
   // window.open(features付き)のポップアップ(OAuthログイン等)は opener を保つため本物のウィンドウで開く。
   guardGoogleSignin(wc, paneId, false);
+  guardPinned(wc, paneId);
   wc.setWindowOpenHandler(({ url, disposition, features }) => {
     if (disposition === 'new-window' && features && isGoogleSignin(url) && appembed.supported && appembed.hasBrowser()) {
       send('web:to-chromium', { paneId, url: wc.getURL(), popup: true });
@@ -346,7 +369,7 @@ function createWeb(paneId, input) {
     if (disposition === 'new-window' && features) {
       return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true } };
     }
-    send('web:open-request', { fromPaneId: paneId, url });
+    send('web:open-request', { fromPaneId: paneId, url, disposition }); // background-tab(中クリック・Ctrl+クリック)は裏で開く
     return { action: 'deny' };
   });
 
@@ -375,6 +398,12 @@ ipcMain.on('web:cmd', (_e, paneId, cmd, arg) => {
   else if (cmd === 'reload') wc.reload();
   else if (cmd === 'stop') wc.stop();
   else if (cmd === 'focus') wc.focus();
+  else if (cmd === 'pin') e.pin = arg ? siteOf(String(arg)) : ''; // ブックマークのタブなら、そのサイト
+});
+// Web ペインの中の Alt+クリック(preload-web.js)。送ってきたペインを探して、画面側に開き方を任せる
+ipcMain.on('web:link', (ev, url, how) => {
+  if (typeof url !== 'string' || !/^https?:/i.test(url) || how !== 'alt') return;
+  for (const [paneId, e] of views) if (e.wc === ev.sender) send('web:open-request', { fromPaneId: paneId, url, disposition: 'alt' });
 });
 ipcMain.on('web:destroy', (_e, paneId) => {
   const e = views.get(paneId);
