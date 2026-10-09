@@ -115,6 +115,9 @@ async function openQuick() {
       kids.push(section('電源プロファイル', h('div', { class: 'qrow' },
         d.profile.available.map((p) => h('button', { class: 'textbtn qgrow' + (p === d.profile.current ? ' primary' : ''), onclick: () => act('profile', p) }, PROFILE_LABEL[p] || p)))));
     }
+    kids.push(section('スクリーンショット', h('div', { class: 'qrow qwrap' },
+      [['範囲を選ぶ', 'region'], ['今の画面', 'screen'], ['Spectacle を開く', 'open']].map(([l, kind]) =>
+        h('button', { class: 'textbtn', onclick: () => { closeQuick(); act('screenshot', kind, false); } }, l)))));
     kids.push(section('セッション', h('div', { class: 'qrow qwrap' },
       [['ロック', 'lock'], ['スリープ', 'suspend'], ['ログアウト', 'logout'], ['再起動', 'reboot'], ['電源オフ', 'shutdown']].map(([l, op]) =>
         h('button', { class: 'textbtn', onclick: () => { closeQuick(); act(op, null, false); } }, l)))));

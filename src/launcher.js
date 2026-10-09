@@ -12,12 +12,15 @@ function closeLauncher() {
   suspend(-1);
 }
 
+const NO_EMBED = /(^|\/)spectacle(\s|$)/;
+
 // アプリを開く。既定はペインに取り込む(設定で別ウィンドウにもできる)。取り込み未対応の環境では別ウィンドウ
 function launchApp(a) {
   const usage = (C.appUsage || []).filter((u) => u.exec !== a.exec);
   usage.unshift({ exec: a.exec, n: ((C.appUsage || []).find((u) => u.exec === a.exec)?.n || 0) + 1 });
   api.config.set('appUsage', usage.slice(0, 50));
-  if (!S.appSupported || C.behavior.appOpen === 'window') {
+  // スクリーンショットのアプリはペインに取り込まない(範囲選びの画面や「画面全体」が取り込みと噛み合わない)
+  if (!S.appSupported || C.behavior.appOpen === 'window' || NO_EMBED.test(a.exec)) {
     api.app.spawn(a.exec).then((ok) => { if (!ok) toast('起動できませんでした'); });
     return;
   }
@@ -31,6 +34,9 @@ const LAUNCHER_COMMANDS = [
   { name: '新しいタブ(Web)', keys: 'new tab web あたらしい', run: () => openTab('web') },
   { name: '新しいタブ(フォルダ)', keys: 'new tab folder files あたらしい', run: () => openTab('files') },
   { name: '全画面の切り替え', keys: 'fullscreen ぜんがめん', run: () => api.win.cmd('toggleFullscreen') },
+  { name: 'スクリーンショット(範囲を選ぶ)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい', run: () => api.quick.do('screenshot', 'region') },
+  { name: 'スクリーンショット(今の画面)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい', run: () => api.quick.do('screenshot', 'screen') },
+  { name: 'スクリーンショット(前面の窓)', keys: 'screenshot capture print window すくりーんしょっと まど', run: () => api.quick.do('screenshot', 'window') },
   { name: 'Kubuntuに戻る', keys: 'kubuntu plasma desktop return もどる', when: () => sessionShell, run: () => returnToKde() },
 ];
 
