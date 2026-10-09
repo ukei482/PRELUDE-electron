@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.3.0] - 2026-10-09
+
 ### 追加
 - `scripts/prelude.sh`：起動・デバッグ起動・停止・状態表示・ログ・シェルの切り替え・リリース管理を1つにまとめた入口（README の表を参照）
 - 「Kubuntuに戻る」（クイック設定の「デスクトップ」、ランチャーのコマンド、`scripts/shell-mode.sh return`）。PRELUDE がシェルとして動いているときだけ出る。
@@ -76,6 +78,7 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - plasmashell を止めている間、キーボードの音量キーが効かない（`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.2.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ukei482/PRELUDE-electron/releases/tag/v0.1.0
