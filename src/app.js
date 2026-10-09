@@ -64,7 +64,7 @@ function makeLeaf(type, o = {}) {
       mode: o.mode || 'browse', dlId: o.dlId, filename: o.filename || '', dlMsg: '',
     };
   }
-  if (type === 'app') return { k: 'leaf', id, type, cmd: o.cmd || '', cls: o.cls || '', name: o.name || '', webUrl: o.webUrl || '', running: false, apps: null, filter: '' };
+  if (type === 'app') return { k: 'leaf', id, type, cmd: o.cmd || '', cls: o.cls || '', name: o.name || '', icon: o.icon || '', webUrl: o.webUrl || '', title: '', running: false, apps: null, filter: '' };
   if (type === 'home') return { k: 'leaf', id, type };
   return { k: 'leaf', id, type: 'settings' };
 }
@@ -84,11 +84,23 @@ function tabTitle(tab) {
   if (!l) return '';
   if (l.type === 'web') return l.title || hostOf(l.url) || '新しいタブ';
   if (l.type === 'files') return l.mode === 'save' ? '保存先を選択' : baseName(l.path) || 'フォルダ';
-  if (l.type === 'app') return l.name || l.cmd || 'アプリ';
+  if (l.type === 'app') return l.title || l.name || l.cmd || 'アプリ'; // 取り込んだ窓の題名(Chromium なら今のページ名)を優先
   if (l.type === 'home') return 'ホーム';
   return '設定';
 }
 const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : l.type === 'app' ? 'window' : l.type === 'home' ? 'home' : 'settings');
+
+// アプリのペインのアイコン(.desktop の Icon。実ブラウザのペインは Chromium のアイコン)。まだ読めていなければ汎用のアイコンを出し、読めたら描き直す
+function appLeafIcon(l) {
+  if (l.iconUrl) return h('img', { class: 'fav', src: l.iconUrl, onerror: (e) => e.target.replaceWith(ico('window')) });
+  const list = S.appList || [];
+  const name = l.icon || (l.webUrl ? list.find((a) => /chrom/i.test(a.exec))?.icon : list.find((a) => a.exec === l.cmd)?.icon) || '';
+  if (name && !l.iconTried) {
+    l.iconTried = true;
+    appIconUrl(name).then((u) => { if (u) { l.iconUrl = u; renderSidebar(); if (l.ui?.icon?.isConnected) l.ui.icon.replaceWith(appLeafIcon(l)); } });
+  }
+  return ico('window');
+}
 
 function renderSidebar() {
   const bl = $('#bm-list');
@@ -115,7 +127,8 @@ function renderSidebar() {
   for (const tab of S.tabs) {
     const l = activeLeaf(tab);
     const n = leaves(tab.root).length;
-    const icon = l.type === 'web' && l.favicon ? h('img', { class: 'fav', src: l.favicon, onerror: (e) => e.target.replaceWith(ico('globe')) }) : ico(leafIcon(l));
+    const icon = l.type === 'web' && l.favicon ? h('img', { class: 'fav', src: l.favicon, onerror: (e) => e.target.replaceWith(ico('globe')) })
+      : l.type === 'app' ? appLeafIcon(l) : ico(leafIcon(l));
     tl.append(h('div', {
       class: 'item' + (tab.id === S.active ? ' active' : ''),
       onclick: () => showTab(tab),
@@ -446,7 +459,7 @@ function updateWebUI(leaf) {
 
 // ------------------------------------------------------------------ app pane
 // 外部アプリのウィンドウを、この .web-slot の位置に重ねて表示する(main.js / appembed.js が KWin 経由で配置)
-async function startApp(leaf, cmd, cls = '', name = '') {
+async function startApp(leaf, cmd, cls = '', name = '', icon = '') {
   if (leaf.webUrl) { // 実ブラウザ(Chromium)ペイン: ウィンドウの照合用クラスはペインごとに作る
     ({ cmd, cls } = await api.app.browserCmd(leaf.webUrl, 'prelude-' + leaf.id));
     name = hostOf(leaf.webUrl) || 'Chromium';
@@ -454,14 +467,18 @@ async function startApp(leaf, cmd, cls = '', name = '') {
   if (!cmd.trim()) return;
   if (await api.app.launch(leaf.id, cmd, cls)) {
     Object.assign(leaf, { cmd, cls, name: name || cmd.split(/\s+/)[0].split('/').pop(), running: true, dormant: false });
-    if (!leaf.webUrl) { try { localStorage.setItem('lastApp', JSON.stringify({ cmd, cls, name: leaf.name })); } catch {} }
+    if (icon && icon !== leaf.icon) Object.assign(leaf, { icon, iconUrl: '', iconTried: false });
+    if (!leaf.webUrl) { try { localStorage.setItem('lastApp', JSON.stringify({ cmd, cls, name: leaf.name, icon: leaf.icon })); } catch {} }
     render();
   } else toast('起動できませんでした');
 }
 
 function buildApp(tab, leaf, head, body) {
   if (leaf.webUrl && !leaf.running) { head.append(ico('window'), h('span', { class: 'ptitle' }, '起動中…'), ...commonButtons(tab, leaf)); return; }
-  head.append(ico('window'), h('span', { class: 'ptitle' }, leaf.running ? leaf.name : 'アプリを取り込む'), ...commonButtons(tab, leaf));
+  const icon = appLeafIcon(leaf);
+  const title = h('span', { class: 'ptitle', title: leaf.name }, leaf.running ? leaf.title || leaf.name : 'アプリを取り込む');
+  leaf.ui = { icon, title };
+  head.append(icon, title, ...commonButtons(tab, leaf));
   if (leaf.running) {
     const slot = h('div', { class: 'web-slot app-slot' });
     body.append(slot);
@@ -482,13 +499,13 @@ function buildApp(tab, leaf, head, body) {
     list.replaceChildren();
     const q = leaf.filter.toLowerCase();
     for (const a of (leaf.apps || []).filter((x) => !q || x.name.toLowerCase().includes(q)).slice(0, 200)) {
-      list.append(h('div', { class: 'app-row', title: a.exec, ondblclick: () => startApp(leaf, a.exec, a.cls, a.name), onclick: () => { cmdIn.value = a.exec; leaf.cmd = a.exec; leaf.cls = a.cls; } }, a.name));
+      list.append(h('div', { class: 'app-row', title: a.exec, ondblclick: () => startApp(leaf, a.exec, a.cls, a.name, a.icon), onclick: () => { cmdIn.value = a.exec; leaf.cmd = a.exec; leaf.cls = a.cls; } }, a.name));
     }
   };
   let last = null;
   try { last = JSON.parse(localStorage.getItem('lastApp') || 'null'); } catch {}
   body.append(h('div', { class: 'app-launcher' },
-    last && last.cmd ? h('div', { class: 'app-bar' }, h('button', { class: 'textbtn', onclick: () => startApp(leaf, last.cmd, last.cls, last.name) }, `前回のアプリ「${last.name}」を起動`)) : null,
+    last && last.cmd ? h('div', { class: 'app-bar' }, h('button', { class: 'textbtn', onclick: () => startApp(leaf, last.cmd, last.cls, last.name, last.icon) }, `前回のアプリ「${last.name}」を起動`)) : null,
     h('div', { class: 'app-bar' }, cmdIn, h('button', { class: 'textbtn', onclick: () => startApp(leaf, cmdIn.value, leaf.cls) }, '起動')),
     h('div', { class: 'app-hint' }, 'ダブルクリックで起動。起動したウィンドウはこのペインの位置に重ねて表示されます。'),
     search, list));
@@ -655,7 +672,7 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     const ser = (n) => (n.k === 'split'
       ? { k: 'split', dir: n.dir, ratio: n.ratio, a: ser(n.a), b: ser(n.b) }
-      : { k: 'leaf', type: n.type, url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, webUrl: n.webUrl });
+      : { k: 'leaf', type: n.type, url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl });
     api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ bookmarkId: t.bookmarkId, root: ser(t.root) })) });
   }, 600);
 }
@@ -663,7 +680,7 @@ function scheduleSave() {
 function restore(ws) {
   const deser = (n) => (n.k === 'split'
     ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deser(n.a), b: deser(n.b) }
-    : makeLeaf(['web', 'files', 'settings', 'app', 'home'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, webUrl: n.webUrl }));
+    : makeLeaf(['web', 'files', 'settings', 'app', 'home'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl }));
   for (const t of ws.tabs) {
     try {
       const root = deser(t.root);
@@ -738,11 +755,21 @@ api.dl.onDone(({ id, state }) => {
 api.dl.onSaved(({ path }) => toast('保存しました: ' + path));
 api.dl.onError(({ message }) => toast('保存に失敗しました: ' + message));
 
+// 取り込んだ窓の題名が変わった(appembed.js の report)
+api.app.onTitle(({ paneId, title }) => {
+  const f = findLeaf(paneId);
+  if (!f || f.leaf.type !== 'app' || f.leaf.title === title) return;
+  f.leaf.title = title;
+  if (f.leaf.ui?.title?.isConnected) f.leaf.ui.title.textContent = title || f.leaf.name;
+  renderSidebar();
+});
+
 api.app.onExited(({ paneId, hadWindow }) => {
   const f = findLeaf(paneId);
   if (!f || !f.leaf.running) return;
   api.app.close(paneId);
   f.leaf.running = false;
+  f.leaf.title = '';
   // 次にこのタブを開いたとき、同じアプリを起動し直す。ウィンドウが一度も見つからなかったときは、起動し直しても同じなので知らせるだけ
   f.leaf.dormant = !!hadWindow && !!(f.leaf.cmd || f.leaf.webUrl);
   if (!hadWindow) toast(`「${f.leaf.name || f.leaf.cmd}」のウィンドウが見つかりませんでした`);
@@ -791,6 +818,8 @@ async function boot() {
   $('#open-settings').onclick = openSettings;
   initBar();
   loadSessionState();
+  // アプリのペインのアイコンを引くため、起動時にアプリの一覧を読んでおく(読めたらタブを描き直す)
+  if (!S.appList) api.app.list().then((l) => { S.appList = l; renderSidebar(); });
 
   new ResizeObserver(() => syncViews()).observe($('#workspace'));
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePopup(); closeLauncher(); closeQuick(); closeNotifications(); } });

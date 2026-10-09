@@ -3,7 +3,12 @@
 // KWinスクリプトからの報告など「呼ばれる側」になる連絡は、すべてここで受ける。
 const dbus = require('dbus-next');
 
-const NAME = 'org.prelude.Shell';
+const { instanceTag } = require('./util');
+
+const IFACE = 'org.prelude.Shell';
+// サービス名。別プロファイルの PRELUDE(デバッグ用)は印を付けた別名を取り、シェルとして動いている PRELUDE と並んで動ける
+// (KWin スクリプトの報告も、それぞれ自分の名前に送る)。名前の要素は数字で始められないので d を前に付ける
+const NAME = instanceTag ? `${IFACE}.d${instanceTag.slice(1)}` : IFACE;
 const PATH = '/org/prelude/Shell';
 
 let bus = null;
@@ -34,7 +39,7 @@ async function init() {
     const send = bus.send.bind(bus);
     const b = bus;
     bus.send = (msg) => { if (b.closed) return; try { send(msg); } catch (e) { console.error('session bus send failed', e.message); } };
-    bus.export(PATH, new ShellInterface(NAME));
+    bus.export(PATH, new ShellInterface(IFACE));
     const reply = await bus.requestName(NAME, 0);
     if (reply !== dbus.RequestNameReply.PRIMARY_OWNER) throw new Error('name already owned');
     return true;

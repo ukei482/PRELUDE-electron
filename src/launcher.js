@@ -21,8 +21,8 @@ function launchApp(a) {
     api.app.spawn(a.exec).then((ok) => { if (!ok) toast('起動できませんでした'); });
     return;
   }
-  const t = openTab('app', { cmd: a.exec, cls: a.cls, name: a.name });
-  startApp(t.root, a.exec, a.cls, a.name);
+  const t = openTab('app', { cmd: a.exec, cls: a.cls, name: a.name, icon: a.icon });
+  startApp(t.root, a.exec, a.cls, a.name, a.icon);
 }
 
 const LAUNCHER_COMMANDS = [
