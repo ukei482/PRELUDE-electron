@@ -703,11 +703,12 @@ api.web.onState((s) => {
 api.web.onFavicon(({ paneId, icon }) => { const f = findLeaf(paneId); if (f) { f.leaf.favicon = icon; renderSidebar(); } });
 api.web.onFocused(({ paneId }) => { const f = findLeaf(paneId); if (f && f.tab === activeTab()) setActivePane(f.tab, f.leaf); });
 // Google のログインに進んだ Web ペインは、本物の Chromium のペインに切り替える(main.js の guardGoogleSignin)
-api.web.onToChromium(({ paneId, url, popup }) => {
+api.web.onToChromium(({ paneId, url, popup, site }) => {
   const f = findLeaf(paneId);
   if (!f || f.leaf.type !== 'web') return;
   toRealBrowser(f.tab, f.leaf, url);
   toast(popup ? 'Google でのログインは Chromium で行います。このページを Chromium で開き直しました'
+    : site ? 'Chromium で開きました(ログインは Chromium と共有されます。対象のサイトは設定で変更できます)'
     : 'Google のログインは Chromium で行います(このタブは以後 Chromium で表示されます)');
 });
 
