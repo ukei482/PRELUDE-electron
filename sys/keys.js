@@ -28,7 +28,7 @@ function electron() {
 function fire(name, raise) {
   var el = electron();
   if (raise && el) { el.minimized = false; workspace.activeWindow = el; }
-  callDBus('org.prelude.Shell', '/org/prelude/Shell', 'org.prelude.Shell', 'Report', 'shortcut', JSON.stringify(name));
+  callDBus(${JSON.stringify(require('./bus').NAME)}, '/org/prelude/Shell', 'org.prelude.Shell', 'Report', 'shortcut', JSON.stringify(name));
 }
 var KEYS = ${JSON.stringify(keys)};
 Object.keys(KEYS).forEach(function (name) {

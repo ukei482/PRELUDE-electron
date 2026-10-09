@@ -69,7 +69,7 @@ body.no-sidebar #sidebar { display: none; }
 .item .badge { font-size: .8em; color: var(--dim); }
 .item .x { opacity: 0; width: 22px; height: 22px; }
 .item:hover .x { opacity: 1; }
-.item img.fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+.item img.fav, .pane-head img.fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
 .empty { color: var(--dim); padding: 4px 8px; font-size: .9em; }
 
 #workspace { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--bg); border-top: 1px solid var(--line); }

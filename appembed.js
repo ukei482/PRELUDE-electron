@@ -143,10 +143,10 @@ function buildScript() {
   return `
 var STATE = ${JSON.stringify(state)};
 var EL_PID = ${process.pid};
-// 報告先(org.prelude.Shell)を自分が持っているときだけ報告する。持っていない(別の PRELUDE がシェルとして動いている)ときに報告すると、
+// 報告先(bus.NAME)を自分が持っているときだけ報告する。持っていない(別の PRELUDE がシェルとして動いている)ときに報告すると、
 // ペインの番号が重なって、そちらのペインに別のウィンドウが混ざる
 var REPORT = ${monitorOk};
-function send(kind, data) { if (REPORT) callDBus('org.prelude.Shell', '/org/prelude/Shell', 'org.prelude.Shell', 'Report', kind, JSON.stringify(data)); }
+function send(kind, data) { if (REPORT) callDBus(${JSON.stringify(bus.NAME)}, '/org/prelude/Shell', 'org.prelude.Shell', 'Report', kind, JSON.stringify(data)); }
 function electron(skip) {
   var best = null, area = 0;
   workspace.windowList().forEach(function (w) {
@@ -190,16 +190,28 @@ function apply(w) {
   if (orphan) return;
   var p = paneOf(w);
   if (!p) return;
+  hookCaption(w);
   var el = electron();
   if (!el || el.minimized || STATE.suspended || !p.rect) { w.minimized = true; return; }
   var g = el.clientGeometry;
   w.minimized = false;
-  w.noBorder = true;
   w.keepAbove = true;
   w.skipTaskbar = true; w.skipPager = true; w.skipSwitcher = true;
   var geo = { x: Math.round(g.x + p.rect.x), y: Math.round(g.y + p.rect.y), width: Math.round(p.rect.width), height: Math.round(p.rect.height) };
+  if (w.transient) { placeChild(w, geo); return; }
+  w.noBorder = true;
   w.frameGeometry = geo;
   if (p.activate) workspace.activeWindow = w;
+}
+// 取り込んだアプリの子の窓(設定・保存・確認などのダイアログ)。ペインいっぱいに広げず、枠を付けたまま自分の大きさで、ペインの中に置く。
+// ペインからはみ出しているときだけ中央に置き直す(ペインの中で動かした位置は保つ)。ペインより大きければ縮める
+function placeChild(w, pane) {
+  w.noBorder = false;
+  var f = w.frameGeometry;
+  var width = Math.min(f.width, pane.width), height = Math.min(f.height, pane.height);
+  var inside = f.x >= pane.x && f.y >= pane.y && f.x + f.width <= pane.x + pane.width && f.y + f.height <= pane.y + pane.height;
+  if (inside && width === f.width && height === f.height) return;
+  w.frameGeometry = { x: Math.round(pane.x + (pane.width - width) / 2), y: Math.round(pane.y + (pane.height - height) / 2), width: width, height: height };
 }
 function applyAll() { workspace.windowList().forEach(apply); }
 // どのペインにも属さない新しいウィンドウ(ログイン用のポップアップ、起動済みの Chromium に引き継がれた窓、アプリのダイアログなど)は、
@@ -249,23 +261,37 @@ function applyShell() {
   if (g.x !== t.x || g.y !== t.y || g.width !== t.width || g.height !== t.height) el.frameGeometry = t;
 }
 // PRELUDEがアクティブになると同じ層の最前面に来るので、取り込んだアプリを前に出し直す
+// 子の窓(ダイアログ)は本体より前に出すので、本体を先に、子の窓を後に上げる
 function raiseEmbedded() {
-  workspace.windowList().forEach(function (w) {
-    var p = paneOf(w);
-    if (p && p.rect && !w.minimized) workspace.raiseWindow(w);
+  [false, true].forEach(function (child) {
+    workspace.windowList().forEach(function (w) {
+      var p = paneOf(w);
+      if (p && p.rect && !w.minimized && !!w.transient === child) workspace.raiseWindow(w);
+    });
   });
 }
 // 各ペインのウィンドウ数をNode側へ知らせる(ウィンドウが閉じたら取り込みを終えるため)。
 // 宛先は PRELUDE の D-Bus サービス(sys/bus.js)
+// ペインごとの窓の数と題名(最初の窓の題名。Chromium なら今のページ名)
 function report() {
-  var counts = {}, all = [];
+  var counts = {}, titles = {}, all = [];
   STATE.panes.forEach(function (p) { counts[p.id] = 0; });
   workspace.windowList().forEach(function (w) {
     all.push(wid(w));
     var p = paneOf(w);
-    if (p) counts[p.id]++;
+    if (!p) return;
+    counts[p.id]++;
+    if (!titles[p.id] && w.caption && !w.transient) titles[p.id] = w.caption; // ダイアログの題名ではなく本体の題名
   });
-  send('windows', { counts: counts, all: all });
+  send('windows', { counts: counts, titles: titles, all: all });
+}
+// 取り込んだ窓の題名が変わったら知らせ直す(Chromium のページ移動・エディタのファイル切り替えなど)。窓ごとに1度だけつなぐ
+var hooked = {};
+function hookCaption(w) {
+  var id = wid(w);
+  if (hooked[id] || !w.captionChanged) return;
+  hooked[id] = true;
+  w.captionChanged.connect(function () { if (paneOf(w)) report(); });
 }
 function applyEverything() { applyShell(); applyAll(); raiseEmbedded(); report(); }
 workspace.windowRemoved.connect(function (w) {
@@ -360,6 +386,10 @@ function startMonitor() {
     if (!r || !r.counts) return;
     known = r.all || [];
     waiters.splice(0).forEach((f) => f(known));
+    Object.entries(r.titles || {}).forEach(([id, t]) => {
+      const e = panes.get(id);
+      if (e && typeof t === 'string' && e.title !== t) { e.title = t; notify('title', id, { title: t.slice(0, 300) }); }
+    });
     Object.entries(r.counts).forEach(([id, n]) => {
       const e = panes.get(id);
       if (!e) return;

@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('preludeApi', {
     close: (id) => ipcRenderer.send('app:close', id),
     spawn: (cmd) => ipcRenderer.invoke('app:spawn', cmd),
     onExited: (cb) => on('app:exited', cb),
+    onTitle: (cb) => on('app:title', cb),
   },
   sys: {
     status: () => ipcRenderer.invoke('sys:status'),

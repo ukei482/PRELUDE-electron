@@ -7,7 +7,8 @@ const fs = require('fs');
 const bus = require('./bus');
 const icons = require('./icons');
 
-const NAME = process.env.PRELUDE_NOTIFY_NAME || 'org.freedesktop.Notifications'; // テスト時だけ別名にできる
+// テスト時だけ別名にできる。別プロファイルの PRELUDE(デバッグ用)も別名にする(本物の名前を待つと、シェルが止まったときに通知を横取りする)
+const NAME = process.env.PRELUDE_NOTIFY_NAME || (require('./util').instanceTag ? 'org.prelude.debug.Notifications' : 'org.freedesktop.Notifications');
 const OBJ = '/org/freedesktop/Notifications';
 const HISTORY_MAX = 100;
 const DEFAULT_TIMEOUT = 6000;
