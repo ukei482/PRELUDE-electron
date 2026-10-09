@@ -789,6 +789,7 @@ async function boot() {
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
   initBar();
+  loadSessionState();
 
   new ResizeObserver(() => syncViews()).observe($('#workspace'));
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePopup(); closeLauncher(); closeQuick(); closeNotifications(); } });
