@@ -34,6 +34,16 @@ const SCHEMA = [
     ],
   },
   {
+    // タブの開き方。既定は Arc に合わせる(別タブのリンクは新しいタブ、Alt+クリックは分割、ブックマーク(ピン留め)から別サイトは新しいタブ、新しいタブは一番上)
+    title: 'タブ',
+    fields: [
+      { path: 'tabs.linkOpen', label: '別のタブで開くリンク（target=_blank・中クリック・Ctrl+クリック）', type: 'select', options: [['tab', '新しいタブ'], ['split', '分割']] },
+      { path: 'tabs.altClick', label: 'Alt+クリックしたリンク', type: 'select', options: [['split', '分割'], ['tab', '新しいタブ'], ['here', 'そのまま移動']] },
+      { path: 'tabs.pinnedOtherSite', label: 'ブックマークのタブから別のサイトへのリンク', type: 'select', options: [['tab', '新しいタブ'], ['split', '分割'], ['stay', 'そのまま移動']] },
+      { path: 'tabs.newTabPosition', label: '新しいタブの位置', type: 'select', options: [['top', '一番上'], ['next', '今のタブの次'], ['bottom', '一番下']] },
+    ],
+  },
+  {
     title: '動作',
     fields: [
       { path: 'behavior.appOpen', label: 'アプリを開く方法（ランチャー）', type: 'select', options: [['embed', 'ペインに取り込む'], ['window', '別ウィンドウ']] },
@@ -66,6 +76,12 @@ function defaults() {
       bg: '#faf3e0', panel: '#d7bfae', panel2: '#a1887f', line: '#a1887f',
       text: '#3e2f2a', dim: '#6f5a52', accent: '#5d4037', danger: '#9c4a3a',
       wallpaper: '', fontSize: 13, sidebarWidth: 220,
+    },
+    tabs: {
+      linkOpen: 'tab',
+      altClick: 'split',
+      pinnedOtherSite: 'tab',
+      newTabPosition: 'top',
     },
     behavior: {
       startKind: 'home',

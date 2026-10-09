@@ -146,12 +146,17 @@ function showTab(tab) {
   for (const l of leaves(tab.root)) if (l.type === 'app' && !l.running && l.dormant) { l.dormant = false; startApp(l, l.cmd, l.cls, l.name); }
 }
 
+// o.background: 今のタブのまま裏で開く(中クリック・Ctrl+クリックのリンク)。位置は設定「新しいタブの位置」(既定は Arc と同じ一番上)
 function openTab(kind, o = {}) {
   if (kind === 'app' && !S.appSupported) kind = 'files';
   const leaf = makeLeaf(kind, o);
   const tab = { id: nid('t'), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null };
-  S.tabs.push(tab);
-  S.active = tab.id;
+  const pos = C.tabs?.newTabPosition;
+  const cur = S.tabs.findIndex((t) => t.id === S.active);
+  if (pos === 'top') S.tabs.unshift(tab);
+  else if (pos === 'next' && cur >= 0) S.tabs.splice(cur + 1, 0, tab);
+  else S.tabs.push(tab);
+  if (!o.background || !S.tabs.some((t) => t.id === S.active)) S.active = tab.id;
   render();
   return tab;
 }
@@ -446,6 +451,9 @@ function buildWeb(tab, leaf, head, body) {
   leaf.slot = slot;
   updateWebUI(leaf);
   if (!leaf.created) { leaf.created = true; api.web.create(leaf.id, leaf.url); }
+  // ブックマークのタブの最初のペインは、そのブックマークのサイトに留める(別のサイトへのリンクは main.js の guardPinned が振り分ける)
+  const bm = tab.bookmarkId && leaves(tab.root)[0] === leaf ? S.bookmarks.find((b) => b.id === tab.bookmarkId && b.kind === 'web') : null;
+  webCmd(leaf, 'pin', bm ? bm.target : '');
 }
 
 function updateWebUI(leaf) {
@@ -729,9 +737,15 @@ api.web.onToChromium(({ paneId, url, popup, site }) => {
     : 'Google のログインは Chromium で行います(このタブは以後 Chromium で表示されます)');
 });
 
-api.web.onOpenRequest(({ fromPaneId, url }) => {
+// Web ペインから別のところで開く要求。disposition: alt(Alt+クリック)/ pinned(ブックマークのタブから別サイト)/
+// background-tab(中クリック・Ctrl+クリック)/ そのほか(target=_blank など)。開き方は設定の「タブ」に従う
+api.web.onOpenRequest(({ fromPaneId, url, disposition }) => {
   const f = findLeaf(fromPaneId);
-  if (f) splitLeaf(f.tab, f.leaf, 'row', 'web', { url });
+  if (!f) return;
+  const how = disposition === 'alt' ? C.tabs.altClick : disposition === 'pinned' ? C.tabs.pinnedOtherSite : C.tabs.linkOpen;
+  if (how === 'split') splitLeaf(f.tab, f.leaf, 'row', 'web', { url });
+  else if (how === 'here' || how === 'stay') webCmd(f.leaf, 'navigate', url);
+  else openTab('web', { url, background: disposition === 'background-tab' });
 });
 
 S.dl = {};
