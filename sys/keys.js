@@ -5,9 +5,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { exec } = require('./util');
+const { exec, instanceTag } = require('./util');
 
-const NAME = 'prelude-keys';
+const NAME = 'prelude-keys' + instanceTag;
 const supported = process.platform === 'linux' && /kde/i.test(process.env.XDG_CURRENT_DESKTOP || '');
 let file = null;
 
@@ -49,8 +49,10 @@ async function doLoad(keys) {
   await kwin('/Scripting', 'org.kde.kwin.Scripting.unloadScript', NAME);
   fs.writeFileSync(file, script(keys));
   const out = await kwin('/Scripting', 'org.kde.kwin.Scripting.loadScript', file, NAME);
-  const id = out.ok && /(\d+)/.exec(out.out)?.[1];
-  if (id != null) await kwin(`/Scripting/Script${id}`, 'org.kde.kwin.Script.run');
+  const id = out.ok && /(-?\d+)/.exec(out.out)?.[1];
+  // 読み込んだ番号の Script{id}.run は使わない。KWin は番号を「今の本数」で振るので、途中のスクリプトを外したあとに読み込むと
+  // 既にある別のスクリプトと番号が重なり、run がそちらに届いて新しいスクリプトが動かないことがある。start は未実行のものを全部動かす
+  if (id != null && Number(id) >= 0) await kwin('/Scripting', 'org.kde.kwin.Scripting.start');
 }
 
 const shutdown = () => { if (supported) kwin('/Scripting', 'org.kde.kwin.Scripting.unloadScript', NAME); };

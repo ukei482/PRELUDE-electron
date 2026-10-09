@@ -82,6 +82,7 @@ let shellMode = false; // prelude-shell.service として動いているか(起�
 sessionCtl.isShell().then((v) => { shellMode = v; });
 const media = require('./sys/media');
 const keys = require('./sys/keys');
+const { instanceTag, cleanShell } = require('./sys/util');
 const notify = require('./sys/notify');
 const iconTheme = require('./sys/icons');
 const overlay = require('./sys/overlay');
@@ -274,14 +275,24 @@ function isGoogleSignin(u) {
 // ペイン(またはそのポップアップ)が Google のログインへ進むのを止め、画面側にペインの切り替えを頼む。
 // ポップアップ(他サイトの「Googleでログイン」)は、元のページごと Chromium で開き直す(ログイン結果を元のページに返せないため)
 function guardGoogleSignin(wc, paneId, popup) {
+  let handled = false; // 1回の移動で will-navigate と did-start-navigation の両方が来るので、1度だけ処理する
   const check = (e, url, _inPlace, isMain) => {
     const u = e?.url ?? url;
-    if (!(e?.isMainFrame ?? isMain) || !isGoogleSignin(u) || !appembed.supported || !appembed.hasBrowser()) return;
+    if (handled || !(e?.isMainFrame ?? isMain) || !isGoogleSignin(u) || !appembed.supported || !appembed.hasBrowser()) return;
+    handled = true;
     e.preventDefault?.();
-    wc.stop();
     const opener = views.get(paneId)?.wc;
-    send('web:to-chromium', { paneId, url: popup ? (opener && !opener.isDestroyed() ? opener.getURL() : u) : u, popup: !!popup });
-    if (popup) setImmediate(() => { try { wc.close(); } catch {} });
+    const target = popup ? (opener && !opener.isDestroyed() ? opener.getURL() : u) : u;
+    // 画面側はこのペイン(ポップアップなら開いた元のペイン)を壊して Chromium に置き換える。
+    // 移動の途中のポップアップと、その開き元を同時に壊すと Electron が落ちる(SIGTRAP)ので、
+    // 先にポップアップを閉じ、閉じ終わってから切り替えを頼む。イベントの中では何も壊さない
+    setImmediate(() => {
+      if (!popup) { if (!wc.isDestroyed()) wc.stop(); send('web:to-chromium', { paneId, url: target, popup: false }); return; }
+      const ask = () => send('web:to-chromium', { paneId, url: target, popup: true });
+      if (wc.isDestroyed()) { ask(); return; }
+      wc.once('destroyed', () => setImmediate(ask));
+      wc.close();
+    });
   };
   wc.on('will-navigate', check);
   wc.on('will-redirect', check);
@@ -375,7 +386,7 @@ ipcMain.on('app:close', (_e, paneId) => appembed.close(paneId));
 ipcMain.handle('app:spawn', (_e, cmd) => {
   if (typeof cmd !== 'string' || !cmd.trim()) return false;
   try {
-    const p = spawn('/bin/sh', ['-c', cmd], { detached: true, stdio: 'ignore', env: appembed.childEnv(), cwd: require('os').homedir() });
+    const p = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: appembed.childEnv(), cwd: require('os').homedir() });
     p.on('error', () => {});
     p.unref();
     return true;
@@ -512,8 +523,9 @@ app.whenReady().then(async () => {
   if (process.platform === 'linux') {
     media.init({ ipcMain, send });
     // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。
-    // 音量キーは kglobalaccel 上で kmix(plasmashell)の持ち物のままなので PRELUDE は受けられない(docs/shell-design.md 参照)
-    keys.load({
+    // 音量キーはここでは扱わない。kded6 の audioshortcutsservice が plasmashell 無しでも処理する(docs/shell-design.md 6.5)
+    // 別プロファイルの PRELUDE(デバッグ用)は、シェルの PRELUDE からグローバルショートカットを奪わない
+    if (!instanceTag) keys.load({
       launcher: { key: config.get('shortcuts.globalLauncher'), raise: true },
       brightnessReset: { key: 'Meta+Shift+B', raise: false }, // 緊急用: 画面が暗すぎるとき
     });

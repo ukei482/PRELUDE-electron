@@ -3,6 +3,7 @@
 // 外部コマンド(wpctl / nmcli / pactl)と /sys を読むだけで、状態の変更は音量操作のみ。
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
+const { CLOSE_FDS } = require('./util');
 
 let state = null; // 直近に送った状態(JSON文字列)
 let last = { battery: null, volume: null, net: null };
@@ -87,14 +88,18 @@ function init({ send, ipcMain, onVolumeChange }) {
   // 音量の変化は pactl subscribe で即座に拾う(無ければ定期取得のみ)
   let timer = null;
   try {
-    const sub = spawn('pactl', ['subscribe'], { stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } }) // 出力が日本語だと 'sink' を見つけられない;
+    // pactl は PRELUDE の後始末が無くても残らないようにする: 標準入力を PRELUDE とつなぎ、閉じられたら(PRELUDE が終わったら、
+    // 異常終了でも)pactl を止める。以前は PRELUDE を起動するたびに pactl が1つずつ取り残されていた。
+    // LC_ALL=C: 出力が日本語だと 'sink' を見つけられない
+    const sub = spawn('/bin/bash', ['-c', `${CLOSE_FDS}; pactl subscribe & read -r _; kill $! 2>/dev/null`],
+      { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } });
     sub.on('error', () => {});
     sub.stdout.on('data', (d) => {
       if (!/sink|server/.test(String(d))) return;
       clearTimeout(timer);
       timer = setTimeout(() => refresh(['volume']), 80);
     });
-    process.on('exit', () => { try { sub.kill(); } catch {} });
+    process.on('exit', () => { try { sub.stdin.end(); } catch {} });
   } catch {}
   setInterval(() => refresh(['volume']), 15000);
   return { refresh: () => refresh(), audio };
