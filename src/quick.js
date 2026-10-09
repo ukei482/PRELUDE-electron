@@ -5,8 +5,10 @@
 let quickUI = null;
 
 // PRELUDE が plasmashell の代わり(prelude-shell.service)として動いているときだけ、Kubuntu(plasmashell)に戻せる
+// (状態の取得は app.js の boot から呼ぶ。このファイルは app.js より先に読み込まれ、その時点では api がまだ使えない。
+//  ここで呼ぶと例外でこのファイルの残りが実行されず、下の returning が未初期化のまま「Kubuntuに戻る」が動かなくなる)
 let sessionShell = false;
-api.session.state().then((s) => { sessionShell = !!s?.shell; });
+function loadSessionState() { return api.session.state().then((s) => { sessionShell = !!s?.shell; }); }
 
 // 戻る手順(scripts/prelude-return.sh)を始める。成功すると PRELUDE 自身が終了するので、その間は画面に案内を出す
 let returning = false;
