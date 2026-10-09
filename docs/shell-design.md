@@ -252,13 +252,13 @@ plasmashell を止めた状態で PRELUDE が落ちると、**画面に何も操
   緊急用ショートカット Meta+Shift+B で明るさ50%（`keys.js` の `raise:false` = 前面に出さない）。
   明るさが0%（四捨五入して0）のまま8秒続いたら20%へ自動で戻す安全策（`makeLowGuard`。1〜2%は暗いだけで見えるので対象外）。
 - 不具合の修正：`pactl subscribe` の出力が日本語ロケールだと `sink` に一致せず、音量の変化が最大15秒遅れていた → `LC_ALL=C` で起動。
-- **既知の未対応：plasmashell が止まっている間、キーボードの音量キーが効かない。**
-  `Volume Up/Down/Mute` は kglobalaccel 上で停止中の kmix の持ち物のまま残り、PRELUDE の KWin ショートカットには割り当てられない
-  （実機で `PRELUDE volumeUp=,none` のまま空になることを確認。ショートカットの呼び出しでは動くが、物理キーでは動かない）。
-  音量はバーのホイール・クイック設定・OSD で操作できる。
-  取る方法は kmix コンポーネントになりすます登録（`doRegister` + `setShortcut`）だが、PRELUDE の終了時に KDE が
-  「kmix は無効」と判断すると、plasmashell が動いている通常時の音量キーまで効かなくなる恐れがあり、慎重な検証が要る。
-  明るさキーは powerdevil が処理するので影響なし（OSD は PRELUDE が出す）。
+- **音量キーは plasmashell が止まっていても効く（2026-10-09 に実機で確認。以前の「効かない」は誤り）。**
+  音量キー（kglobalaccel の `kmix` コンポーネント）を処理するのは plasmashell ではなく、kded6 のモジュール `audioshortcutsservice`（plasma-pa）。
+  `X-KDE-Kded-autoload` なのでログイン時に読み込まれ、シェルモードでログインした直後から効く。音量が変われば PRELUDE の OSD が出る
+  （`status.js` の `pactl subscribe` で変化を拾う）。
+  確かめ方：`busctl --user call org.kde.kglobalaccel /component/kmix org.kde.kglobalaccel.Component invokeShortcut s increase_volume_small`
+  で音量が上がり、ミュートも外れる。**PRELUDE 側で音量キーを処理してはいけない**（二重に変わる。実際に +1% が +2% になった）。
+  明るさキーも powerdevil が処理する（OSD は PRELUDE が出す）。
 - 未（段階3の残り）：壁紙・ホーム画面 → 6.6 で実装
 
 ## 6.6 段階3c の実装状況（ホーム画面）
