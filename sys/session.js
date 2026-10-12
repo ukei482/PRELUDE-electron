@@ -9,12 +9,14 @@ const { exec } = require('./util');
 const UNIT = 'prelude-shell.service';
 const ROOT = process.env.PRELUDE_ROOT || path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 'prelude');
 
-// このプロセスが prelude-shell.service の本体か(開発版を手で起動しているだけなら false)
+// このプロセスが prelude-shell.service の本体か(開発版を手で起動しているだけなら false)。
+// INVOCATION_ID だけでは足りない: シェルから起動したアプリ(端末や Claude など)も同じ値を引き継ぎ、そこから起動した開発版も一致してしまう
 async function isShell() {
   if (process.platform !== 'linux' || !process.env.INVOCATION_ID) return false;
-  const r = await exec('systemctl', ['--user', 'show', UNIT, '-p', 'InvocationID', '-p', 'ActiveState']);
+  const r = await exec('systemctl', ['--user', 'show', UNIT, '-p', 'InvocationID', '-p', 'ActiveState', '-p', 'MainPID']);
   const inv = /^InvocationID=(\w+)/m.exec(r.out)?.[1];
-  return r.ok && /^ActiveState=active/m.test(r.out) && inv === process.env.INVOCATION_ID;
+  const pid = Number(/^MainPID=(\d+)/m.exec(r.out)?.[1]);
+  return r.ok && /^ActiveState=active/m.test(r.out) && inv === process.env.INVOCATION_ID && pid === process.pid;
 }
 
 // 配置済みの単独スクリプト($ROOT/bin。版に依存しない)を優先し、無ければこの作業フォルダのもの

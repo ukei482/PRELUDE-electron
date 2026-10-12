@@ -78,6 +78,7 @@ const bus = require('./sys/bus');
 const status = require('./sys/status');
 const quick = require('./sys/quick');
 const sessionCtl = require('./sys/session');
+const updater = require('./sys/update');
 let shellMode = false; // prelude-shell.service として動いているか(起動後に判定)
 sessionCtl.isShell().then((v) => { shellMode = v; });
 const media = require('./sys/media');
@@ -530,6 +531,7 @@ app.whenReady().then(async () => {
   const sys = status.init({ send, ipcMain, onVolumeChange: (v) => osd.show('volume', v.percent, v.muted) });
   quick.init({ ipcMain, refreshStatus: sys?.refresh, onSelfChange: () => osd.quiet() });
   sessionCtl.init({ ipcMain });
+  updater.init({ ipcMain });
   if (process.platform === 'linux') {
     media.init({ ipcMain, send });
     // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。

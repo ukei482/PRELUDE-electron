@@ -77,6 +77,10 @@ contextBridge.exposeInMainWorld('preludeApi', {
     state: () => ipcRenderer.invoke('session:state'),
     returnToKde: () => ipcRenderer.invoke('session:return'),
   },
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    run: () => ipcRenderer.invoke('update:run'),
+  },
   fs: {
     list: (dir, showHidden) => ipcRenderer.invoke('fs:list', dir, showHidden),
     open: (p) => ipcRenderer.invoke('fs:open', p),
