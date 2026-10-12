@@ -37,6 +37,7 @@ const LAUNCHER_COMMANDS = [
   { name: 'スクリーンショット(範囲を選ぶ)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい', run: () => api.quick.do('screenshot', 'region') },
   { name: 'スクリーンショット(今の画面)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい', run: () => api.quick.do('screenshot', 'screen') },
   { name: 'スクリーンショット(前面の窓)', keys: 'screenshot capture print window すくりーんしょっと まど', run: () => api.quick.do('screenshot', 'window') },
+  { name: 'PRELUDE を更新', keys: 'update upgrade prelude こうしん あっぷでーと', when: () => sessionShell, run: () => runUpdate() },
   { name: 'Kubuntuに戻る', keys: 'kubuntu plasma desktop return もどる', when: () => sessionShell, run: () => returnToKde() },
 ];
 

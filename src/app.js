@@ -299,12 +299,12 @@ function askText(title, init = '') {
 }
 
 let toastTimer = 0;
-function toast(msg) {
+function toast(msg, ms = 2600) {
   const t = $('#toast');
   t.textContent = msg;
   t.style.display = 'block';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.style.display = 'none'; }, 2600);
+  toastTimer = setTimeout(() => { t.style.display = 'none'; }, ms);
 }
 
 // ------------------------------------------------------------------ workspace rendering
@@ -668,6 +668,29 @@ function buildSettings(tab, leaf, head, body) {
     back.disabled = !sessionShell;
     note.textContent = sessionShell ? 'PRELUDE を終了します。次回ログインも Kubuntu になります' : 'PRELUDE がデスクトップシェルとして動いている時だけ使えます(shell-mode.sh on --now)';
   });
+  // アップデート(GitHub の一番新しい版へ)。更新できるのはシェルとして動いているときだけ
+  const upNote = h('span', { class: 'hint' }, '確認中…');
+  const upCheck = h('button', { class: 'textbtn' }, '確認');
+  const upRun = h('button', { class: 'textbtn primary', disabled: true, title: '新しい版を準備して、PRELUDE を再起動します(取り込んだアプリは閉じます)' }, '更新して再起動');
+  const checkUpdate = async () => {
+    upCheck.disabled = true;
+    upNote.textContent = '確認中…';
+    const r = await api.update.check();
+    upCheck.disabled = false;
+    upRun.disabled = !(r.shell && r.available);
+    upNote.textContent = r.error ? `今の版 ${r.current}(${r.error})`
+      : r.available ? `今の版 ${r.current} → 新しい版 ${r.latest} があります` + (r.shell ? '' : '(シェルとして動いている時だけ更新できます)')
+        : `今の版 ${r.current}(最新です)`;
+  };
+  upCheck.onclick = checkUpdate;
+  upRun.onclick = async () => {
+    upRun.disabled = upCheck.disabled = true;
+    upNote.textContent = '新しい版を準備しています…(終わると再起動します)';
+    const r = await runUpdate();
+    if (!r?.updated) checkUpdate();
+  };
+  wrap.append(h('h3', {}, 'アップデート'), h('div', { class: 'frm' }, h('label', {}, 'PRELUDE の版'), h('span', { style: { display: 'flex', gap: '8px' } }, upCheck, upRun), upNote));
+  checkUpdate();
   wrap.append(h('div', { style: { marginTop: '24px' } },
     h('button', { class: 'textbtn danger', onclick: async () => { await api.config.reset(); render(); } }, '初期値に戻す')));
   body.append(wrap);
@@ -832,6 +855,11 @@ async function boot() {
   $('#open-settings').onclick = openSettings;
   initBar();
   loadSessionState();
+  // 起動して少ししてから、新しい版があるか確かめて知らせる(ネットワークの準備を待つ)
+  setTimeout(async () => {
+    const r = await api.update.check();
+    if (r.shell && r.available) toast(`新しい版 ${r.latest} があります(設定の「アップデート」か、ランチャーの「PRELUDE を更新」で更新できます)`, 8000);
+  }, 20000);
   // アプリのペインのアイコンを引くため、起動時にアプリの一覧を読んでおく(読めたらタブを描き直す)
   if (!S.appList) api.app.list().then((l) => { S.appList = l; renderSidebar(); });
 
