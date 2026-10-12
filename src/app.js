@@ -60,7 +60,7 @@ function makeLeaf(type, o = {}) {
   if (type === 'web') return { k: 'leaf', id, type, url: o.url || '', title: '', favicon: '', loading: false, canBack: false, canFwd: false };
   if (type === 'files') {
     return {
-      k: 'leaf', id, type, path: o.path ?? C.behavior.startPath ?? '', entries: [], parent: null, err: '', sel: -1, scrollTop: 0,
+      k: 'leaf', id, type, path: o.path ?? C.behavior.startPath ?? '', ...newFilesState(o),
       mode: o.mode || 'browse', dlId: o.dlId, filename: o.filename || '', dlMsg: '',
     };
   }
@@ -160,6 +160,7 @@ function destroyLeaf(l) {
   if (l.type === 'web' && l.created) api.web.destroy(l.id);
   if (l.type === 'app' && l.running) api.app.close(l.id);
   if (l.mode === 'save' && l.dlId && !l.dlHandled) { l.dlHandled = true; api.dl.cancel(l.dlId); }
+  if (l.type === 'files') api.fs.unwatch(l.id);
 }
 
 function closeTab(tab) {
@@ -178,6 +179,7 @@ function splitLeaf(tab, leaf, dir, kind, o = {}) {
   tab.activePane = nl.id;
   S.active = tab.id;
   render();
+  return nl;
 }
 
 function closeLeaf(tab, leaf) {
@@ -261,20 +263,48 @@ function closePopup() {
   if (!pop) return;
   pop.bd.remove();
   pop.m.remove();
+  const prev = pop.prev;
   pop = null;
   suspend(-1);
+  if (prev?.isConnected) prev.focus({ preventScroll: true }); // メニューを開く前の入力先へ戻す
 }
+// items: { label, icon, run, key(右に出すショートカット), checked, disabled, danger } / { header } / { sep }
+// ↑↓ で選んで Enter(opt.keyboard なら最初の項目を選んだ状態で開く)
 function popup(items, x, y, opt = {}) {
   closePopup();
+  const prev = document.activeElement;
   const bd = h('div', { class: 'backdrop', onpointerdown: closePopup, oncontextmenu: (e) => { e.preventDefault(); closePopup(); } });
-  const m = h('div', { class: 'menu' }, items.map((it) => (it.header ? h('div', { class: 'mh' }, it.header)
+  const choose = (it) => { if (it.disabled) return; closePopup(); it.run(); };
+  const lead = items.some((it) => it.icon || it.checked != null); // アイコンのある項目があれば、ない項目も字下げを揃える
+  const m = h('div', { class: 'menu', tabindex: '-1' }, items.map((it) => (it.header ? h('div', { class: 'mh' }, it.header)
     : it.sep ? h('div', { class: 'sep' })
-    : h('div', { class: 'mi' + (it.danger ? ' danger' : '') + (it.disabled ? ' dis' : ''), style: it.danger ? { color: 'var(--danger)' } : null, onclick: () => { if (it.disabled) return; closePopup(); it.run(); } }, it.icon ? ico(it.icon) : null, it.label))));
+    : h('div', {
+      class: 'mi' + (it.danger ? ' danger' : '') + (it.disabled ? ' dis' : ''), style: it.danger ? { color: 'var(--danger)' } : null,
+      onclick: () => choose(it), onpointermove: (e) => setAct(e.currentTarget),
+    }, it.icon ? ico(it.icon) : it.checked != null ? h('span', { class: 'ico chk' }, it.checked ? '✓' : '') : lead ? h('span', { class: 'ico' }) : null, h('span', { class: 'ml' }, it.label), it.key ? h('span', { class: 'mk' }, it.key) : null))));
+  const mis = [...m.querySelectorAll('.mi')];
+  const live = items.filter((it) => !it.header && !it.sep);
+  const setAct = (el) => mis.forEach((x) => x.classList.toggle('act', x === el));
+  m.addEventListener('keydown', (e) => {
+    const ok = mis.filter((x) => !x.classList.contains('dis'));
+    const i = ok.findIndex((x) => x.classList.contains('act'));
+    if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) setAct(ok[(i + 1) % ok.length]);
+    else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) setAct(ok[(i - 1 + ok.length) % ok.length]);
+    else if (e.key === 'Home') setAct(ok[0]);
+    else if (e.key === 'End') setAct(ok[ok.length - 1]);
+    else if ((e.key === 'Enter' || e.key === ' ') && i >= 0) choose(live[mis.indexOf(ok[i])]);
+    else if (e.key === 'Escape' || e.key === 'ContextMenu') closePopup();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
   overlay.append(bd, m);
   m.style.left = clamp(x, 4, innerWidth - m.offsetWidth - 4) + 'px';
   m.style.top = clamp(y, 4, innerHeight - m.offsetHeight - (opt.bottom || 4)) + 'px';
-  pop = { bd, m };
+  pop = { bd, m, prev };
   suspend(+1);
+  m.focus({ preventScroll: true });
+  if (opt.keyboard) setAct(mis.find((x) => !x.classList.contains('dis')));
 }
 const popupAt = (el, items) => { const r = el.getBoundingClientRect(); popup(items, r.left, r.bottom + 2); };
 
@@ -513,112 +543,7 @@ function buildApp(tab, leaf, head, body) {
   else api.app.list().then((l) => { leaf.apps = l; paint(); });
 }
 
-// ------------------------------------------------------------------ folder pane
-const ROW = 28;
-const EXT = {
-  image: 'png jpg jpeg gif webp svg bmp ico', archive: 'zip 7z rar tar gz xz bz2',
-  code: 'js ts jsx tsx rs py c cpp h hpp java go html css json toml yaml yml sh bat ps1', text: 'txt md log csv',
-};
-function iconForEntry(en) {
-  if (en.isDir) return 'folder';
-  const ext = en.name.split('.').pop().toLowerCase();
-  for (const [name, list] of Object.entries(EXT)) if (list.split(' ').includes(ext)) return name;
-  return 'file';
-}
-
-async function loadDir(leaf, p) {
-  const r = await api.fs.list(p ?? leaf.path, C.behavior.showHidden);
-  if (r.ok) { Object.assign(leaf, { path: r.path, parent: r.parent, entries: r.entries, err: '', sel: -1 }); } else leaf.err = r.error;
-  leaf.scrollTop = 0;
-  if (leaf.vl) leaf.vl.list.scrollTop = 0;
-  if (leaf.ui?.addr) leaf.ui.addr.value = leaf.path;
-  if (leaf.ui?.up) leaf.ui.up.disabled = !leaf.parent;
-  paintRows(leaf);
-  updateSaveBar(leaf);
-  renderSidebar();
-  scheduleSave();
-}
-
-function paintRows(leaf) {
-  const v = leaf.vl;
-  if (!v || !v.list.isConnected) return;
-  v.err.textContent = leaf.err;
-  v.err.style.display = leaf.err ? 'block' : 'none';
-  const n = leaf.entries.length;
-  v.spacer.style.height = n * ROW + 'px';
-  const top = v.list.scrollTop;
-  const first = Math.max(0, Math.floor(top / ROW) - 6);
-  const last = Math.min(n, Math.ceil((top + v.list.clientHeight) / ROW) + 6);
-  v.rows.style.transform = `translateY(${first * ROW}px)`;
-  v.rows.replaceChildren(...leaf.entries.slice(first, last).map((en, i) => {
-    const idx = first + i;
-    return h('div', {
-      class: 'frow' + (idx === leaf.sel ? ' sel' : ''),
-      onclick: () => { leaf.sel = idx; paintRows(leaf); },
-      ondblclick: () => (en.isDir ? loadDir(leaf, en.full) : leaf.mode === 'save' ? null : api.fs.open(en.full)),
-    }, ico(iconForEntry(en)), h('span', { class: 'name', title: en.name }, en.name),
-    h('span', { class: 'meta' }, en.isDir ? '' : fmtSize(en.size)),
-    h('span', { class: 'date' }, en.mtime ? new Date(en.mtime).toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' }) : ''));
-  }));
-}
-
-function buildFiles(tab, leaf, head, body) {
-  const up = btn('up', '上へ', () => leaf.parent && loadDir(leaf, leaf.parent));
-  const home = btn('home', 'ホーム', async () => loadDir(leaf, await api.fs.home()));
-  const drv = btn('drive', 'ドライブ・場所', async () => {
-    const list = await api.fs.drives();
-    popupAt(drv, list.map((d) => ({ label: d.label, icon: 'drive', run: () => loadDir(leaf, d.path) })));
-  });
-  const addr = h('input', {
-    type: 'text', class: 'addr', spellcheck: 'false', value: leaf.path, placeholder: 'パス',
-    onfocus: (e) => e.target.select(),
-    onkeydown: (e) => { if (e.key === 'Enter') loadDir(leaf, addr.value); },
-  });
-  leaf.ui = { up, addr };
-  head.append(up, home, drv, addr, ...commonButtons(tab, leaf));
-  up.disabled = !leaf.parent;
-
-  const list = h('div', { class: 'vlist' });
-  const spacer = h('div', { class: 'vspacer' });
-  const rows = h('div', { class: 'vrows' });
-  const err = h('div', { class: 'ferr', style: { display: 'none' } });
-  list.append(spacer, rows);
-  body.append(err, list);
-  leaf.vl = { list, spacer, rows, err };
-  list.addEventListener('scroll', () => { leaf.scrollTop = list.scrollTop; paintRows(leaf); });
-  new ResizeObserver(() => paintRows(leaf)).observe(list);
-
-  if (leaf.mode === 'save') {
-    const msg = h('span', { class: 'msg' });
-    const bar = h('div', { class: 'savebar' }, msg,
-      h('button', { class: 'textbtn primary', onclick: () => { leaf.dlHandled = true; api.dl.choose(leaf.dlId, leaf.path); closeLeaf(tab, leaf); } }, 'ここに保存'),
-      h('button', { class: 'textbtn', onclick: () => closeLeaf(tab, leaf) }, 'キャンセル'));
-    leaf.ui.saveMsg = msg;
-    body.append(bar);
-  }
-
-  if (leaf.loaded) {
-    list.scrollTop = leaf.scrollTop;
-    paintRows(leaf);
-    updateSaveBar(leaf);
-  } else {
-    leaf.loaded = true;
-    loadDir(leaf);
-  }
-}
-
-function updateSaveBar(leaf) {
-  if (leaf.mode !== 'save' || !leaf.ui?.saveMsg) return;
-  const d = S.dl?.[leaf.dlId];
-  let st = '';
-  if (d) {
-    if (d.state === 'completed') st = '（ダウンロード完了）';
-    else if (d.state) st = '（ダウンロード失敗）';
-    else if (d.total > 0) st = `（${Math.floor((d.received / d.total) * 100)}%）`;
-    else if (d.received) st = `（${fmtSize(d.received)}）`;
-  }
-  leaf.ui.saveMsg.textContent = `「${leaf.filename}」の保存先を選んでください${st}`;
-}
+// フォルダペインは files.js
 
 // ------------------------------------------------------------------ settings pane
 function buildSettings(tab, leaf, head, body) {
@@ -672,7 +597,7 @@ function scheduleSave() {
   saveTimer = setTimeout(() => {
     const ser = (n) => (n.k === 'split'
       ? { k: 'split', dir: n.dir, ratio: n.ratio, a: ser(n.a), b: ser(n.b) }
-      : { k: 'leaf', type: n.type, url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl });
+      : { k: 'leaf', type: n.type, url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl, sort: n.type === 'files' ? n.sort : undefined });
     api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ bookmarkId: t.bookmarkId, root: ser(t.root) })) });
   }, 600);
 }
@@ -680,7 +605,7 @@ function scheduleSave() {
 function restore(ws) {
   const deser = (n) => (n.k === 'split'
     ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deser(n.a), b: deser(n.b) }
-    : makeLeaf(['web', 'files', 'settings', 'app', 'home'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl }));
+    : makeLeaf(['web', 'files', 'settings', 'app', 'home'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl, sort: n.sort }));
   for (const t of ws.tabs) {
     try {
       const root = deser(t.root);
@@ -708,6 +633,8 @@ api.onShortcut(({ action, paneId }) => {
   else if (action === 'focusAddress') focusAddress();
   else if (action === 'launcher') openLauncher();
   else if (cur?.type === 'web' && ['reload', 'back', 'forward'].includes(action)) webCmd(cur, action);
+  else if (cur?.type === 'files' && action === 'reload') reloadDir(cur);
+  else if (cur?.type === 'files' && (action === 'back' || action === 'forward')) histGo(cur, action === 'back' ? -1 : 1);
 });
 
 api.web.onState((s) => {
@@ -777,7 +704,9 @@ api.app.onExited(({ paneId, hadWindow }) => {
 });
 
 api.config.onChanged((values) => {
+  const hidden = C.behavior.showHidden;
   C = values;
+  if (hidden !== C.behavior.showHidden) reloadAllFiles();
   applyTheme();
   loadBookmarks();
   renderSidebar();
@@ -797,6 +726,7 @@ async function boot() {
   SCHEMA = cfg.schema;
   applyTheme();
   loadBookmarks();
+  initFiles();
   S.appSupported = await api.app.supported();
 
   $('#tb-sidebar').append(ico('menu'));
