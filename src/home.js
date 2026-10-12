@@ -36,7 +36,7 @@ function buildHome(tab, leaf, head, body) {
       h('button', { class: 'textbtn', onclick: () => openLauncher() }, ico('window'), 'アプリ・検索（Ctrl+Shift+P）'),
       h('button', { class: 'textbtn', onclick: () => openTab('files') }, ico('folder'), 'フォルダ'),
       h('button', { class: 'textbtn', onclick: () => openTab('web') }, ico('globe'), 'Web'),
-      h('button', { class: 'textbtn', onclick: () => openSettings() }, ico('settings'), '設定')));
+      IS_SUB ? null : h('button', { class: 'textbtn', onclick: () => openSettings() }, ico('settings'), '設定')));
   body.append(root);
 
   const paintClock = () => {

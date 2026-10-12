@@ -20,7 +20,8 @@ var EL_PID = ${process.pid};
 function mainWin() {
   var best = null, area = 0;
   workspace.windowList().forEach(function (w) {
-    if (w.pid !== EL_PID || !w.normalWindow || /^PRELUDE-overlay:/.test(w.caption || '')) return;
+    // 2枚目以降の画面の窓("PRELUDE:sub<n>")は除く。通知・OSD は主画面に出す
+    if (w.pid !== EL_PID || !w.normalWindow || /^PRELUDE(-overlay|:sub[0-9])/.test(w.caption || '')) return;
     var a = w.frameGeometry.width * w.frameGeometry.height;
     if (a > area) { best = w; area = a; }
   });

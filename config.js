@@ -56,6 +56,7 @@ const SCHEMA = [
       { path: 'behavior.showHidden', label: '隠しファイル（.で始まる）を表示', type: 'bool' },
       { path: 'behavior.sidebarVisible', label: 'サイドバーを表示', type: 'bool' },
       { path: 'behavior.startFullscreen', label: '起動時に全画面で開く（次回起動から）', type: 'bool' },
+      { path: 'behavior.subDisplays', label: '2枚目以降の画面にも PRELUDE の窓を開く', type: 'bool' },
     ],
   },
   {
@@ -96,6 +97,7 @@ function defaults() {
       showHidden: false,
       sidebarVisible: true,
       startFullscreen: true,
+      subDisplays: true,
     },
     bookmarks: [],
     appUsage: [],
