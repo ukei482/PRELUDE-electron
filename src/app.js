@@ -24,8 +24,14 @@ let ICONS = {};
 const ico = (name) => h('span', { class: 'ico', html: ICONS[name] || '' });
 const btn = (icon, title, onclick) => h('button', { class: 'ibtn', title, onclick }, ico(icon));
 
+// 画面ごとの窓(main.js の createShellWindow)。2枚目以降の画面(role=sub)は、設定・全画面・システム関係のボタンを省く
+const Q = new URLSearchParams(location.search);
+const WIN_KEY = Q.get('key') || 'main';
+const IS_SUB = Q.get('role') === 'sub';
 let seq = 0;
-const nid = (p) => `${p}${++seq}`;
+// ペインの id は全部の窓で重ならないようにする(main.js はペインを id で管理し、タブを別の窓へ移しても同じ id のまま)
+const ID_PREFIX = `${WIN_KEY}${Math.random().toString(36).slice(2, 6)}-`;
+const nid = (p) => `${ID_PREFIX}${p}${++seq}`;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const baseName = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '');
 const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
@@ -35,7 +41,7 @@ const getPath = (o, p) => p.split('.').reduce((v, k) => (v == null ? undefined :
 // ------------------------------------------------------------------ state
 let C = null; // config values
 let SCHEMA = [];
-const S = { tabs: [], active: null, bookmarks: [], foreignBm: [] };
+const S = { tabs: [], active: null, bookmarks: [], foreignBm: [], screens: [] };
 
 const activeTab = () => S.tabs.find((t) => t.id === S.active) || S.tabs[0];
 const leaves = (n) => (n.k === 'leaf' ? [n] : [...leaves(n.a), ...leaves(n.b)]);
@@ -133,6 +139,15 @@ function renderSidebar() {
       class: 'item' + (tab.id === S.active ? ' active' : ''),
       onclick: () => showTab(tab),
       onauxclick: (e) => { if (e.button === 1) closeTab(tab); },
+      oncontextmenu: (e) => {
+        e.preventDefault();
+        const others = S.screens.filter((x) => x.key !== WIN_KEY);
+        popup([
+          ...others.map((x) => ({ label: `${x.label}へ移す`, icon: 'window', run: () => moveTab(tab, x.key) })),
+          others.length ? { sep: true } : null,
+          { label: '閉じる', icon: 'close', danger: true, run: () => closeTab(tab) },
+        ].filter(Boolean), e.clientX, e.clientY);
+      },
     }, icon, h('span', { class: 'label' }, tabTitle(tab)), n > 1 ? h('span', { class: 'badge' }, '+' + (n - 1)) : null,
     h('button', { class: 'ibtn x', title: '閉じる', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close'))));
   }
@@ -173,6 +188,29 @@ function closeTab(tab) {
   S.tabs.splice(i, 1);
   if (!S.tabs.length) { openTab(C.behavior.startKind); return; }
   if (S.active === tab.id) S.active = S.tabs[Math.min(i, S.tabs.length - 1)].id;
+  render();
+}
+
+// タブを別の画面の窓へ移す。ペインは壊さずに渡す(Webページ・取り込んだアプリは main.js が移った先の窓へ付け替える)。
+// o.quiet: 残りのタブが無くなっても新しいタブを開かない(画面を外して全部移すとき)
+const LIVE_ONLY = new Set(['el', 'ui', 'slot', 'vl', 'apps']); // 画面の部品など、移った先で作り直すもの
+function moveTab(tab, to, o = {}) {
+  const data = JSON.parse(JSON.stringify({ bookmarkId: tab.bookmarkId, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
+  const i = S.tabs.indexOf(tab);
+  S.tabs.splice(i, 1);
+  if (S.active === tab.id) S.active = S.tabs[Math.min(i, S.tabs.length - 1)]?.id ?? null;
+  api.tab.move(to, data);
+  if (o.quiet) return;
+  if (!S.tabs.length) openTab(C.behavior.startKind); else render();
+}
+
+// 別の窓から移ってきたタブ。ペインは id も状態もそのまま(Webビューは作り直さず、アプリも起動し直さない)
+function adoptTab(data) {
+  const ids = new Set(leaves(data.root).map((l) => l.id));
+  const tab = { id: nid('t'), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null };
+  for (const l of leaves(tab.root)) if (l.type === 'files' && !Array.isArray(l.entries)) l.entries = [];
+  S.tabs.unshift(tab);
+  S.active = tab.id;
   render();
 }
 
@@ -405,7 +443,7 @@ function commonButtons(tab, leaf) {
       { label: 'Web', icon: 'globe', run: () => splitLeaf(tab, leaf, dir, 'web') },
       { label: 'フォルダ', icon: 'folder', run: () => splitLeaf(tab, leaf, dir, 'files') },
       S.appSupported ? { label: 'アプリ', icon: 'window', run: () => splitLeaf(tab, leaf, dir, 'app') } : null,
-      { label: '設定', icon: 'settings', run: () => splitLeaf(tab, leaf, dir, 'settings') },
+      IS_SUB ? null : { label: '設定', icon: 'settings', run: () => splitLeaf(tab, leaf, dir, 'settings') },
     ].filter(Boolean)));
     return b;
   };
@@ -813,6 +851,21 @@ api.app.onExited(({ paneId, hadWindow }) => {
   render();
 });
 
+// タブの移動(画面ごとの窓の間)。画面を外したときは、全部のタブを主画面へ移してから窓が閉じる
+api.tab.onAdopt((data) => { try { adoptTab(data); } catch {} });
+api.tab.onEvacuate((to) => {
+  // 開いたばかりのホームだけのタブは移さない
+  for (const tab of [...S.tabs]) {
+    const ls = leaves(tab.root);
+    if (ls.length === 1 && ls[0].type === 'home') continue;
+    moveTab(tab, to, { quiet: true });
+  }
+  clearTimeout(saveTimer);
+  api.ws.save({ active: 0, tabs: [] }); // 次にこの画面をつないだときは新しいタブから始める
+  api.tab.evacuated();
+});
+api.win.onScreens((list) => { S.screens = list || []; });
+
 api.config.onChanged((values) => {
   C = values;
   applyTheme();
@@ -841,6 +894,9 @@ async function boot() {
   $('#tb-max').append(ico('maximize'));
   $('#new-tab').append(ico('plus'));
   $('#open-settings').append(ico('settings'), '設定');
+  document.body.classList.toggle('sub', IS_SUB);
+  if (IS_SUB) $('#tb-title').textContent = `PRELUDE ${WIN_KEY.replace(/^sub(\d+)$/, (_m, n) => `画面${Number(n) + 1}`)}`;
+  api.win.screens().then((list) => { S.screens = list || []; });
   $('#tb-sidebar').onclick = () => api.config.set('behavior.sidebarVisible', !C.behavior.sidebarVisible);
   $('#tb-fullscreen').onclick = () => api.win.cmd('toggleFullscreen');
   $('#tb-max').onclick = () => api.win.cmd('toggleMaximize');
@@ -850,13 +906,13 @@ async function boot() {
     { label: 'Web', icon: 'globe', run: () => openTab('web') },
     { label: 'フォルダ', icon: 'folder', run: () => openTab('files') },
     S.appSupported ? { label: 'アプリ', icon: 'window', run: () => openTab('app') } : null,
-    { label: '設定', icon: 'settings', run: () => openSettings() },
+    IS_SUB ? null : { label: '設定', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
   initBar();
   loadSessionState();
   // 起動して少ししてから、新しい版があるか確かめて知らせる(ネットワークの準備を待つ)
-  setTimeout(async () => {
+  if (!IS_SUB) setTimeout(async () => {
     const r = await api.update.check();
     if (r.shell && r.available) toast(`新しい版 ${r.latest} があります(設定の「アップデート」か、ランチャーの「PRELUDE を更新」で更新できます)`, 8000);
   }, 20000);
@@ -873,5 +929,5 @@ async function boot() {
   if (S.appSupported) for (const t of S.tabs) for (const l of leaves(t.root)) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
 }
 
-window.__prelude = { S, openTab, splitLeaf, activeTab, activeLeaf, leaves }; // デバッグ用
+window.__prelude = { S, openTab, splitLeaf, activeTab, activeLeaf, leaves, moveTab }; // デバッグ用
 boot();

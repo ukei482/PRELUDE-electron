@@ -14,10 +14,13 @@ const { instanceTag, cleanShell } = require('./sys/util');
 const SCRIPT_NAME = 'prelude-embed' + instanceTag; // 別プロファイルの PRELUDE(デバッグ用)はシェルのスクリプトを上書きしない
 const supported = process.platform === 'linux' && /kde/i.test(process.env.XDG_CURRENT_DESKTOP || '');
 
-const panes = new Map(); // paneId -> { proc, cmd, keys, rect, wids, owned, old, ... }
-let suspended = false;
+const panes = new Map(); // paneId -> { proc, cmd, keys, rect, wids, owned, old, owner, ... }
+const suspended = new Set(); // ペインを隠している窓の key
 // PRELUDE自身を「疑似全画面」にするための状態。本物のKWin全画面だと、アクティブ中は取り込んだアプリより必ず上に出てしまう
 const shell = { fs: false, restore: null };
+// 2枚目以降の画面の窓('sub1'…)。主画面以外の画面へ置く。全画面でないときは、現れた直後(placeUntil まで)だけ置き、あとはユーザーが動かせる
+let subs = [];
+let placeUntil = 0;
 let notify = () => {};
 let scriptFile = null;
 let reloading = false;
@@ -112,7 +115,7 @@ function buildScript() {
   // 最小化から戻したウィンドウは、アクティブにしないと描画されず空白のままになる(KWinの挙動)。
   // 再表示した直後の短い間だけ activate させる。
   for (const e of panes.values()) {
-    const now = !!e.rect && e.rect.width > 0 && e.rect.height > 0 && !suspended;
+    const now = !!e.rect && e.rect.width > 0 && e.rect.height > 0 && !suspended.has(e.owner);
     if (now && !e.shown) {
       e.activate = true;
       setTimeout(() => { e.activate = false; }, 700);
@@ -121,10 +124,13 @@ function buildScript() {
     e.shown = now;
   }
   const state = {
-    suspended,
+    suspended: [...suspended],
     shell: { fs: shell.fs, restore: shell.restore },
+    subs,
+    place: Date.now() < placeUntil,
     panes: [...panes.entries()].map(([id, p]) => ({
       id,
+      owner: p.owner || 'main',
       pids: pidsOf(p),
       keys: p.keys,
       wids: p.wids,
@@ -147,14 +153,30 @@ var EL_PID = ${process.pid};
 // ペインの番号が重なって、そちらのペインに別のウィンドウが混ざる
 var REPORT = ${monitorOk};
 function send(kind, data) { if (REPORT) callDBus(${JSON.stringify(bus.NAME)}, '/org/prelude/Shell', 'org.prelude.Shell', 'Report', kind, JSON.stringify(data)); }
+// 主画面の窓: PRELUDE の普通の窓のうち一番大きいもの(2枚目以降の窓 "PRELUDE:sub<n>" とオーバーレイは除く)
+function isSub(w) { return /^PRELUDE:sub[0-9]+/.test(w.caption || ''); }
 function electron(skip) {
   var best = null, area = 0;
   workspace.windowList().forEach(function (w) {
-    if (w === skip || w.pid !== EL_PID || !w.normalWindow) return;
+    if (w === skip || w.pid !== EL_PID || !w.normalWindow || isSub(w) || /^PRELUDE-overlay:/.test(w.caption || '')) return;
     var a = w.frameGeometry.width * w.frameGeometry.height;
     if (a > area) { best = w; area = a; }
   });
   return best;
+}
+// key の窓('main' か 'sub1'…)
+function shellWin(key) {
+  if (key === 'main') return electron();
+  var re = new RegExp('^PRELUDE:' + key + '(?![0-9])'), found = null;
+  workspace.windowList().forEach(function (w) { if (w.pid === EL_PID && re.test(w.caption || '')) found = w; });
+  return found;
+}
+// 2枚目以降の窓を置く画面: 主画面の窓がいる画面以外を左から順に。足りなければ主画面と同じ画面
+function subOutput(i, main) {
+  var mo = main && main.output, outs = [];
+  (workspace.screens || []).forEach(function (o) { if (!mo || o.name !== mo.name) outs.push(o); });
+  outs.sort(function (a, b) { return a.geometry.x - b.geometry.x || a.geometry.y - b.geometry.y; });
+  return outs[i] || mo || null;
 }
 function wid(w) { return String(w.internalId); }
 function keyHit(p, w) {
@@ -191,8 +213,8 @@ function apply(w) {
   var p = paneOf(w);
   if (!p) return;
   hookCaption(w);
-  var el = electron();
-  if (!el || el.minimized || STATE.suspended || !p.rect) { w.minimized = true; return; }
+  var el = shellWin(p.owner);
+  if (!el || el.minimized || STATE.suspended.indexOf(p.owner) >= 0 || !p.rect) { w.minimized = true; return; }
   var g = el.clientGeometry;
   w.minimized = false;
   w.keepAbove = true;
@@ -245,6 +267,7 @@ workspace.windowAdded.connect(function (w) {
   report();
 });
 function applyShell() {
+  applySubs();
   var el = electron();
   if (!el || (!STATE.shell.fs && !STATE.shell.restore)) return;
   var r = el.output ? el.output.geometry : workspace.virtualScreenGeometry;
@@ -259,6 +282,27 @@ function applyShell() {
     t = { x: r.x + Math.round((r.width - s.width) / 2), y: r.y + Math.round((r.height - s.height) / 2), width: s.width, height: s.height };
   }
   if (g.x !== t.x || g.y !== t.y || g.width !== t.width || g.height !== t.height) el.frameGeometry = t;
+}
+// 2枚目以降の窓。全画面のときはその画面いっぱいに、そうでなければ現れた直後だけその画面の中央に置く
+function applySubs() {
+  var main = electron();
+  STATE.subs.forEach(function (key, i) {
+    var w = shellWin(key);
+    if (!w) return;
+    var o = subOutput(i, main);
+    if (!o) return;
+    var r = o.geometry, g = w.frameGeometry, t;
+    if (STATE.shell.fs) {
+      w.noBorder = true;
+      w.keepAbove = true;
+      t = { x: r.x, y: r.y, width: r.width, height: r.height };
+    } else if (STATE.place || STATE.shell.restore) {
+      w.keepAbove = false;
+      var width = Math.min(1200, r.width), height = Math.min(800, r.height);
+      t = { x: r.x + Math.round((r.width - width) / 2), y: r.y + Math.round((r.height - height) / 2), width: width, height: height };
+    } else return;
+    if (g.x !== t.x || g.y !== t.y || g.width !== t.width || g.height !== t.height) w.frameGeometry = t;
+  });
 }
 // PRELUDEがアクティブになると同じ層の最前面に来るので、取り込んだアプリを前に出し直す
 // 子の窓(ダイアログ)は本体より前に出すので、本体を先に、子の窓を後に上げる
@@ -310,11 +354,11 @@ workspace.windowList().forEach(function (w) {
     w.keepAbove = false; w.noBorder = false; w.skipTaskbar = false; w.skipPager = false; w.skipSwitcher = false; w.minimized = false;
   }
 });
-var el0 = electron();
-if (el0) {
-  el0.frameGeometryChanged.connect(applyEverything);
-  el0.minimizedChanged.connect(applyEverything);
-}
+[electron()].concat(STATE.subs.map(shellWin)).forEach(function (w) {
+  if (!w) return;
+  w.frameGeometryChanged.connect(applyEverything);
+  w.minimizedChanged.connect(applyEverything);
+});
 applyEverything();
 `;
 }
@@ -326,7 +370,7 @@ async function reload() {
   try {
     if (!scriptFile) scriptFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'prelude-embed-')), 'embed.js');
     await gdbus('/Scripting', 'org.kde.kwin.Scripting.unloadScript', SCRIPT_NAME);
-    if (!panes.size && !shell.fs && !shell.restore && !waiters.length && !closeWids.length && !releaseWids.length && !closePids.length) return;
+    if (!panes.size && !shell.fs && !shell.restore && !subs.length && !waiters.length && !closeWids.length && !releaseWids.length && !closePids.length) return;
     fs.writeFileSync(scriptFile, buildScript());
     const out = await gdbus('/Scripting', 'org.kde.kwin.Scripting.loadScript', scriptFile, SCRIPT_NAME);
     const id = out && /(-?\d+)/.exec(out)?.[1];
@@ -426,7 +470,7 @@ function childEnv() {
 }
 
 const starting = new Set();
-async function launch(paneId, cmd, cls) {
+async function launch(paneId, cmd, cls, owner = 'main') {
   if (!supported || panes.has(paneId) || starting.has(paneId) || !String(cmd || '').trim()) return false;
   startMonitor();
   starting.add(paneId);
@@ -435,7 +479,7 @@ async function launch(paneId, cmd, cls) {
   starting.delete(paneId);
   if (panes.has(paneId)) return false;
   const proc = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: childEnv(), cwd: os.homedir() });
-  const e = { proc, cmd, keys: keysOf(cmd, cls), wids: [], owned: new Set(), adopted: [], old, rect: null, launchedAt: uptime(), t0: Date.now(), hadWindow: false, gone: 0 };
+  const e = { proc, cmd, owner, keys: keysOf(cmd, cls), wids: [], owned: new Set(), adopted: [], old, rect: null, launchedAt: uptime(), t0: Date.now(), hadWindow: false, gone: 0 };
   log(`launch ${paneId} ${cmd} keys=${e.keys}`);
   panes.set(paneId, e);
   proc.on('error', () => {});
@@ -483,9 +527,32 @@ function setShell(on, normal) {
   schedule(0);
 }
 
-function setSuspended(v) {
-  if (suspended === !!v) return;
-  suspended = !!v;
+// 窓 key のペインを隠す(その窓でメニューを開いている間など)
+function setSuspended(key, v) {
+  if (suspended.has(key) === !!v) return;
+  if (v) suspended.add(key); else suspended.delete(key);
+  schedule(0);
+}
+
+// ペインを別の窓へ移した(タブを別の画面へ)。位置は移った先の窓から改めて届く
+function setOwner(paneId, owner) {
+  const e = panes.get(paneId);
+  if (!e || e.owner === owner) return;
+  e.owner = owner;
+  e.rect = null;
+  schedule(0);
+}
+
+// 2枚目以降の窓の一覧が変わった。新しい窓は現れるまで少しかかるので、しばらく置き直し続ける
+function setSubs(keys) {
+  if (!supported) return;
+  const added = keys.some((k) => !subs.includes(k));
+  subs = [...keys];
+  if (added) {
+    placeUntil = Date.now() + 6000;
+    let n = 0;
+    const warm = setInterval(() => { if (++n > 7) clearInterval(warm); else schedule(0); }, 1000);
+  }
   schedule(0);
 }
 
@@ -554,6 +621,6 @@ module.exports = {
   childEnv,
   browserCmd,
   hasBrowser,
-  supported, setShell, launch, setBounds, setSuspended, close, shutdown, listApps: apps.list,
+  supported, setShell, setSubs, setOwner, launch, setBounds, setSuspended, close, shutdown, listApps: apps.list,
   onEvent: (cb) => { notify = cb; },
 };
