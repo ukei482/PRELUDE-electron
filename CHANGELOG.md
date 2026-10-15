@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.4] - 2026-10-15
+
 ### 追加
 - フィールド表示のカードごと（フォルダのパスごと）の表示の設定。カードの見出しの右上の ︙（右クリック・メニューキー・Shift+F10 でも）で切り替える。
   - 表示: リスト／アイコン（画像はサムネイル、ほかは種類の色と拡張子のタイル）
@@ -210,7 +212,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.3...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.0...v0.4.1
