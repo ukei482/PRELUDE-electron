@@ -11,7 +11,7 @@
 // decorate(種類の判定)/ collator / fmtDate は files.js のものを呼び出し時に使う。
 
 const FIELD = {
-  CARDW: 320, GAP: 90, VGAP: 18, ROWH: 28, HEAD: 34, VIEWH: 15 * 28, TAU: 90, PREFETCH: 120, CACHE: 400,
+  CARDW: 320, GAP: 90, HGAP: 24, VGAP: 18, ROWH: 28, HEAD: 34, VIEWH: 15 * 28, TAU: 90, PREFETCH: 120, CACHE: 400,
   SIZEW: 84, DATEW: 128, TILEW: 100, TILEH: 104, ICONCOLS: 4, THUMBS: 400,
   HOT: 3, HOTMIN: 0.3, // 印を付けるのは、点数が HOTMIN 以上の上位 HOT 件
 };
@@ -61,7 +61,7 @@ async function fieldStats(fv, c) {
     });
   }
   c.statsBusy = false;
-  if (c.entries === list) { fieldApply(c); fieldLayout(fv); }
+  if (c.entries === list) { fieldApply(c); fieldSettle(fv, c); }
 }
 
 // ------------------------------------------------------------------ 表示の設定(フォルダのパスごと)
@@ -90,8 +90,8 @@ function fieldSetView(leaf, c, patch) {
   for (const t of S.tabs) for (const l of leaves(t.root)) {
     if (l.type !== 'field' || !l.fv?.cards) continue;
     let hit = false;
-    for (const k of l.fv.cards) if (k.full === c.full) { fieldApply(k, l.fv); hit = true; }
-    if (hit) { fieldLayout(l.fv); if (l.fv.cur) fieldCursor(l, l.fv.cur.i); }
+    for (const k of l.fv.cards) if (k.full === c.full) { fieldApply(k, l.fv); fieldSettle(l.fv, k); hit = true; }
+    if (hit && l.fv.cur) fieldCursor(l, l.fv.cur.i);
   }
   leaf.fv.canvas?.focus();
 }
@@ -136,7 +136,7 @@ function fieldItem(c, idx) {
 // ------------------------------------------------------------------ カード
 // row: 親のカードの何行目のフォルダか。kids: 開いている子のカード。sy: カードの中のスクロール(px)
 function fieldCard(full, parent, row) {
-  const c = { full, name: baseName(full) || '/', parent, row, kids: [], entries: null, list: [], err: '', loading: false, i: 0, sy: 0, x: 0, y: 0, dx: null, dy: null, alpha: 1 };
+  const c = { full, name: baseName(full) || '/', parent, row, kids: [], entries: null, list: [], err: '', loading: false, i: 0, sy: 0, x: 0, y: 0, dx: null, dy: null, alpha: 1, placed: false };
   fieldApply(c);
   return c;
 }
@@ -167,28 +167,60 @@ async function fieldLoad(fv, c, force) {
   return true;
 }
 
-// 左→右の木。子のカードは、親のカードのそのフォルダの行に見出しをそろえて置き、重なる時は下へずらす
-function fieldLayout(fv) {
-  const cards = [];
-  const place = (c, x, y) => {
-    c.x = x;
-    c.y = y;
-    cards.push(c);
-    let bottom = y + c.h, next = -Infinity;
-    for (const k of [...c.kids].sort((a, b) => a.row - b.row)) {
-      const b = place(k, x + c.w + FIELD.GAP, Math.max(y + fieldRowY(c, k.row) - FIELD.HEAD / 2, next));
-      next = b + FIELD.VGAP;
-      bottom = Math.max(bottom, b);
-    }
-    return bottom;
-  };
-  place(fv.root, 0, 0);
-  fv.cards = cards;
-  // 新しいカードは、親のカードのその行から伸びてくる
-  for (const c of cards) {
-    if (c.dx != null) continue;
-    const p = c.parent;
-    if (p && p.dx != null) { c.dx = p.dx + p.w - 60; c.dy = p.dy + fieldRowY(p, c.row) - FIELD.HEAD / 2; c.alpha = 0; } else { c.dx = c.x; c.dy = c.y; }
+// ------------------------------------------------------------------ 配置(一度置いたカードは動かさない)
+// 新しいカードは、親のカードのそのフォルダの行に見出しをそろえた位置に置く。ほかのカードと重なる時は、一番近い空き(上か下)に置く。
+// 置いたカードはその後動かさない(開く・閉じる・兄弟の切り替えで、ほかのカードの場所が変わらず、場所で覚えられる)。
+// カードの大きさが変わって(表示の設定・読み直し)重なった時だけ、重なった相手を近くの空きへ移す。
+const fieldHits = (a, ax, ay, b) => ax < b.x + b.w + FIELD.HGAP && b.x < ax + a.w + FIELD.HGAP && ay < b.y + b.h + FIELD.VGAP && b.y < ay + a.h + FIELD.VGAP;
+
+// x の位置で、y に一番近い、ほかのカードと重ならない y
+function fieldFreeY(fv, c, x, y) {
+  const others = fv.cards.filter((k) => k !== c && k.placed);
+  const fits = (yy) => !others.some((k) => fieldHits(c, x, yy, k));
+  if (fits(y)) return y;
+  const cand = [];
+  for (const k of others) cand.push(k.y + k.h + FIELD.VGAP, k.y - c.h - FIELD.VGAP);
+  return cand.filter(fits).sort((a, b) => Math.abs(a - y) - Math.abs(b - y))[0] ?? y;
+}
+
+// 木をたどって、描く順のカードの一覧を作り直す
+function fieldCollect(fv) {
+  const out = [];
+  const walk = (c) => { out.push(c); c.kids.forEach(walk); };
+  walk(fv.root);
+  fv.cards = out;
+  fieldKick(fv);
+}
+
+// 読み込んで大きさの決まった新しいカードを置く。親のカードのその行から伸びてくる
+function fieldPlace(fv, c) {
+  const p = c.parent;
+  fieldCollect(fv);
+  if (p) {
+    const want = p.y + fieldRowY(p, c.row) - FIELD.HEAD / 2;
+    c.x = p.x + p.w + FIELD.GAP;
+    c.y = fieldFreeY(fv, c, c.x, want);
+    Object.assign(c, { dx: p.dx + p.w - 60, dy: p.dy + fieldRowY(p, c.row) - FIELD.HEAD / 2, alpha: 0 });
+  } else Object.assign(c, { x: 0, y: 0, dx: 0, dy: 0 });
+  c.placed = true;
+  fieldKick(fv);
+}
+
+// c の大きさが変わった後。広がって子のカードにかかったら、その枝を右へずらす。重なったほかのカードは近くの空きへ移す
+function fieldSettle(fv, c) {
+  if (!c.placed) return;
+  fieldCollect(fv);
+  const moved = new Set([c]);
+  const need = c.x + c.w + FIELD.GAP;
+  for (const k of c.kids) {
+    if (!k.placed || k.x >= need) continue;
+    const d = need - k.x;
+    const walk = (q) => { q.x += d; moved.add(q); q.kids.forEach(walk); };
+    walk(k);
+  }
+  for (const m of moved) for (const k of fv.cards) {
+    if (!k.placed || moved.has(k) || !fieldHits(m, m.x, m.y, k)) continue;
+    k.y = fieldFreeY(fv, k, k.x, k.y);
   }
   fieldKick(fv);
 }
@@ -205,9 +237,7 @@ function fieldFocus(leaf, c) {
 function fieldCursor(leaf, i) {
   const fv = leaf.fv, c = fv.cur;
   c.i = clamp(i, 0, Math.max(0, c.list.length - 1));
-  const sy = c.sy;
   fieldScrollTo(c);
-  if (c.sy !== sy && c.kids.length) fieldLayout(fv); // 子のカードへの線の出どころが動く
   const en = c.list[c.i];
   if (fv.ui?.path) fv.ui.path.textContent = en ? en.full : c.full;
   clearTimeout(fv.prefetch);
@@ -242,11 +272,11 @@ async function fieldEnter(leaf) {
   if (!k) {
     k = fieldCard(en.full, c, c.i);
     c.kids.push(k);
-    fieldLayout(fv);
-    await fieldLoad(fv, k);
-    fieldLayout(fv);
+    fieldCollect(fv);
+    await fieldLoad(fv, k); // 大きさが決まってから置く(ふつうは先読みしてあるのですぐ)
+    fieldPlace(fv, k);
   }
-  if (fv.cur === c && c.i === k.row) fieldFocus(leaf, k);
+  if (fv.cur === c && c.i === k.row && k.placed) fieldFocus(leaf, k);
 }
 
 // 親のカードへ。一番上のカードなら、ひとつ上のフォルダのカードを左に足す。close: 今のカードを閉じる
@@ -255,7 +285,7 @@ async function fieldBack(leaf, close) {
   if (!c.parent && !(await fieldReroot(fv))) return;
   const p = c.parent;
   p.i = c.row;
-  if (close) { p.kids = p.kids.filter((k) => k !== c); fieldLayout(fv); }
+  if (close) { p.kids = p.kids.filter((k) => k !== c); fieldCollect(fv); }
   fieldFocus(leaf, p);
 }
 
@@ -273,15 +303,15 @@ async function fieldSibling(leaf, d) {
   const open = p.kids.find((k) => k.full === en.full);
   if (open) { // その兄弟がもう開いていれば、そのカードへ移る(今のカードは閉じる)
     p.kids = p.kids.filter((k) => k !== c);
-    fieldLayout(fv);
+    fieldCollect(fv);
     fieldFocus(leaf, open);
     return;
   }
   Object.assign(c, { full: en.full, name: en.name, row: j, kids: [], entries: null, list: [], err: '', i: 0, sy: 0 });
   fieldApply(c);
-  fieldLayout(fv);
+  fieldCollect(fv);
   fieldFocus(leaf, c);
-  if (await fieldLoad(fv, c)) { fieldLayout(fv); if (fv.cur === c) fieldCursor(leaf, c.i); }
+  if (await fieldLoad(fv, c)) { fieldSettle(fv, c); if (fv.cur === c) fieldCursor(leaf, c.i); } // カードの場所はそのまま
 }
 
 // ひとつ上のフォルダのカードを根にして、今までの木をその子としてつなぐ
@@ -296,15 +326,11 @@ async function fieldReroot(fv) {
   Object.assign(old, { parent: root, row });
   Object.assign(root, { kids: [old], i: row });
   fieldScrollTo(root);
-  const ox = old.x, oy = old.y;
   fv.root = root;
-  fieldLayout(fv);
-  // 座標の基準が変わるので、今あるカードとカメラを同じだけずらして、画面が跳ねないようにする
-  const sx = old.x - ox, sy = old.y - oy;
-  for (const k of fv.cards) if (k !== root) { k.dx += sx; k.dy += sy; }
-  Object.assign(fv.cam, { x: fv.cam.x + sx, y: fv.cam.y + sy });
-  root.dx = old.dx - root.w - FIELD.GAP;
-  root.dy = old.dy - (old.y - root.y);
+  // 今の木はそのままで、左に置く(今までの根の見出しが、そのフォルダの行にそろう位置)
+  const x = old.x - root.w - FIELD.GAP, y = old.y + FIELD.HEAD / 2 - fieldRowY(root, row);
+  Object.assign(root, { x, y, dx: x + 60, dy: y, alpha: 0, placed: true });
+  fieldCollect(fv);
   return true;
 }
 
@@ -313,18 +339,19 @@ async function fieldReload(leaf) {
   const fv = leaf.fv, c = fv?.cur;
   if (!c) return;
   if (!(await fieldLoad(fv, c, true))) return;
-  fieldLayout(fv);
+  fieldSettle(fv, c);
   if (fv.cur === c) fieldCursor(leaf, c.i);
 }
 
 async function fieldNewTree(leaf, path) {
   const fv = leaf.fv;
-  fv.root = fv.cur = fieldCard(path, null, 0);
-  fieldLayout(fv);
-  Object.assign(fv.cam, { x: fv.root.w / 2, y: fv.root.h / 2 });
-  await fieldLoad(fv, fv.root);
-  fieldLayout(fv);
-  fieldFocus(leaf, fv.root);
+  const root = fv.root = fv.cur = fieldCard(path, null, 0);
+  fieldCollect(fv);
+  await fieldLoad(fv, root);
+  if (fv.root !== root) return;
+  fieldPlace(fv, root);
+  Object.assign(fv.cam, { x: root.w / 2, y: root.h / 2 });
+  fieldFocus(leaf, root);
 }
 
 // カードの見出しの ︙ の位置(フィールドの座標)
@@ -451,7 +478,7 @@ function fieldTick(fv, t) {
   if (fv.follow && fv.cur) { cam.tx = fv.cur.x + fv.cur.w / 2; cam.ty = fv.cur.y + fv.cur.h / 2; }
   if (fv.follow) { ease(cam, 'x', cam.tx); ease(cam, 'y', cam.ty); }
   ease(cam, 'z', cam.tz, 0.001);
-  for (const c of fv.cards) { ease(c, 'dx', c.x); ease(c, 'dy', c.y); ease(c, 'alpha', 1, 0.01); }
+  for (const c of fv.cards) if (c.placed) { ease(c, 'dx', c.x); ease(c, 'dy', c.y); ease(c, 'alpha', 1, 0.01); }
   fieldDraw(fv);
   if (moving) fieldKick(fv); else fv.last = 0;
 }
@@ -486,7 +513,7 @@ function fieldDraw(fv) {
   for (let c = fv.cur; c; c = c.parent) path.add(c);
   for (const c of fv.cards) {
     const p = c.parent;
-    if (!p) continue;
+    if (!p || !c.placed || !p.placed) continue;
     const ax = p.dx + p.w, ay = p.dy + fieldRowY(p, c.row), bx = c.dx, by = c.dy + FIELD.HEAD / 2;
     if (bx < view.x0 || ax > view.x1 || Math.max(ay, by) < view.y0 || Math.min(ay, by) > view.y1) continue;
     const on = path.has(c);
@@ -501,7 +528,7 @@ function fieldDraw(fv) {
   }
   ctx.globalAlpha = 1;
   for (const c of fv.cards) {
-    if (c.dx > view.x1 || c.dx + c.w < view.x0 || c.dy > view.y1 || c.dy + c.h < view.y0) continue;
+    if (!c.placed || c.dx > view.x1 || c.dx + c.w < view.x0 || c.dy > view.y1 || c.dy + c.h < view.y0) continue;
     fieldDrawCard(fv, ctx, a, c, font, path.has(c));
   }
   ctx.globalAlpha = 1;
@@ -655,7 +682,7 @@ function fieldHit(fv, ev) {
   const wy = (ev.clientY - r.top - r.height / 2) / z + fv.cam.y;
   for (let i = fv.cards.length - 1; i >= 0; i--) {
     const c = fv.cards[i];
-    if (wx < c.dx || wx > c.dx + c.w || wy < c.dy || wy > c.dy + c.h) continue;
+    if (!c.placed || wx < c.dx || wx > c.dx + c.w || wy < c.dy || wy > c.dy + c.h) continue;
     const mb = fieldMenuBtn(c);
     if (wx >= mb.x && wx <= mb.x + mb.w && wy >= mb.y && wy <= mb.y + mb.h) return { c, row: -1, menu: true };
     const cy = wy - c.dy - FIELD.HEAD + c.sy, cx = wx - c.dx;
@@ -730,7 +757,7 @@ function buildField(tab, leaf, head, body) {
     if (hit && !e.shiftKey && hit.c.contentH > hit.c.viewH) { // カードの上ではカードの中を送る
       const c = hit.c;
       c.sy = clamp(c.sy + Math.sign(e.deltaY) * 3 * FIELD.ROWH, 0, c.contentH - c.viewH);
-      if (c.kids.length) fieldLayout(fv); else fieldKick(fv);
+      fieldKick(fv);
       return;
     }
     fv.follow = false;
