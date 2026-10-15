@@ -708,6 +708,7 @@ api.onShortcut(({ action, paneId }) => {
   else if (action === 'launcher') openLauncher();
   else if (cur?.type === 'web' && ['reload', 'back', 'forward'].includes(action)) webCmd(cur, action);
   else if (cur?.type === 'files' && action === 'reload') reloadDir(cur);
+  else if (cur?.type === 'field' && action === 'reload') fieldReload(cur);
   else if (cur?.type === 'files' && (action === 'back' || action === 'forward')) histGo(cur, action === 'back' ? -1 : 1);
 });
 
