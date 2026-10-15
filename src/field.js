@@ -3,10 +3,13 @@
 // 選んだ項目へカメラがなめらかに移動して、画面の中央に置く。開いた枝は残る(Shift+← で畳む)。
 // 読み込みは開いたフォルダ1つずつ(main.js の fs:children = readdir だけ)。読んだ結果はパスごとに覚えておき、
 // カーソルがフォルダに止まったら中身を先読みしておく。
+// 木に並ぶのはフォルダだけ。ファイルはフォルダごとに1つの「まとめノード」にして、→ でカード(リスト)を開いて選ぶ
+// (ファイルが FIELD.LOOSE 件以下ならまとめずに並べる)。
 // app.js より先に読み込まれる。h / ico / btn / api / C / baseName / iconForEntry / commonButtons などは呼び出し時に app.js のものを使う。
 
-const FIELD = { COLW: 280, ROWH: 28, LABELW: 190, TAU: 90, PREFETCH: 120, CACHE: 400, FAN: 24 };
+const FIELD = { COLW: 280, ROWH: 28, LABELW: 190, TAU: 90, PREFETCH: 120, CACHE: 400, FAN: 24, LOOSE: 3, CARDW: 340, CARDROWS: 14, CARDHEAD: 30 };
 const FIELD_COLORS = { image: '#d9a441', archive: '#b57edc', code: '#5fb3a1', text: '#8fa7c9' };
+const FIELD_KINDS = { image: '画像', archive: '圧縮', code: 'コード', text: 'テキスト', file: 'その他' };
 
 // ------------------------------------------------------------------ 読み込み(キャッシュ・先読み)
 const fieldCache = new Map(); // key → entries。古いものから捨てる
@@ -32,6 +35,23 @@ const fieldForget = (full) => fieldCache.delete(fieldKey(full));
 
 // ------------------------------------------------------------------ 木
 const fieldNode = (en, parent) => ({ name: en.name, full: en.full, isDir: en.isDir, parent, kids: null, open: false, loading: false, err: '', x: 0, y: 0, dx: null, dy: null, label: null, tw: 0 });
+// フォルダの中身 → 子ノード。old(パス → ノード)にあるものは引き継ぐ(開いていた枝・まとめノードを残す)
+function fieldMakeKids(n, entries, old = new Map()) {
+  const reuse = (en) => { const o = old.get(en.full); if (o && !o.bundle && o.isDir === en.isDir) { o.parent = n; return o; } return fieldNode(en, n); };
+  const files = entries.filter((en) => !en.isDir);
+  const kids = entries.filter((en) => en.isDir).map(reuse);
+  if (files.length <= FIELD.LOOSE) return kids.concat(files.map(reuse));
+  const key = n.full + '\0files';
+  const b = old.get(key) || Object.assign(fieldNode({ name: '', full: key, isDir: false }, n), { bundle: true });
+  const count = {};
+  for (const en of files) { const k = iconForEntry(en); count[k] = (count[k] || 0) + 1; }
+  Object.assign(b, {
+    parent: n, files, name: `ファイル ${files.length}`, label: null,
+    mix: Object.entries(count).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([k, c]) => `${FIELD_KINDS[k]} ${c}`).join(' · '),
+  });
+  kids.push(b);
+  return kids;
+}
 const fieldParentPath = (p) => (p === '/' ? null : p.replace(/\/+[^/]+\/*$/, '') || '/');
 
 // 左→右の木。閉じたフォルダとファイルが1行ずつ使い、開いたフォルダは子の中ほどに置く(子が多い時は上寄せ)
@@ -51,6 +71,7 @@ function fieldLayout(fv) {
   };
   walk(fv.root, 0);
   fv.vis = vis;
+  if (fv.card && !vis.includes(fv.card.node)) fv.card = null;
   // 新しく見えたノードは親の位置から伸びてくる(子が多いフォルダは横にだけ滑らせる。縦に集めると全部が画面内に入って重い)
   for (const n of vis) {
     if (n.dx != null) continue;
@@ -74,7 +95,7 @@ async function fieldOpen(fv, n) {
     fieldKick(fv);
     const r = await fieldChildren(n.full);
     n.loading = false;
-    n.kids = r.ok ? r.entries.map((en) => fieldNode(en, n)) : [];
+    n.kids = r.ok ? fieldMakeKids(n, r.entries) : [];
     n.err = r.ok ? '' : r.error;
   }
   const wasOpen = n.open;
@@ -97,7 +118,7 @@ async function fieldReload(fv, n) {
   fieldForget(n.full);
   const old = new Map((n.kids || []).map((k) => [k.full, k]));
   const r = await fieldChildren(n.full);
-  n.kids = r.ok ? r.entries.map((en) => { const o = old.get(en.full); if (o && o.isDir === en.isDir) return o; return fieldNode(en, n); }) : [];
+  n.kids = r.ok ? fieldMakeKids(n, r.entries, old) : [];
   n.err = r.ok ? '' : r.error;
   if (fv.sel !== n && fieldIsUnder(fv.sel, n) && !n.kids.some((k) => k === fv.sel || fieldIsUnder(fv.sel, k))) fv.sel = n;
   fieldLayout(fv);
@@ -110,7 +131,7 @@ async function fieldReroot(fv) {
   if (!up) return false;
   const root = fieldNode({ name: baseName(up) || '/', full: up, isDir: true }, null);
   const r = await fieldChildren(up);
-  root.kids = r.ok ? r.entries.map((en) => (en.full === old.full ? old : fieldNode(en, root))) : [old];
+  root.kids = r.ok ? fieldMakeKids(root, r.entries, new Map([[old.full, old]])) : [old];
   root.err = r.ok ? '' : r.error;
   if (!root.kids.includes(old)) root.kids.unshift(old);
   old.parent = root;
@@ -137,20 +158,53 @@ function fieldNewTree(leaf, path) {
 function fieldSelect(leaf, n) {
   const fv = leaf.fv;
   if (!n) return;
+  if (fv.card && fv.card.node !== n) fv.card = null;
   fv.sel = n;
   fv.follow = true;
   // 開いている場所 = 選んだ項目のあるフォルダ(タブ名・次回起動時の根に使う)
   const where = n.parent ? n.parent.full : n.full;
   if (leaf.path !== where) { leaf.path = where; renderSidebar(); scheduleSave(); }
-  if (fv.ui?.path) fv.ui.path.textContent = n.full;
+  fieldShowPath(fv);
   clearTimeout(fv.prefetch);
   if (n.isDir && !n.kids) fv.prefetch = setTimeout(() => fieldChildren(n.full), FIELD.PREFETCH);
   fieldKick(fv);
 }
 
+function fieldShowPath(fv) {
+  const n = fv.sel;
+  if (!fv.ui?.path || !n) return;
+  fv.ui.path.textContent = fv.card ? fv.card.node.files[fv.card.i].full : n.bundle ? `${n.parent.full}（${n.name}）` : n.full;
+}
+
+// ------------------------------------------------------------------ カード(まとめノードのファイル一覧)
+function fieldOpenCard(fv, n) {
+  if (!n?.bundle) return;
+  fv.card = { node: n, i: 0, top: 0 };
+  fv.follow = true;
+  fieldShowPath(fv);
+  fieldKick(fv);
+}
+function fieldCardMove(fv, i) {
+  const c = fv.card;
+  const len = c.node.files.length, rows = Math.min(len, FIELD.CARDROWS);
+  c.i = clamp(i, 0, len - 1);
+  if (c.i < c.top) c.top = c.i;
+  if (c.i >= c.top + rows) c.top = c.i - rows + 1;
+  fieldShowPath(fv);
+  fieldKick(fv);
+}
+// カードの位置(フィールド上)。まとめノードの右に、見出しをノードの行にそろえて下へ伸ばす。target: 動き終わった後の位置
+function fieldCardRect(fv, target) {
+  const n = fv.card.node;
+  const rows = Math.min(n.files.length, FIELD.CARDROWS);
+  const x = (target ? n.x : n.dx) + 14 + n.tw + 34, y = (target ? n.y : n.dy) - FIELD.CARDHEAD / 2;
+  return { x, y, w: FIELD.CARDW, h: FIELD.CARDHEAD + rows * FIELD.ROWH + 6, rows };
+}
+
 function fieldActivate(leaf, n) {
   const fv = leaf.fv;
   if (!n) return;
+  if (n.bundle) { fieldOpenCard(fv, n); return; }
   if (!n.isDir) { api.fs.open(n.full); return; }
   if (n.open) fieldClose(fv, n); else fieldOpen(fv, n);
 }
@@ -164,6 +218,24 @@ async function fieldOnKey(leaf, e) {
   const go = (j) => fieldSelect(leaf, sibs[clamp(j, 0, sibs.length - 1)]);
   const zoom = (f) => { fv.cam.tz = clamp(f ? fv.cam.tz * f : 1, 0.3, 2); fieldKick(fv); };
   const k = e.key;
+  if (fv.card) {
+    const c = fv.card, files = c.node.files;
+    if (k === 'ArrowDown') fieldCardMove(fv, c.i + 1);
+    else if (k === 'ArrowUp') fieldCardMove(fv, c.i - 1);
+    else if (k === 'PageDown') fieldCardMove(fv, c.i + FIELD.CARDROWS);
+    else if (k === 'PageUp') fieldCardMove(fv, c.i - FIELD.CARDROWS);
+    else if (k === 'Home') fieldCardMove(fv, 0);
+    else if (k === 'End') fieldCardMove(fv, files.length - 1);
+    else if (k === 'Enter') api.fs.open(files[c.i].full);
+    else if (k === 'ArrowLeft' || k === 'Escape') { fv.card = null; fieldSelect(leaf, c.node); }
+    else if (k === 'F5') { fv.card = null; fieldReload(fv, c.node.parent); }
+    else if (k.length === 1 && k !== ' ') {
+      const q = k.toLowerCase();
+      for (let d = 1; d <= files.length; d++) { const j = (c.i + d) % files.length; if (files[j].name.toLowerCase().startsWith(q)) { fieldCardMove(fv, j); break; } }
+    } else if (k !== 'ArrowRight') return;
+    e.preventDefault();
+    return;
+  }
   if (k === 'ArrowDown') go(i + 1);
   else if (k === 'ArrowUp') go(i - 1);
   else if (k === 'PageDown') go(i + 10);
@@ -171,6 +243,7 @@ async function fieldOnKey(leaf, e) {
   else if (k === 'Home') go(0);
   else if (k === 'End') go(sibs.length - 1);
   else if (k === 'ArrowRight') {
+    if (s.bundle) { fieldOpenCard(fv, s); e.preventDefault(); return; }
     if (!s.isDir) return;
     e.preventDefault();
     await fieldOpen(fv, s);
@@ -219,7 +292,8 @@ function fieldTick(fv, t) {
     moving = true;
   };
   const cam = fv.cam;
-  if (fv.follow && fv.sel) { cam.tx = fv.sel.x + Math.min(fv.sel.tw, FIELD.LABELW) / 2 + 7; cam.ty = fv.sel.y; }
+  if (fv.follow && fv.card) { const r = fieldCardRect(fv, true); cam.tx = r.x + r.w / 2 - 60; cam.ty = r.y + r.h / 2; }
+  else if (fv.follow && fv.sel) { cam.tx = fv.sel.x + Math.min(fv.sel.tw, FIELD.LABELW) / 2 + 7; cam.ty = fv.sel.y; }
   if (fv.follow) { ease(cam, 'x', 'tx'); ease(cam, 'y', 'ty'); }
   ease(cam, 'z', 'tz');
   for (const n of fv.vis) {
@@ -311,15 +385,18 @@ function fieldDraw(fv) {
       ctx.stroke();
     }
     const kind = iconForEntry(n);
-    const col = n.err ? a.danger : n.isDir ? a.accent : FIELD_COLORS[kind] || a.dim;
+    const col = n.bundle ? a.dim : n.err ? a.danger : n.isDir ? a.accent : FIELD_COLORS[kind] || a.dim;
     ctx.beginPath();
-    ctx.arc(n.dx, n.dy, n.isDir ? 5 : 4, 0, Math.PI * 2);
-    if (n.isDir && n.open) { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke(); } else { ctx.fillStyle = col; ctx.fill(); }
+    if (n.bundle) { ctx.roundRect(n.dx - 5, n.dy - 5, 10, 10, 2); ctx.roundRect(n.dx - 3, n.dy - 7, 10, 10, 2); }
+    else ctx.arc(n.dx, n.dy, n.isDir ? 5 : 4, 0, Math.PI * 2);
+    if (n.bundle) { ctx.strokeStyle = a.dim; ctx.lineWidth = 1.5; ctx.stroke(); }
+    else if (n.isDir && n.open) { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke(); } else { ctx.fillStyle = col; ctx.fill(); }
     ctx.fillStyle = n.err ? a.danger : n.isDir || sel ? a.text : a.dim;
     ctx.fillText(n.label, n.dx + 14, n.dy);
     // 補足: 読み込み中 / 空 / 開けない / 閉じたフォルダの中身の数(読んであれば)
     let note = '';
-    if (n.loading) note = '…';
+    if (n.bundle) note = fv.card?.node === n ? '' : n.mix;
+    else if (n.loading) note = '…';
     else if (n.err) note = '開けません';
     else if (n.isDir && n.open && n.kids && !n.kids.length) note = '空';
     else if (n.isDir && !n.open) { const c = n.kids || fieldCache.get(fieldKey(n.full)); if (c) note = String(c.length); }
@@ -328,14 +405,98 @@ function fieldDraw(fv) {
       ctx.fillText(note, n.dx + 14 + n.tw + (sel ? 16 : n.isDir && n.open ? 14 : 10), n.dy);
     }
   }
+  if (fv.card) fieldDrawCard(fv, ctx, a);
 }
 
-// 画面の点 → フィールド上の項目
-function fieldHit(fv, ev) {
+// 幅に収まるよう末尾を … で切る
+function fieldFit(ctx, s, w) {
+  if (ctx.measureText(s).width <= w) return s;
+  let lo = 0, hi = s.length;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ctx.measureText(s.slice(0, m) + '…').width <= w) lo = m; else hi = m - 1; }
+  return s.slice(0, lo) + '…';
+}
+
+function fieldDrawCard(fv, ctx, a) {
+  const c = fv.card, n = c.node, r = fieldCardRect(fv, false);
+  const R = FIELD.ROWH, H = FIELD.CARDHEAD;
+  // まとめノード → カードの見出しへ短い線
+  ctx.strokeStyle = a.accent;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(n.dx + 14 + n.tw + 18, n.dy);
+  ctx.lineTo(r.x, n.dy);
+  ctx.stroke();
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.18)';
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = a.panel;
+  ctx.beginPath();
+  ctx.roundRect(r.x, r.y, r.w, r.h, 10);
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = a.line;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = a.dim;
+  ctx.fillText(fieldFit(ctx, `${n.name}　${n.mix}`, r.w - 28), r.x + 14, r.y + H / 2);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y + H, r.w, r.h - H);
+  ctx.clip();
+  const font = ctx.font;
+  for (let j = 0; j < r.rows; j++) {
+    const en = n.files[c.top + j];
+    if (!en) break;
+    const y = r.y + H + j * R + R / 2;
+    if (c.top + j === c.i) {
+      ctx.fillStyle = a.panel2;
+      ctx.beginPath();
+      ctx.roundRect(r.x + 6, y - R / 2 + 1, r.w - 12, R - 2, 6);
+      ctx.fill();
+      ctx.strokeStyle = a.accent;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.fillStyle = FIELD_COLORS[iconForEntry(en)] || a.dim;
+    ctx.beginPath();
+    ctx.arc(r.x + 20, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    if (en._lf !== font) { en._lf = font; en._lab = fieldFit(ctx, en.name, r.w - 52); }
+    ctx.fillStyle = a.text;
+    ctx.fillText(en._lab, r.x + 32, y);
+  }
+  ctx.restore();
+  // 続きがある時は右端にスクロールの目安
+  const len = n.files.length;
+  if (len > r.rows) {
+    const th = Math.max(16, (r.h - H - 8) * (r.rows / len));
+    const ty = r.y + H + 2 + (r.h - H - 8 - th) * (c.top / (len - r.rows));
+    ctx.fillStyle = a.line;
+    ctx.beginPath();
+    ctx.roundRect(r.x + r.w - 6, ty, 3, th, 1.5);
+    ctx.fill();
+  }
+}
+
+// 画面の点 → フィールド上の点
+function fieldWorld(fv, ev) {
   const r = fv.canvas.getBoundingClientRect();
   const z = fv.cam.z;
-  const wx = (ev.clientX - r.left - r.width / 2) / z + fv.cam.x;
-  const wy = (ev.clientY - r.top - r.height / 2) / z + fv.cam.y;
+  return [(ev.clientX - r.left - r.width / 2) / z + fv.cam.x, (ev.clientY - r.top - r.height / 2) / z + fv.cam.y];
+}
+// カードの上なら行の番号(見出しの上は -1)、カードの外なら null
+function fieldHitCard(fv, ev) {
+  if (!fv.card) return null;
+  const [wx, wy] = fieldWorld(fv, ev);
+  const r = fieldCardRect(fv, false);
+  if (wx < r.x || wx > r.x + r.w || wy < r.y || wy > r.y + r.h) return null;
+  const j = Math.floor((wy - r.y - FIELD.CARDHEAD) / FIELD.ROWH);
+  return j >= 0 && j < r.rows && fv.card.top + j < fv.card.node.files.length ? fv.card.top + j : -1;
+}
+// 画面の点 → フィールド上の項目
+function fieldHit(fv, ev) {
+  const [wx, wy] = fieldWorld(fv, ev);
   for (const n of fv.vis) if (Math.abs(wy - n.dy) < FIELD.ROWH / 2 && wx > n.dx - 12 && wx < n.dx + 22 + n.tw) return n;
   return null;
 }
@@ -347,7 +508,7 @@ function buildField(tab, leaf, head, body) {
   head.append(ico('field'), path, home, ...commonButtons(tab, leaf));
 
   const canvas = h('canvas', { class: 'field', tabindex: '0' });
-  const hint = h('div', { class: 'field-hint' }, '→ 開く　← 親へ（Shift で畳む）　↑↓ 移動　Enter 開く/畳む　F5 読み直し　+/− 拡大');
+  const hint = h('div', { class: 'field-hint' }, '→ 開く（ファイルのまとめはカードを開く）　← 親へ（Shift で畳む）　↑↓ 移動　Enter 開く/畳む　Esc カードを閉じる　F5 読み直し　+/− 拡大');
   body.append(canvas, hint);
 
   const fresh = !leaf.fv;
@@ -361,6 +522,8 @@ function buildField(tab, leaf, head, body) {
   canvas.addEventListener('keydown', (e) => fieldOnKey(leaf, e));
   canvas.addEventListener('pointerdown', (e) => {
     canvas.focus();
+    const ci = fieldHitCard(fv, e);
+    if (ci != null) { if (ci >= 0) fieldCardMove(fv, ci); return; }
     const n = fieldHit(fv, e);
     if (n) { fieldSelect(leaf, n); return; }
     // 何もない所のドラッグでフィールドを動かす(次にキーを押すと選んだ項目へ戻る)
@@ -372,10 +535,20 @@ function buildField(tab, leaf, head, body) {
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
   });
-  canvas.addEventListener('dblclick', (e) => fieldActivate(leaf, fieldHit(fv, e)));
+  canvas.addEventListener('dblclick', (e) => {
+    const ci = fieldHitCard(fv, e);
+    if (ci != null) { if (ci >= 0) api.fs.open(fv.card.node.files[ci].full); return; }
+    fieldActivate(leaf, fieldHit(fv, e));
+  });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (e.ctrlKey) { fv.cam.tz = clamp(fv.cam.tz * (e.deltaY < 0 ? 1.1 : 1 / 1.1), 0.3, 2); fieldKick(fv); return; }
+    if (fieldHitCard(fv, e) != null) { // カードの上ではカードの中を送る
+      const c = fv.card, max = Math.max(0, c.node.files.length - FIELD.CARDROWS);
+      c.top = clamp(c.top + Math.sign(e.deltaY) * 3, 0, max);
+      fieldKick(fv);
+      return;
+    }
     fv.follow = false;
     fv.cam.x += (e.shiftKey ? e.deltaY : e.deltaX) / fv.cam.z;
     fv.cam.y += (e.shiftKey ? 0 : e.deltaY) / fv.cam.z;
