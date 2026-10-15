@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.3] - 2026-10-15
+
 ### 変更
 - フィールド表示を「カード」の木に作り直した：開いたフォルダを1枚のカード（中身の一覧）にして、親子のカードを線でつなぐ
   （まとめノードはやめた）。カードの中は ↑↓ で選び、→ で子フォルダのカードを右に開き、← で親のカードへ（Shift+← で閉じる）。
@@ -190,7 +192,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.2...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.3.5...v0.4.0
