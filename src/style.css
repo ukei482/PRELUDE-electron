@@ -100,26 +100,71 @@ body.sub .sb-foot, body.sub #tb-fullscreen, body.sub #tb-max { display: none; }
 }
 @keyframes slide { from { left: -40%; } to { left: 100%; } }
 
-/* ---- folder pane */
-.vlist { position: absolute; inset: 0; overflow: auto; }
+/* ---- folder pane (files.js) */
+.pane-body.files { display: flex; flex-direction: column; container-type: inline-size; }
+/* 狭いペインでは 日付 → 種類 → サイズ の順に列を隠して、名前を読めるようにする */
+@container (max-width: 620px) { .fh.date, .frow .date { display: none; } }
+@container (max-width: 460px) { .fh.type, .frow .type { display: none; } }
+@container (max-width: 300px) { .fh.size, .frow .size { display: none; } }
+.fhead {
+  flex: none; display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 10px 0 10px;
+  border-bottom: 1px solid var(--line); color: var(--dim); font-size: .85em; scrollbar-gutter: stable; overflow: hidden;
+}
+.fh { position: relative; height: 100%; display: flex; align-items: center; cursor: pointer; white-space: nowrap; }
+.fh:hover { color: var(--text); }
+.fh.sorted { color: var(--text); font-weight: 600; }
+.fh.sorted::after { content: attr(data-dir); margin-left: 4px; font-size: .8em; }
+.fh.name { flex: 1; min-width: 60px; }
+.fh.type, .frow .type { width: var(--cw-type, 72px); flex: none; }
+.fh.size, .frow .size { width: var(--cw-size, 84px); flex: none; justify-content: flex-end; text-align: right; }
+.fh.date, .frow .date { width: var(--cw-date, 132px); flex: none; justify-content: flex-end; text-align: right; }
+.fh .grip { position: absolute; left: -6px; top: 4px; bottom: 4px; width: 6px; cursor: col-resize; border-left: 1px solid var(--line); }
+.vwrap { flex: 1; min-height: 0; position: relative; }
+.vlist { position: absolute; inset: 0; overflow-x: hidden; overflow-y: auto; outline: none; scrollbar-gutter: stable; }
 .vspacer { width: 1px; }
 .vrows { position: absolute; left: 0; right: 0; top: 0; }
-.frow { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; cursor: default; }
-.frow:hover { background: var(--panel); }
-.frow.sel { background: var(--panel2); }
-.frow .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.frow .meta { color: var(--dim); font-size: .85em; width: 76px; text-align: right; flex: none; }
-.frow .date { color: var(--dim); font-size: .85em; width: 120px; text-align: right; flex: none; }
-.ferr { padding: 16px; color: var(--danger); }
+.frow { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; cursor: default; position: relative; }
+.frow:hover { background: color-mix(in srgb, var(--panel) 55%, transparent); }
+.frow.sel { background: var(--panel); }
+.frow.cur::before { content: ""; position: absolute; inset: 1px 2px; border: 1px dashed var(--line); border-radius: 4px; pointer-events: none; }
+.vlist:focus .frow.cur::before { border: 1.5px solid var(--accent); }
+.vlist:focus .frow.sel { background: color-mix(in srgb, var(--accent) 28%, var(--bg)); }
+.frow.cut, .frow.hid { opacity: .5; }
+.frow .name { flex: 1; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow .name.link { font-style: italic; }
+.frow .col { color: var(--dim); font-size: .85em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.frow .ren { flex: 1; min-width: 0; height: 24px; padding: 0 6px; }
+.ico.k-dir { color: var(--accent); }
+.ico.k-image { color: #4f8a5b; }
+.ico.k-video { color: #8a4f7d; }
+.ico.k-audio { color: #4f6f8a; }
+.ico.k-archive { color: #a0712c; }
+.ico.k-code { color: #3f7f86; }
+.ico.k-doc { color: #a04a3c; }
+.ico.k-text, .ico.k-file { color: var(--dim); }
+.band { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); pointer-events: none; z-index: 2; }
+.ferr { position: absolute; left: 0; right: 0; top: 0; padding: 16px; color: var(--danger); }
+.fempty { position: absolute; left: 0; right: 0; top: 0; padding: 24px; text-align: center; color: var(--dim); }
+.fstatus {
+  flex: none; display: flex; gap: 12px; height: 22px; align-items: center; padding: 0 10px;
+  border-top: 1px solid var(--line); color: var(--dim); font-size: .82em; white-space: nowrap; overflow: hidden;
+}
+.fstatus .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fstatus .r { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.fstatus .r.busy { color: var(--accent); font-weight: 600; }
 .savebar {
   flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px;
   background: var(--panel); border-top: 1px solid var(--line);
 }
 .savebar .msg { flex: 1 1 100%; overflow-wrap: anywhere; }
 .savebar .textbtn { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
-.pane.saving .pane-body { display: flex; flex-direction: column; }
-.pane.saving .vlist { position: relative; inset: auto; flex: 1; min-height: 0; }
-.pane.saving .ferr { flex: none; }
+.modal.fdialog { width: min(620px, 92vw); top: 50%; transform: translate(-50%, -50%); max-height: 90vh; outline: none; }
+.fdialog .ftitle { white-space: pre-line; overflow-wrap: anywhere; font-weight: 600; }
+.props { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow: auto; user-select: text; }
+.props .kv { display: flex; gap: 12px; }
+.props .k { flex: 0 0 110px; color: var(--dim); }
+.props.keys .k { flex-basis: 250px; font-family: monospace; color: var(--text); }
+.props .v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
 /* ---- settings */
 .settings { position: absolute; inset: 0; overflow: auto; padding: 12px 20px 40px; user-select: text; }
@@ -142,7 +187,12 @@ body.sub .sb-foot, body.sub #tb-fullscreen, body.sub #tb-max { display: none; }
   border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
 }
 .menu .mi { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 5px; cursor: pointer; }
-.menu .mi:hover { background: var(--panel); }
+.menu { outline: none; }
+.menu .mi.act { background: var(--panel); }
+.menu .mi.dis { opacity: .4; cursor: default; }
+.menu .mi .ml { flex: 1; }
+.menu .mi .mk { color: var(--dim); font-size: .8em; margin-left: 16px; }
+.menu .chk { justify-content: center; align-items: center; font-size: 12px; }
 .menu .mh { color: var(--dim); font-size: .85em; padding: 4px 10px; }
 .menu .sep { height: 1px; background: var(--line); opacity: .5; margin: 4px 0; }
 .modal {

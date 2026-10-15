@@ -2,7 +2,6 @@
 const { app, BrowserWindow, WebContentsView, Menu, ipcMain, shell, session, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { spawn } = require('child_process');
 
 app.setName('PRELUDE-electron');
@@ -89,6 +88,7 @@ const iconTheme = require('./sys/icons');
 const overlay = require('./sys/overlay');
 const osd = require('./sys/osd');
 const tray = require('./sys/tray');
+const fileops = require('./fileops');
 
 let config;
 let win = null; // 主画面の窓
@@ -577,49 +577,8 @@ ipcMain.handle('app:spawn', (_e, cmd) => {
 });
 
 // ---------------------------------------------------------------- file system
-ipcMain.handle('fs:list', async (_e, dir, showHidden) => {
-  try {
-    const abs = path.resolve(dir || os.homedir());
-    const dirents = await fs.promises.readdir(abs, { withFileTypes: true });
-    const entries = await Promise.all(
-      dirents.filter((d) => showHidden || !d.name.startsWith('.')).map(async (d) => {
-        const full = path.join(abs, d.name);
-        let size = 0, mtime = 0, isDir = d.isDirectory();
-        try {
-          const st = await fs.promises.stat(full);
-          size = st.size; mtime = st.mtimeMs; isDir = st.isDirectory();
-        } catch {}
-        return { name: d.name, full, isDir, size, mtime };
-      }),
-    );
-    entries.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-    const parent = path.dirname(abs);
-    return { ok: true, path: abs, parent: parent === abs ? null : parent, entries };
-  } catch (e) {
-    return { ok: false, error: e.message, path: dir };
-  }
-});
-ipcMain.handle('fs:open', (_e, p) => shell.openPath(p));
-ipcMain.handle('fs:home', () => os.homedir());
-ipcMain.handle('fs:drives', async () => {
-  const out = [{ label: 'ホーム', path: os.homedir() }];
-  if (process.platform === 'win32') {
-    for (let c = 65; c <= 90; c++) {
-      const p = String.fromCharCode(c) + ':\\';
-      try { await fs.promises.access(p); out.push({ label: p, path: p }); } catch {}
-    }
-  } else {
-    out.push({ label: '/', path: '/' });
-    for (const base of ['/mnt', '/media', path.join('/run/media', os.userInfo().username), path.join('/media', os.userInfo().username)]) {
-      try {
-        for (const d of await fs.promises.readdir(base, { withFileTypes: true })) {
-          if (d.isDirectory()) out.push({ label: path.join(base, d.name), path: path.join(base, d.name) });
-        }
-      } catch {}
-    }
-  }
-  return out;
-});
+// ファイラの操作は fileops.js(fs:* の IPC)
+fileops.init({ ipcMain, config: { get: (p) => config.get(p) } }); // config は起動時(whenReady)に作られる
 
 // ---------------------------------------------------------------- downloads
 // ダウンロード自体は一時フォルダへ保存を始め、フォルダペインで選ばれた場所へ移動する。
@@ -749,6 +708,6 @@ app.on('before-quit', (e) => {
   e.preventDefault();
   appembed.closeAll(8000).catch(() => {}).finally(() => { qlog('closeAll done'); app.quit(); });
 });
-app.on('will-quit', () => { qlog('will-quit'); appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); qlog('will-quit done'); });
+app.on('will-quit', () => { qlog('will-quit'); fileops.shutdown(); appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); qlog('will-quit done'); });
 app.on('quit', () => qlog('quit'));
 process.on('exit', () => qlog('process exit'));
