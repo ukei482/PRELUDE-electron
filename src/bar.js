@@ -70,7 +70,9 @@ function initBar() {
   });
   const clock = h('span', { class: 'baritem', title: '' });
   Object.assign(bar.el, { vol, netEl, bat, clock, media, notify: notifyEl, tray: trayEl });
-  root.replaceChildren(launch, media, h('span', { class: 'grow' }), trayEl, notifyEl, vol, netEl, bat, clock);
+  // 2枚目以降の画面のバーは、ランチャーと時計だけ(音量・通知・トレイなどシステム全体のものは主画面に1つ)
+  if (IS_SUB) root.replaceChildren(launch, h('span', { class: 'grow' }), clock);
+  else root.replaceChildren(launch, media, h('span', { class: 'grow' }), trayEl, notifyEl, vol, netEl, bat, clock);
   paintClock();
   setInterval(paintClock, 10000);
   api.sys.status().then((s) => { bar.sys = s || bar.sys; paintBar(); });

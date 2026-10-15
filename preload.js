@@ -21,6 +21,15 @@ contextBridge.exposeInMainWorld('preludeApi', {
     cmd: (c) => ipcRenderer.send('win:cmd', c),
     state: () => ipcRenderer.invoke('win:state'),
     onState: (cb) => on('win:state', cb),
+    screens: () => ipcRenderer.invoke('win:screens'),
+    onScreens: (cb) => on('win:screens', cb),
+  },
+  // タブを別の画面の窓へ移す(Webページ・取り込んだアプリはそのまま)
+  tab: {
+    move: (to, data) => ipcRenderer.send('tab:move', to, data),
+    evacuated: () => ipcRenderer.send('tab:evacuated'),
+    onAdopt: (cb) => on('tab:adopt', cb),
+    onEvacuate: (cb) => on('tab:evacuate', cb),
   },
   web: {
     create: (id, url) => ipcRenderer.send('web:create', id, url),
@@ -76,6 +85,10 @@ contextBridge.exposeInMainWorld('preludeApi', {
   session: {
     state: () => ipcRenderer.invoke('session:state'),
     returnToKde: () => ipcRenderer.invoke('session:return'),
+  },
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    run: () => ipcRenderer.invoke('update:run'),
   },
   fs: {
     list: (dir, showHidden) => ipcRenderer.invoke('fs:list', dir, showHidden),

@@ -12,7 +12,8 @@
 #   prelude.sh shell on [--now] PRELUDE をデスクトップシェルにする(= shell-mode.sh on)
 #   prelude.sh shell off [--now] plasmashell に戻す(確認なしで即座に入れ替え。= shell-mode.sh off)
 #   prelude.sh return           Kubuntu に安全に戻る(画面の「Kubuntuに戻る」と同じ。= shell-mode.sh return)
-#   prelude.sh release ...      リリース管理(= release.sh。create / switch / rollback / status / prune)
+#   prelude.sh release ...      リリース管理(= release.sh。create / switch / rollback / status / prune / latest / update)
+#   prelude.sh update           GitHub の一番新しい版に更新し、シェルとして動いていれば再起動する(画面の「更新して再起動」と同じ)
 #   prelude.sh install          依存関係を入れる(npm ci。node_modules が無いと start/debug が自動で行う)
 #
 # 画面が操作不能になったら TTY(Ctrl+Alt+F3)でログインして `prelude.sh shell off --now`。
@@ -118,6 +119,16 @@ cmd_status() {
   "$APPDIR/scripts/release.sh" status 2>/dev/null || true
 }
 
+cmd_update() {
+  local out; out="$("$APPDIR/scripts/release.sh" update)"
+  echo "$out"
+  [[ "$(tail -n1 <<<"$out")" == updated* ]] || return 0
+  if systemctl --user is-active --quiet "$UNIT"; then
+    systemctl --user restart "$UNIT"
+    echo "シェルを再起動しました"
+  fi
+}
+
 cmd_log() {
   if [[ "${1:-}" == "embed" ]]; then exec tail -f /tmp/prelude-embed.log; fi
   exec journalctl --user -u "$UNIT" -u prelude-shell-fallback.service -f
@@ -133,7 +144,8 @@ case "${1:-start}" in
   shell) shift; exec "$APPDIR/scripts/shell-mode.sh" "$@" ;;
   return) exec "$APPDIR/scripts/shell-mode.sh" return ;;
   release) shift; exec "$APPDIR/scripts/release.sh" "$@" ;;
+  update) cmd_update ;;
   install) (cd "$APPDIR" && npm ci) ;;
-  -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "不明なコマンド: $1(prelude.sh help で一覧)" >&2; exit 2 ;;
 esac

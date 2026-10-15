@@ -7,6 +7,9 @@
 #   release.sh status         current / previous / 一覧を表示
 #   release.sh prune [N]      新しい順に N 個(既定3)と current/previous 以外を削除
 #   release.sh install-bin    フォールバック用スクリプトを $ROOT/bin に置く(shell-mode.sh on でも行う)
+#   release.sh latest         GitHub からタグを取得し、一番新しい版のタグを表示する
+#   release.sh update         一番新しい版を create して switch する(既に current なら何もしない)。
+#                             最後の行は「updated <tag>」か「latest <tag>」(画面の更新ボタン = sys/update.js が読む)
 #
 # 配置: $ROOT = ${PRELUDE_ROOT:-~/.local/share/prelude}
 #   releases/<tag>/   git worktree(その版のコード + node_modules)
@@ -45,7 +48,7 @@ cmd_create() {
   ( cd "$REL/$tag" && npm ci --no-audit --no-fund >/dev/null 2>&1 && node node_modules/electron/install.js >/dev/null 2>&1 ) || ok=0
   if (( ok )); then
     # 起動前に分かる誤りは、ここで止める
-    for f in "$REL/$tag"/main.js "$REL/$tag"/preload*.js "$REL/$tag"/sys/*.js "$REL/$tag"/src/*.js; do
+    for f in "$REL/$tag"/*.js "$REL/$tag"/sys/*.js "$REL/$tag"/src/*.js; do
       node --check "$f" 2>/dev/null || { echo "構文エラー: $f" >&2; ok=0; }
     done
     [[ -x "$REL/$tag/node_modules/electron/dist/electron" ]] || { echo "electron が入っていません" >&2; ok=0; }
@@ -78,6 +81,22 @@ cmd_rollback() {
   echo "current = $(tag_of "$prev") / previous = $(tag_of "$cur")"
 }
 
+# 一番新しい版のタグ(vX.Y.Z の版の順)。リモートのタグも取ってから選ぶ
+cmd_latest() {
+  GIT_TERMINAL_PROMPT=0 git -C "$REPO" fetch --quiet --tags origin || die "GitHub からタグを取得できませんでした"
+  local tag; tag="$(git -C "$REPO" tag -l 'v[0-9]*' --sort=-v:refname | head -1)"
+  [[ -n "$tag" ]] || die "版のタグがありません"
+  echo "$tag"
+}
+
+cmd_update() {
+  local tag; tag="$(cmd_latest)"
+  if [[ "$(link_target current)" == "$REL/$tag" ]]; then echo "latest $tag"; return; fi
+  [[ -x "$REL/$tag/node_modules/electron/dist/electron" ]] || cmd_create "$tag"
+  cmd_switch "$tag"
+  echo "updated $tag"
+}
+
 cmd_status() {
   echo "ROOT     : $ROOT"
   echo "current  : $(tag_of "$(link_target current)")"
@@ -106,5 +125,7 @@ case "${1:-status}" in
   status) cmd_status ;;
   prune) shift; cmd_prune "$@" ;;
   install-bin) cmd_install_bin ;;
-  *) sed -n '2,17p' "${BASH_SOURCE[0]}"; exit 2 ;;
+  latest) cmd_latest ;;
+  update) cmd_update ;;
+  *) sed -n '2,18p' "${BASH_SOURCE[0]}"; exit 2 ;;
 esac

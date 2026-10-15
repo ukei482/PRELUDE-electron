@@ -60,6 +60,8 @@ body.no-sidebar #sidebar { display: none; }
 #bm-list { overflow-y: auto; max-height: 30%; }
 #tab-list { flex: 1; overflow-y: auto; min-height: 0; }
 .sb-foot { border-top: 1px solid var(--line); padding-top: 4px; }
+/* 2枚目以降の画面の窓(role=sub): 設定・全画面・最大化は主画面だけ */
+body.sub .sb-foot, body.sub #tb-fullscreen, body.sub #tb-max { display: none; }
 .item {
   display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px; border-radius: 6px; cursor: pointer;
 }

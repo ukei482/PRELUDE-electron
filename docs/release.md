@@ -52,6 +52,17 @@ npx electron . --no-sandbox --user-data-dir=/tmp/prelude-dev
    scripts/release.sh prune 3
    ```
 
+## 画面から更新する
+
+タグを push したあとは、PRELUDE の画面から更新できる（上の 3〜5 を自動で行う。Kubuntu に戻る必要はない）。
+
+- 設定の「アップデート」→「確認」「更新して再起動」、またはランチャーの「PRELUDE を更新」
+- 端末からは `scripts/prelude.sh update`
+
+中身は `release.sh update`（`git fetch --tags` → 一番新しい `v*` タグを `create` → `switch`）と、
+`systemctl --user restart prelude-shell`。更新できるのは PRELUDE がシェルとして動いているときだけ。
+起動して20秒後に新しい版があれば知らせる。
+
 ## 戻す
 
 - **手動で1つ前へ**: `scripts/release.sh rollback` のあと `systemctl --user restart prelude-shell`

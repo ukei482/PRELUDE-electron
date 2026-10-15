@@ -16,10 +16,16 @@ let file = null;
 function script(keys) {
   return `
 var EL_PID = ${process.pid};
+// 前に出す窓: 最後にアクティブだった PRELUDE の窓(画面が2枚以上なら、使っていた方の画面の窓)。無ければ一番大きい窓
+var last = null;
+function isShellWin(w) { return w && w.pid === EL_PID && w.normalWindow && !/^PRELUDE-overlay:/.test(w.caption || ''); }
+workspace.windowActivated.connect(function (w) { if (isShellWin(w)) last = w; });
+workspace.windowRemoved.connect(function (w) { if (w === last) last = null; });
 function electron() {
+  if (last) return last;
   var best = null, area = 0;
   workspace.windowList().forEach(function (w) {
-    if (w.pid !== EL_PID || !w.normalWindow) return;
+    if (!isShellWin(w)) return;
     var a = w.frameGeometry.width * w.frameGeometry.height;
     if (a > area) { best = w; area = a; }
   });

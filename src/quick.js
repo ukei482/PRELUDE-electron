@@ -20,6 +20,20 @@ async function returnToKde() {
   if (r?.error) { returning = false; toast(r.error); }
 }
 
+// PRELUDE の更新(main 側の sys/update.js)。新しい版があれば作って切り替え、PRELUDE 自身を再起動する
+let updating = false;
+async function runUpdate() {
+  if (updating) return;
+  updating = true;
+  toast('新しい版を確認・準備しています…(1分ほどかかることがあります。終わると再起動します)', 8000);
+  const r = await api.update.run();
+  updating = false;
+  if (r?.error) toast(r.error, 6000);
+  else if (r?.updated) toast(`${r.updated} に更新しました。再起動します…`, 10000);
+  else toast(`最新の版です(${r?.latest || ''})`);
+  return r;
+}
+
 // 「Kubuntuに戻る」ボタン(クイック設定と設定ペインで共通)。
 // 誤クリックで画面が切り替わらないよう、押すと「もう一度押すと実行」に変わる(3秒で元に戻る)
 function returnButton(cls, before) {

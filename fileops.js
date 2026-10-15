@@ -16,8 +16,9 @@ const { cleanShell } = require('./sys/util');
 const isWin = process.platform === 'win32';
 const BAD_NAME = isWin ? /[\\/:*?"<>|]/ : /\//;
 
-let send = () => {};
 let config = null;
+// 知らせは、頼んできた窓(webContents)へ返す(画面ごとに窓がある)
+const sendWc = (wc, channel, payload) => { if (wc && !wc.isDestroyed()) wc.send(channel, payload); };
 
 function validName(name) {
   const n = String(name ?? '').trim();
@@ -77,7 +78,8 @@ async function stats(dir, names) {
 }
 
 // ---------------------------------------------------------------- 変更の監視
-const watchers = new Map(); // paneId -> { w, dir, timer }
+const watchers = new Map(); // paneId -> { w, dir, timer, wc }
+const tracked = new WeakSet(); // 閉じたら監視をやめる窓
 function unwatch(id) {
   const x = watchers.get(id);
   if (!x) return;
@@ -85,15 +87,19 @@ function unwatch(id) {
   try { x.w.close(); } catch {}
   watchers.delete(id);
 }
-function watch(id, dir) {
+function watch(id, dir, wc) {
+  if (wc && !tracked.has(wc)) {
+    tracked.add(wc);
+    wc.once('destroyed', () => { for (const [k, x] of watchers) if (x.wc === wc) unwatch(k); });
+  }
   const cur = watchers.get(id);
-  if (cur && cur.dir === dir) return;
+  if (cur && cur.dir === dir) { cur.wc = wc; return; } // タブが別の画面の窓へ移ったときは、知らせる先だけ変える
   unwatch(id);
   try {
-    const x = { dir, timer: 0, w: null };
+    const x = { dir, timer: 0, w: null, wc };
     x.w = fs.watch(dir, { persistent: false }, () => {
       clearTimeout(x.timer);
-      x.timer = setTimeout(() => send('fs:changed', { id, dir }), 200); // まとめて1回だけ知らせる
+      x.timer = setTimeout(() => sendWc(x.wc, 'fs:changed', { id, dir }), 200); // まとめて1回だけ知らせる
     });
     x.w.on('error', () => unwatch(id));
     watchers.set(id, x);
@@ -134,7 +140,8 @@ async function remove(paths, permanent) {
 
 let jobSeq = 0;
 // コピー/移動。同名があれば「(1)」を付けて並べる(上書きはしない)
-async function transfer(mode, paths, destDir) {
+async function transfer(mode, paths, destDir, wc) {
+  const send = (ch, p) => sendWc(wc, ch, p);
   const job = ++jobSeq;
   const errors = [];
   const names = [];
@@ -254,19 +261,19 @@ async function dirSize(paths, limitMs = 4000) {
 const strs = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && x) : []);
 
 function init(o) {
-  ({ send, config } = o);
+  ({ config } = o);
   const { ipcMain } = o;
   ipcMain.handle('fs:list', (_e, dir, showHidden) => list(dir, showHidden));
   ipcMain.handle('fs:stats', (_e, dir, names) => stats(String(dir), names));
-  ipcMain.on('fs:watch', (_e, id, dir) => watch(String(id), String(dir)));
+  ipcMain.on('fs:watch', (e, id, dir) => watch(String(id), String(dir), e.sender));
   ipcMain.on('fs:unwatch', (_e, id) => unwatch(String(id)));
   ipcMain.handle('fs:open', (_e, p) => shell.openPath(String(p)));
   ipcMain.handle('fs:home', () => os.homedir());
   ipcMain.handle('fs:mkdir', (_e, dir, name) => mkdir(String(dir), name));
   ipcMain.handle('fs:rename', (_e, full, name) => rename(String(full), name));
   ipcMain.handle('fs:remove', (_e, paths, permanent) => remove(strs(paths), !!permanent));
-  ipcMain.handle('fs:transfer', async (_e, mode, paths, destDir) => {
-    const r = await transfer(mode === 'move' ? 'move' : 'copy', strs(paths), String(destDir));
+  ipcMain.handle('fs:transfer', async (e, mode, paths, destDir) => {
+    const r = await transfer(mode === 'move' ? 'move' : 'copy', strs(paths), String(destDir), e.sender);
     if (mode === 'move') clipConsumed(strs(paths));
     return r;
   });
