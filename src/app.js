@@ -802,7 +802,7 @@ api.win.onScreens((list) => { S.screens = list || []; });
 api.config.onChanged((values) => {
   const hidden = C.behavior.showHidden;
   C = values;
-  if (hidden !== C.behavior.showHidden) reloadAllFiles();
+  if (hidden !== C.behavior.showHidden) { reloadAllFiles(); fieldReloadAll(); }
   applyTheme();
   loadBookmarks();
   renderSidebar();

@@ -437,7 +437,10 @@ async function commitRename(leaf, ok) {
 
 async function openTerminalHere(tab, leaf) {
   const c = curEntry(leaf);
-  const dir = leaf.sel.size <= 1 && c?.isDir && leaf.sel.has(c.name) ? c.full : leaf.path;
+  openTerminalAt(tab, leaf, leaf.sel.size <= 1 && c?.isDir && leaf.sel.has(c.name) ? c.full : leaf.path);
+}
+// dir で端末を開く。取り込む設定なら leaf の下に分割して出す(フィールド表示からも使う)
+async function openTerminalAt(tab, leaf, dir) {
   if (S.appSupported && C.behavior.appOpen === 'embed') {
     const cmd = await api.fs.terminalCmd(dir);
     const bin = cmd.split(/\s+/)[0].split('/').pop();
@@ -490,9 +493,12 @@ const fileConfirm = (msg, ok, danger) => fileDialog(msg, null, [
   { label: ok, value: true, primary: true, danger },
 ]).then((v) => !!v);
 
-async function showProps(leaf) {
+function showProps(leaf) {
   const t = targets(leaf);
-  const paths = t.length ? t.map((e) => e.full) : [leaf.path];
+  return showPropsFor(t.length ? t.map((e) => e.full) : [leaf.path], leaf.path);
+}
+// paths のプロパティ。where: 複数の時に「場所」に出すフォルダ(フィールド表示からも使う)
+async function showPropsFor(paths, where) {
   const items = await api.fs.props(paths);
   const kv = (k, v) => (v == null || v === '' ? null : h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, String(v))));
   const sizeEl = h('span', { class: 'v' });
@@ -509,7 +515,7 @@ async function showProps(leaf) {
     sizeEl.textContent = it.isDir ? '計算中…' : `${fmtSize(it.size)}（${it.size.toLocaleString()} バイト）`;
   } else {
     const dirs = items.filter((x) => x.isDir).length;
-    body = h('div', { class: 'props' }, kv('場所', leaf.path), kv('項目', `${items.length} 個（フォルダ ${dirs}、ファイル ${items.length - dirs}）`),
+    body = h('div', { class: 'props' }, kv('場所', where), kv('項目', `${items.length} 個（フォルダ ${dirs}、ファイル ${items.length - dirs}）`),
       h('div', { class: 'kv' }, h('span', { class: 'k' }, '合計サイズ'), sizeEl));
     sizeEl.textContent = '計算中…';
     if (!needSize) sizeEl.textContent = fmtSize(items.reduce((a, x) => a + (x.size || 0), 0));
