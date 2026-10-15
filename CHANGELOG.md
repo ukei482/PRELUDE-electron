@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.6] - 2026-10-15
+
 ### 変更
 - ファイルを開く時、既定のアプリを別ウィンドウではなく、PRELUDE のタブか分割に取り込んで開くようにした（フィールド表示・フォルダ表示とも）。
   既定のアプリは xdg-mime で調べ、一覧に出ない .desktop（okularApplication_md など）も使う。
@@ -232,7 +234,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.5...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.2...v0.4.3
