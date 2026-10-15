@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFile } = require('child_process');
 
 function dirs() {
   const data = (process.env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':').filter(Boolean);
@@ -44,4 +45,31 @@ function list() {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-module.exports = { list };
+// file を開く既定のアプリ(xdg-mime で調べる)。{ cmd, name, cls, icon, id } か null。
+// 既定のアプリは一覧に出ない .desktop(NoDisplay。okularApplication_md など)のこともあるので、ファイルを直接読む。
+// Exec のフィールドコード(%f %u など)はファイルのパスに置き換え、無ければ末尾に付ける
+const xdgMime = (args) => new Promise((resolve) => {
+  execFile('xdg-mime', args, { timeout: 5000 }, (err, out) => resolve(err ? '' : String(out).trim().split('\n')[0] || ''));
+});
+async function forFile(file) {
+  const mime = await xdgMime(['query', 'filetype', file]);
+  const id = mime && (await xdgMime(['query', 'default', mime]));
+  if (!id || !id.endsWith('.desktop')) return null;
+  const p = dirs().reverse().map((d) => path.join(d, id)).find((f) => fs.existsSync(f)); // 後のフォルダ(ホーム)ほど優先
+  if (!p) return null;
+  try {
+    const sec = fs.readFileSync(p, 'utf8').split(/\n\[/)[0];
+    const get = (k) => new RegExp(`^${k}=(.*)$`, 'm').exec(sec)?.[1]?.trim();
+    const q = `'${file.replace(/'/g, `'\\''`)}'`;
+    let used = false;
+    let exec = (get('Exec') || '').replace(/--icon\s+%i/g, '')
+      .replace(/%[fFuU]/g, () => { if (used) return ''; used = true; return q; })
+      .replace(/%[a-zA-Z]/g, '').replace(/\s+/g, ' ').trim();
+    if (!exec) return null;
+    if (!used) exec += ' ' + q;
+    if (get('Terminal') === 'true') exec = terminalCmd(exec);
+    return { cmd: exec, name: get('Name') || id, cls: (get('StartupWMClass') || '').toLowerCase(), icon: get('Icon') || '', id: id.slice(0, -8), mime };
+  } catch { return null; }
+}
+
+module.exports = { list, forFile };

@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('preludeApi', {
     onChanged: (cb) => on('fs:changed', cb),
     onProgress: (cb) => on('fs:progress', cb),
     open: (p) => ipcRenderer.invoke('fs:open', p),
+    openWith: (p) => ipcRenderer.invoke('fs:open-with', p),
     home: () => ipcRenderer.invoke('fs:home'),
     drives: () => ipcRenderer.invoke('fs:drives'),
     mkdir: (dir, name) => ipcRenderer.invoke('fs:mkdir', dir, name),

@@ -554,6 +554,20 @@ async function startApp(leaf, cmd, cls = '', name = '', icon = '') {
   } else toast('起動できませんでした');
 }
 
+// ファイルを既定のアプリで開く。アプリはペインに取り込み、新しいタブか、leaf の右の分割に出す(設定「ファイルを開く場所」)。
+// where: 'tab' | 'split' | 'window'(取り込まずに別ウィンドウ)。取り込めない環境・既定のアプリが分からない時は別ウィンドウ
+async function openFileAt(tab, leaf, full, where = C.behavior.fileOpen || 'tab') {
+  const a = where !== 'window' && S.appSupported ? await api.fs.openWith(full) : null;
+  if (!a || NO_EMBED.test(a.cmd)) {
+    const err = await api.fs.open(full);
+    if (err) toast(`開けません: ${baseName(full)}（${err}）`);
+    return;
+  }
+  const nl = where === 'split' && tab && leaf ? splitLeaf(tab, leaf, 'row', 'app', { cmd: a.cmd, cls: a.cls, name: a.name, icon: a.icon })
+    : openTab('app', { cmd: a.cmd, cls: a.cls, name: a.name, icon: a.icon }).root;
+  startApp(nl, a.cmd, a.cls, a.name, a.icon);
+}
+
 function buildApp(tab, leaf, head, body) {
   if (leaf.webUrl && !leaf.running) { head.append(ico('window'), h('span', { class: 'ptitle' }, '起動中…'), ...commonButtons(tab, leaf)); return; }
   const icon = appLeafIcon(leaf);

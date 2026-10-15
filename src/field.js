@@ -262,12 +262,13 @@ function fieldStep(c, dir) {
   return null;
 }
 
-// カーソルの行を開く。フォルダなら右に子のカードを開いて移り、ファイルなら既定のアプリで開く
-async function fieldEnter(leaf) {
+// カーソルの行を開く。フォルダなら右に子のカードを開いて移り、ファイルなら既定のアプリをタブか分割に取り込んで開く。
+// where: ファイルを開く場所('tab' | 'split' | 'window'。省略は設定「ファイルを開く場所」)
+async function fieldEnter(leaf, where) {
   const fv = leaf.fv, c = fv.cur, en = c.list[c.i];
   if (!en) return;
   freqRecord(en.full, en.isDir ? 'dir' : 'file');
-  if (!en.isDir) { api.fs.open(en.full); return; }
+  if (!en.isDir) { openFileAt(fieldTabOf(leaf), leaf, en.full, where); return; }
   let k = c.kids.find((x) => x.full === en.full);
   if (!k) {
     k = fieldCard(en.full, c, c.i);
@@ -406,6 +407,7 @@ async function fieldOnKey(leaf, e) {
     else if (kl === 'x') fieldCopy(leaf, true);
     else if (kl === 'v') fieldPaste(leaf, c.full);
     else if (kl === 'h') toggleHidden();
+    else if (k === 'Enter') { const en = fieldEn(leaf); if (en?.isDir) { const tab = fieldTabOf(leaf); if (tab) splitLeaf(tab, leaf, 'row', 'field', { path: en.full }); } else fieldEnter(leaf, 'split'); }
     else return;
   } else if (k === 'F2') fieldStartRename(leaf);
   else if (k === 'Delete') fieldDelete(leaf, e.shiftKey);
@@ -581,6 +583,9 @@ function fieldItemMenu(leaf, x, y) {
   const tab = fieldTabOf(leaf);
   popup([
     { label: en.isDir ? 'カードを開く' : '開く', icon: en.isDir ? 'folder' : 'file', key: 'Enter', run: () => fieldEnter(leaf) },
+    en.isDir ? null : { label: '新しいタブで開く', icon: 'plus', run: () => fieldEnter(leaf, 'tab') },
+    en.isDir || !tab ? null : { label: '右に分割して開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => fieldEnter(leaf, 'split') },
+    en.isDir ? null : { label: '別のウィンドウで開く', icon: 'window', run: () => fieldEnter(leaf, 'window') },
     en.isDir ? { label: '新しいタブで開く', icon: 'field', key: '中クリック', run: () => openTab('field', { path: en.full }) } : null,
     en.isDir && tab ? { label: 'フォルダ表示で右に開く', icon: 'split-h', run: () => splitLeaf(tab, leaf, 'row', 'files', { path: en.full }) } : null,
     { sep: true },

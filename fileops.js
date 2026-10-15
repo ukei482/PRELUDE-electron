@@ -268,6 +268,7 @@ function init(o) {
   ipcMain.on('fs:watch', (e, id, dir) => watch(String(id), String(dir), e.sender));
   ipcMain.on('fs:unwatch', (_e, id) => unwatch(String(id)));
   ipcMain.handle('fs:open', (_e, p) => shell.openPath(String(p)));
+  ipcMain.handle('fs:open-with', (_e, p) => require('./sys/apps').forFile(String(p))); // 既定のアプリ(ペインに取り込んで開く用)
   ipcMain.handle('fs:home', () => os.homedir());
   ipcMain.handle('fs:mkdir', (_e, dir, name) => mkdir(String(dir), name));
   ipcMain.handle('fs:rename', (_e, full, name) => rename(String(full), name));
