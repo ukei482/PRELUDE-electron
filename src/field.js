@@ -6,12 +6,14 @@
 // カードごと(フォルダのパスごと)に表示の設定を持つ: リスト/アイコン、並べ替え、サイズ・更新日時の列。見出しの ︙(またはメニューキー)で切り替える。
 // 読み込みは開いたフォルダ1つずつ(fileops.js の fs:list = readdir だけ)。サイズ・日付は表示や並べ替えに要る時だけ fs:stats で読む。
 // 読んだ結果はパスごとに覚えておき、カーソルがフォルダに止まったら中身を先読みしておく。
+// 開いた履歴の点数(history.js)が高い項目には、カードの中で印を付け(並び順は変えない)、そのフォルダを先読みする。
 // app.js より先に読み込まれる。h / ico / btn / api / C / baseName / clamp / popup / fmtSize / commonButtons などは app.js、
 // decorate(種類の判定)/ collator / fmtDate は files.js のものを呼び出し時に使う。
 
 const FIELD = {
   CARDW: 320, GAP: 90, VGAP: 18, ROWH: 28, HEAD: 34, VIEWH: 15 * 28, TAU: 90, PREFETCH: 120, CACHE: 400,
   SIZEW: 84, DATEW: 128, TILEW: 100, TILEH: 104, ICONCOLS: 4, THUMBS: 400,
+  HOT: 3, HOTMIN: 0.3, // 印を付けるのは、点数が HOTMIN 以上の上位 HOT 件
 };
 // 種類ごとの色はフォルダペインのアイコン(style.css の .ico.k-*)と同じ
 const FIELD_COLORS = { image: '#4f8a5b', video: '#8a4f7d', audio: '#4f6f8a', archive: '#a0712c', code: '#3f7f86', doc: '#a04a3c' };
@@ -107,6 +109,10 @@ function fieldApply(c, fv) {
   c.list = (c.entries || []).slice().sort((a, b) => (b.isDir - a.isDir) || (a.isDir && v.sort === 'size' ? byName(a, b) : cmp(a, b)));
   if (at) { const j = c.list.findIndex((e) => e.full === at); if (j >= 0) c.i = j; }
   c.kids = c.kids.filter((k) => (k.row = c.list.findIndex((e) => e.isDir && e.full === k.full)) >= 0);
+  // 行き先になりそうな項目(履歴の点数の上位)。読み込み・表示の変更の時だけ決め直し、操作中に印が動かないようにする
+  const now = Date.now();
+  const hot = c.list.map((e, i) => [i, freqScore(e.full, now)]).filter(([, s]) => s >= FIELD.HOTMIN).sort((a, b) => b[1] - a[1]).slice(0, FIELD.HOT);
+  c.hot = new Map(hot.map(([i], r) => [i, r]));
   const icon = v.mode === 'icon';
   c.w = icon ? 12 + FIELD.ICONCOLS * FIELD.TILEW : FIELD.CARDW + (v.size ? FIELD.SIZEW : 0) + (v.date ? FIELD.DATEW : 0);
   c.cols = icon ? FIELD.ICONCOLS : 1;
@@ -157,6 +163,7 @@ async function fieldLoad(fv, c, force) {
   c.entries = r.ok ? r.entries : [];
   c.err = r.ok ? '' : r.error;
   fieldApply(c, fv);
+  for (const [i] of c.hot) if (c.list[i].isDir) fieldChildren(c.list[i].full); // よく使うフォルダは先に読んでおく
   return true;
 }
 
@@ -229,6 +236,7 @@ function fieldStep(c, dir) {
 async function fieldEnter(leaf) {
   const fv = leaf.fv, c = fv.cur, en = c.list[c.i];
   if (!en) return;
+  freqRecord(en.full, en.isDir ? 'dir' : 'file');
   if (!en.isDir) { api.fs.open(en.full); return; }
   let k = c.kids.find((x) => x.full === en.full);
   if (!k) {
@@ -259,6 +267,7 @@ async function fieldSibling(leaf, d) {
   while (j >= 0 && j < p.list.length && !p.list[j].isDir) j += d;
   const en = p.list[j];
   if (!en) return;
+  freqRecord(en.full, 'dir');
   p.i = j;
   fieldScrollTo(p);
   const open = p.kids.find((k) => k.full === en.full);
@@ -340,6 +349,7 @@ function fieldMenu(leaf, c, x, y) {
     { label: '更新日時', checked: v.date, disabled: !list, run: set({ date: !v.date }) },
     { sep: true },
     { label: 'このフォルダの表示を元に戻す', disabled: !fieldViewStore()[c.full], run: set(null) },
+    { label: '開いた履歴を消す（すべてのフォルダ）', run: () => { freqClear(); fieldSetView(leaf, c, fieldViewStore()[c.full] ? {} : null); toast('開いた履歴を消しました'); } },
   ], x, y);
 }
 
@@ -569,6 +579,15 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
     const col = en.isDir ? a.accent : FIELD_COLORS[en.kind] || a.dim;
     if (!it.tile) {
       const ry = iy + R / 2;
+      const rank = c.hot.get(idx);
+      if (rank != null) { // 行き先になりそうな行の印(左端の縦線。上位ほど濃い)
+        ctx.fillStyle = a.accent;
+        ctx.globalAlpha = c.alpha * [1, 0.7, 0.45][rank];
+        ctx.beginPath();
+        ctx.roundRect(ix + 4, iy + 7, 3, R - 14, 1.5);
+        ctx.fill();
+        ctx.globalAlpha = c.alpha;
+      }
       ctx.beginPath();
       ctx.arc(ix + 18, ry, en.isDir ? 4.5 : 3.5, 0, Math.PI * 2);
       if (open.has(idx)) { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke(); } else { ctx.fillStyle = col; ctx.fill(); }
@@ -601,6 +620,15 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
         ctx.fillStyle = col;
         const ext = (en.ext || '').toUpperCase().slice(0, 5);
         if (ext) ctx.fillText(ext, bx + bw / 2 - ctx.measureText(ext).width / 2, by + bh / 2);
+      }
+      const rank = c.hot.get(idx);
+      if (rank != null) {
+        ctx.fillStyle = a.accent;
+        ctx.globalAlpha = c.alpha * [1, 0.7, 0.45][rank];
+        ctx.beginPath();
+        ctx.arc(bx + bw - 4, by + 4, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = c.alpha;
       }
       if (en._tf !== font) { en._tf = font; en._tlab = fieldFit(ctx, en.name, it.w - 12); }
       ctx.fillStyle = sel ? a.text : a.dim;
