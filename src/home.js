@@ -35,6 +35,7 @@ function buildHome(tab, leaf, head, body) {
     h('div', { class: 'hcard hquick' },
       h('button', { class: 'textbtn', onclick: () => openLauncher() }, ico('window'), 'アプリ・検索（Ctrl+Shift+P）'),
       h('button', { class: 'textbtn', onclick: () => openTab('files') }, ico('folder'), 'フォルダ'),
+      h('button', { class: 'textbtn', onclick: () => openTab('field') }, ico('field'), 'フィールド'),
       h('button', { class: 'textbtn', onclick: () => openTab('web') }, ico('globe'), 'Web'),
       IS_SUB ? null : h('button', { class: 'textbtn', onclick: () => openSettings() }, ico('settings'), '設定')));
   body.append(root);

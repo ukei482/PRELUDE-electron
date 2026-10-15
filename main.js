@@ -599,6 +599,25 @@ ipcMain.handle('fs:list', async (_e, dir, showHidden) => {
     return { ok: false, error: e.message, path: dir };
   }
 });
+// フィールド表示用の軽い一覧。名前とフォルダかどうかだけを readdir で取る(stat はシンボリックリンクの時だけ)
+ipcMain.handle('fs:children', async (_e, dir, showHidden) => {
+  try {
+    const abs = path.resolve(dir || os.homedir());
+    const dirents = await fs.promises.readdir(abs, { withFileTypes: true });
+    const entries = await Promise.all(
+      dirents.filter((d) => showHidden || !d.name.startsWith('.')).map(async (d) => {
+        const full = path.join(abs, d.name);
+        let isDir = d.isDirectory();
+        if (d.isSymbolicLink()) { try { isDir = (await fs.promises.stat(full)).isDirectory(); } catch {} }
+        return { name: d.name, full, isDir };
+      }),
+    );
+    entries.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    return { ok: true, path: abs, entries };
+  } catch (e) {
+    return { ok: false, error: e.message, path: dir };
+  }
+});
 ipcMain.handle('fs:open', (_e, p) => shell.openPath(p));
 ipcMain.handle('fs:home', () => os.homedir());
 ipcMain.handle('fs:drives', async () => {

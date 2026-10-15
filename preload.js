@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld('preludeApi', {
   },
   fs: {
     list: (dir, showHidden) => ipcRenderer.invoke('fs:list', dir, showHidden),
+    children: (dir, showHidden) => ipcRenderer.invoke('fs:children', dir, showHidden),
     open: (p) => ipcRenderer.invoke('fs:open', p),
     home: () => ipcRenderer.invoke('fs:home'),
     drives: () => ipcRenderer.invoke('fs:drives'),

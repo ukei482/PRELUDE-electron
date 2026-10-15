@@ -72,6 +72,7 @@ function makeLeaf(type, o = {}) {
   }
   if (type === 'app') return { k: 'leaf', id, type, cmd: o.cmd || '', cls: o.cls || '', name: o.name || '', icon: o.icon || '', webUrl: o.webUrl || '', title: '', running: false, apps: null, filter: '' };
   if (type === 'home') return { k: 'leaf', id, type };
+  if (type === 'field') return { k: 'leaf', id, type, path: o.path ?? C.behavior.startPath ?? '' };
   return { k: 'leaf', id, type: 'settings' };
 }
 
@@ -92,9 +93,10 @@ function tabTitle(tab) {
   if (l.type === 'files') return l.mode === 'save' ? '保存先を選択' : baseName(l.path) || 'フォルダ';
   if (l.type === 'app') return l.title || l.name || l.cmd || 'アプリ'; // 取り込んだ窓の題名(Chromium なら今のページ名)を優先
   if (l.type === 'home') return 'ホーム';
+  if (l.type === 'field') return baseName(l.path) || 'フィールド';
   return '設定';
 }
-const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : l.type === 'app' ? 'window' : l.type === 'home' ? 'home' : 'settings');
+const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : l.type === 'app' ? 'window' : l.type === 'home' ? 'home' : l.type === 'field' ? 'field' : 'settings');
 
 // アプリのペインのアイコン(.desktop の Icon。実ブラウザのペインは Chromium のアイコン)。まだ読めていなければ汎用のアイコンを出し、読めたら描き直す
 function appLeafIcon(l) {
@@ -193,7 +195,7 @@ function closeTab(tab) {
 
 // タブを別の画面の窓へ移す。ペインは壊さずに渡す(Webページ・取り込んだアプリは main.js が移った先の窓へ付け替える)。
 // o.quiet: 残りのタブが無くなっても新しいタブを開かない(画面を外して全部移すとき)
-const LIVE_ONLY = new Set(['el', 'ui', 'slot', 'vl', 'apps']); // 画面の部品など、移った先で作り直すもの
+const LIVE_ONLY = new Set(['el', 'ui', 'slot', 'vl', 'apps', 'fv']); // 画面の部品など、移った先で作り直すもの
 function moveTab(tab, to, o = {}) {
   const data = JSON.parse(JSON.stringify({ bookmarkId: tab.bookmarkId, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
   const i = S.tabs.indexOf(tab);
@@ -215,7 +217,7 @@ function adoptTab(data) {
 }
 
 function splitLeaf(tab, leaf, dir, kind, o = {}) {
-  if (kind === 'files' && o.path == null) o.path = leaf.type === 'files' && leaf.mode !== 'save' ? leaf.path : C.behavior.startPath;
+  if ((kind === 'files' || kind === 'field') && o.path == null) o.path = (leaf.type === 'files' && leaf.mode !== 'save') || leaf.type === 'field' ? leaf.path : C.behavior.startPath;
   const nl = makeLeaf(kind, o);
   replaceNode(tab, leaf, { k: 'split', dir, ratio: 0.5, a: leaf, b: nl });
   tab.activePane = nl.id;
@@ -432,6 +434,7 @@ function buildLeaf(tab, leaf) {
   else if (leaf.type === 'app') buildApp(tab, leaf, head, body);
   else if (leaf.type === 'files') buildFiles(tab, leaf, head, body);
   else if (leaf.type === 'home') buildHome(tab, leaf, head, body);
+  else if (leaf.type === 'field') buildField(tab, leaf, head, body);
   else buildSettings(tab, leaf, head, body);
   return pane;
 }
@@ -442,6 +445,7 @@ function commonButtons(tab, leaf) {
       { header: title },
       { label: 'Web', icon: 'globe', run: () => splitLeaf(tab, leaf, dir, 'web') },
       { label: 'フォルダ', icon: 'folder', run: () => splitLeaf(tab, leaf, dir, 'files') },
+      { label: 'フィールド', icon: 'field', run: () => splitLeaf(tab, leaf, dir, 'field') },
       S.appSupported ? { label: 'アプリ', icon: 'window', run: () => splitLeaf(tab, leaf, dir, 'app') } : null,
       IS_SUB ? null : { label: '設定', icon: 'settings', run: () => splitLeaf(tab, leaf, dir, 'settings') },
     ].filter(Boolean)));
@@ -749,7 +753,7 @@ function scheduleSave() {
 function restore(ws) {
   const deser = (n) => (n.k === 'split'
     ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deser(n.a), b: deser(n.b) }
-    : makeLeaf(['web', 'files', 'settings', 'app', 'home'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl }));
+    : makeLeaf(['web', 'files', 'settings', 'app', 'home', 'field'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl }));
   for (const t of ws.tabs) {
     try {
       const root = deser(t.root);
@@ -905,6 +909,7 @@ async function boot() {
     { label: 'ホーム', icon: 'home', run: () => openTab('home') },
     { label: 'Web', icon: 'globe', run: () => openTab('web') },
     { label: 'フォルダ', icon: 'folder', run: () => openTab('files') },
+    { label: 'フィールド', icon: 'field', run: () => openTab('field') },
     S.appSupported ? { label: 'アプリ', icon: 'window', run: () => openTab('app') } : null,
     IS_SUB ? null : { label: '設定', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
