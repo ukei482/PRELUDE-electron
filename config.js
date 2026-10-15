@@ -12,6 +12,7 @@ const { app } = require('electron');
 const KINDS = [
   ['home', 'ホーム'],
   ['files', 'フォルダ'],
+  ['field', 'フィールド'],
   ['web', 'Web'],
   ['app', 'アプリ'],
 ];

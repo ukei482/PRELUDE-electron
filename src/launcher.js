@@ -33,6 +33,7 @@ const LAUNCHER_COMMANDS = [
   { name: 'ホーム画面', keys: 'home ほーむ', run: () => openTab('home') },
   { name: '新しいタブ(Web)', keys: 'new tab web あたらしい', run: () => openTab('web') },
   { name: '新しいタブ(フォルダ)', keys: 'new tab folder files あたらしい', run: () => openTab('files') },
+  { name: '新しいタブ(フィールド)', keys: 'new tab field tree folder files ふぃーるど あたらしい', run: () => openTab('field') },
   { name: '全画面の切り替え', keys: 'fullscreen ぜんがめん', when: () => !IS_SUB, run: () => api.win.cmd('toggleFullscreen') },
   { name: 'スクリーンショット(範囲を選ぶ)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい', run: () => api.quick.do('screenshot', 'region') },
   { name: 'スクリーンショット(今の画面)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい', run: () => api.quick.do('screenshot', 'screen') },
