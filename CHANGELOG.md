@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.5] - 2026-10-15
+
 ### 追加
 - フィールド表示のファイル操作。右クリックの場所で中身が変わるメニューと、キー操作
   - 項目の右クリック（メニューキー・Shift+F10）: 開く、新しいタブで開く・フォルダ表示で右に開く（フォルダ）、切り取り・コピー・貼り付け、
@@ -222,7 +224,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.4...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.1...v0.4.2
