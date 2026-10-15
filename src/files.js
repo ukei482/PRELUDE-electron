@@ -342,7 +342,9 @@ async function openEntries(tab, leaf, list, inNewPane) {
   const files = list.filter((e) => !e.isDir);
   if (files.length > 10 && !(await fileConfirm(`${files.length} 個のファイルを開きますか？`, '開く'))) return;
   for (const f of files) freqRecord(f.full, 'file');
-  for (const f of files) api.fs.open(f.full).then((err) => { if (err) toast(`開けません: ${f.name}（${err}）`); });
+  // 既定のアプリをタブか分割に取り込んで開く(Ctrl+Enter は右に分割。複数のファイルはタブで)
+  const where = typeof inNewPane === 'string' ? inNewPane : inNewPane ? 'split' : undefined;
+  files.forEach((f) => openFileAt(tab, leaf, f.full, files.length > 1 && (where || C.behavior.fileOpen) === 'split' ? 'tab' : where));
 }
 
 function focusList(leaf) { leaf.vl?.list.focus({ preventScroll: true }); }
@@ -536,7 +538,7 @@ const FILE_KEYS = [
   ['Ctrl+A / Esc', 'すべて選択 / 選択を解除'],
   ['文字を打つ', 'その名前へ飛ぶ'],
   ['Enter', '開く（フォルダなら入る）'],
-  ['Ctrl+Enter', 'フォルダを右のペインで開く'],
+  ['Ctrl+Enter', '右に分割して開く（フォルダはフォルダ表示、ファイルは既定のアプリ）'],
   ['Backspace / Alt+↑', '上のフォルダへ'],
   ['Alt+← / Alt+→', '戻る / 進む'],
   ['Alt+Home', 'ホームフォルダ'],
@@ -566,6 +568,9 @@ function fileMenu(tab, leaf, x, y, kb = false) {
   const items = has ? [
     { label: '開く', icon: one?.isDir ? 'folder' : 'file', key: 'Enter', run: () => openEntries(tab, leaf, t) },
     one?.isDir ? { label: '右のペインで開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, true) } : null,
+    has && !t.some((e) => e.isDir) ? { label: '新しいタブで開く', icon: 'plus', run: () => openEntries(tab, leaf, t, 'tab') } : null,
+    one && !one.isDir ? { label: '右に分割して開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, 'split') } : null,
+    has && !t.some((e) => e.isDir) ? { label: '別のウィンドウで開く', icon: 'window', run: () => openEntries(tab, leaf, t, 'window') } : null,
     { sep: true },
     { label: '切り取り', key: 'Ctrl+X', run: () => doCopy(leaf, true) },
     { label: 'コピー', key: 'Ctrl+C', run: () => doCopy(leaf, false) },
