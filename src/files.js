@@ -337,10 +337,11 @@ async function openEntries(tab, leaf, list, inNewPane) {
   if (!list.length) return;
   const dir = list.find((e) => e.isDir);
   if (inNewPane && dir) { splitLeaf(tab, leaf, 'row', 'files', { path: dir.full }); return; }
-  if (list.length === 1 && dir) { navTo(leaf, dir.full); return; }
+  if (list.length === 1 && dir) { freqRecord(dir.full, 'dir'); navTo(leaf, dir.full); return; }
   if (leaf.mode === 'save') return;
   const files = list.filter((e) => !e.isDir);
   if (files.length > 10 && !(await fileConfirm(`${files.length} 個のファイルを開きますか？`, '開く'))) return;
+  for (const f of files) freqRecord(f.full, 'file');
   for (const f of files) api.fs.open(f.full).then((err) => { if (err) toast(`開けません: ${f.name}（${err}）`); });
 }
 
