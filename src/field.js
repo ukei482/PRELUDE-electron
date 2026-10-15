@@ -1,15 +1,17 @@
 'use strict';
 // フィールド表示のファイラ。フォルダの親子を左→右の木として広いフィールドに描き、矢印キーでたどる。
 // 選んだ項目へカメラがなめらかに移動して、画面の中央に置く。開いた枝は残る(Shift+← で畳む)。
-// 読み込みは開いたフォルダ1つずつ(main.js の fs:children = readdir だけ)。読んだ結果はパスごとに覚えておき、
+// 読み込みは開いたフォルダ1つずつ(fileops.js の fs:list = readdir だけ。サイズ・日付は読まない)。読んだ結果はパスごとに覚えておき、
 // カーソルがフォルダに止まったら中身を先読みしておく。
 // 木に並ぶのはフォルダだけ。ファイルはフォルダごとに1つの「まとめノード」にして、→ でカード(リスト)を開いて選ぶ
 // (ファイルが FIELD.LOOSE 件以下ならまとめずに並べる)。
-// app.js より先に読み込まれる。h / ico / btn / api / C / baseName / iconForEntry / commonButtons などは呼び出し時に app.js のものを使う。
+// app.js より先に読み込まれる。h / ico / btn / api / C / baseName / commonButtons などは app.js、decorate(種類の判定)は files.js のものを呼び出し時に使う。
 
 const FIELD = { COLW: 280, ROWH: 28, LABELW: 190, TAU: 90, PREFETCH: 120, CACHE: 400, FAN: 24, LOOSE: 3, CARDW: 340, CARDROWS: 14, CARDHEAD: 30 };
-const FIELD_COLORS = { image: '#d9a441', archive: '#b57edc', code: '#5fb3a1', text: '#8fa7c9' };
-const FIELD_KINDS = { image: '画像', archive: '圧縮', code: 'コード', text: 'テキスト', file: 'その他' };
+// 種類ごとの色はフォルダペインのアイコン(style.css の .ico.k-*)と同じ
+const FIELD_COLORS = { image: '#4f8a5b', video: '#8a4f7d', audio: '#4f6f8a', archive: '#a0712c', code: '#3f7f86', doc: '#a04a3c' };
+const FIELD_KINDS = { image: '画像', video: '動画', audio: '音声', archive: '圧縮', code: 'コード', text: 'テキスト', doc: '文書', file: 'その他' };
+const fieldSortName = (a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
 // ------------------------------------------------------------------ 読み込み(キャッシュ・先読み)
 const fieldCache = new Map(); // key → entries。古いものから捨てる
@@ -20,9 +22,10 @@ function fieldChildren(full) {
   const key = fieldKey(full);
   if (fieldCache.has(key)) return Promise.resolve({ ok: true, entries: fieldCache.get(key) });
   if (fieldPending.has(key)) return fieldPending.get(key);
-  const p = api.fs.children(full, C.behavior.showHidden).then((r) => {
+  const p = api.fs.list(full, C.behavior.showHidden).then((r) => {
     fieldPending.delete(key);
     if (r.ok) {
+      r.entries = r.entries.map((e) => decorate(r.path, e)).sort(fieldSortName);
       fieldCache.set(key, r.entries);
       if (fieldCache.size > FIELD.CACHE) fieldCache.delete(fieldCache.keys().next().value);
     }
@@ -34,7 +37,7 @@ function fieldChildren(full) {
 const fieldForget = (full) => fieldCache.delete(fieldKey(full));
 
 // ------------------------------------------------------------------ 木
-const fieldNode = (en, parent) => ({ name: en.name, full: en.full, isDir: en.isDir, parent, kids: null, open: false, loading: false, err: '', x: 0, y: 0, dx: null, dy: null, label: null, tw: 0 });
+const fieldNode = (en, parent) => ({ name: en.name, full: en.full, isDir: en.isDir, kind: en.kind, parent, kids: null, open: false, loading: false, err: '', x: 0, y: 0, dx: null, dy: null, label: null, tw: 0 });
 // フォルダの中身 → 子ノード。old(パス → ノード)にあるものは引き継ぐ(開いていた枝・まとめノードを残す)
 function fieldMakeKids(n, entries, old = new Map()) {
   const reuse = (en) => { const o = old.get(en.full); if (o && !o.bundle && o.isDir === en.isDir) { o.parent = n; return o; } return fieldNode(en, n); };
@@ -44,7 +47,7 @@ function fieldMakeKids(n, entries, old = new Map()) {
   const key = n.full + '\0files';
   const b = old.get(key) || Object.assign(fieldNode({ name: '', full: key, isDir: false }, n), { bundle: true });
   const count = {};
-  for (const en of files) { const k = iconForEntry(en); count[k] = (count[k] || 0) + 1; }
+  for (const en of files) count[en.kind] = (count[en.kind] || 0) + 1;
   Object.assign(b, {
     parent: n, files, name: `ファイル ${files.length}`, label: null,
     mix: Object.entries(count).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([k, c]) => `${FIELD_KINDS[k]} ${c}`).join(' · '),
@@ -384,8 +387,7 @@ function fieldDraw(fv) {
       ctx.fill();
       ctx.stroke();
     }
-    const kind = iconForEntry(n);
-    const col = n.bundle ? a.dim : n.err ? a.danger : n.isDir ? a.accent : FIELD_COLORS[kind] || a.dim;
+    const col = n.bundle ? a.dim : n.err ? a.danger : n.isDir ? a.accent : FIELD_COLORS[n.kind] || a.dim;
     ctx.beginPath();
     if (n.bundle) { ctx.roundRect(n.dx - 5, n.dy - 5, 10, 10, 2); ctx.roundRect(n.dx - 3, n.dy - 7, 10, 10, 2); }
     else ctx.arc(n.dx, n.dy, n.isDir ? 5 : 4, 0, Math.PI * 2);
@@ -458,7 +460,7 @@ function fieldDrawCard(fv, ctx, a) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
-    ctx.fillStyle = FIELD_COLORS[iconForEntry(en)] || a.dim;
+    ctx.fillStyle = FIELD_COLORS[en.kind] || a.dim;
     ctx.beginPath();
     ctx.arc(r.x + 20, y, 4, 0, Math.PI * 2);
     ctx.fill();

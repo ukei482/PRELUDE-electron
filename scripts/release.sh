@@ -48,7 +48,7 @@ cmd_create() {
   ( cd "$REL/$tag" && npm ci --no-audit --no-fund >/dev/null 2>&1 && node node_modules/electron/install.js >/dev/null 2>&1 ) || ok=0
   if (( ok )); then
     # 起動前に分かる誤りは、ここで止める
-    for f in "$REL/$tag"/main.js "$REL/$tag"/preload*.js "$REL/$tag"/sys/*.js "$REL/$tag"/src/*.js; do
+    for f in "$REL/$tag"/*.js "$REL/$tag"/sys/*.js "$REL/$tag"/src/*.js; do
       node --check "$f" 2>/dev/null || { echo "構文エラー: $f" >&2; ok=0; }
     done
     [[ -x "$REL/$tag/node_modules/electron/dist/electron" ]] || { echo "electron が入っていません" >&2; ok=0; }
