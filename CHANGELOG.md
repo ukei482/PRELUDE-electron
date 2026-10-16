@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.7] - 2026-10-16
+
 ### 変更
 - PDF などは外部のアプリではなく、PRELUDE の中（Web のペイン。Chromium の表示機能）で、新しいタブか分割に開くようにした。
   ページ送り・拡大・印刷・保存もそのまま使える。対象の拡張子は設定「PRELUDE の中で表示する拡張子」（既定: pdf html htm svg）。
@@ -239,7 +241,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.6...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.3...v0.4.4
