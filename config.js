@@ -48,6 +48,7 @@ const SCHEMA = [
     title: '動作',
     fields: [
       { path: 'behavior.appOpen', label: 'アプリを開く方法（ランチャー）', type: 'select', options: [['embed', 'ペインに取り込む'], ['window', '別ウィンドウ']] },
+      { path: 'behavior.viewInside', label: 'PRELUDE の中（Web のペイン）で表示する拡張子（空白区切り）', type: 'text' },
       { path: 'behavior.fileOpen', label: 'ファイルを開く場所（既定のアプリをペインに取り込む）', type: 'select', options: [['tab', '新しいタブ'], ['split', '右に分割'], ['window', '別ウィンドウ（取り込まない）']] },
       { path: 'behavior.startKind', label: '新しいタブの種類', type: 'select', options: KINDS },
       { path: 'behavior.homepage', label: 'Webのホームページ', type: 'text' },
@@ -91,6 +92,7 @@ function defaults() {
       startKind: 'home',
       appOpen: 'embed',
       fileOpen: 'tab',
+      viewInside: 'pdf html htm svg',
       homepage: 'https://www.google.com',
       searchEngine: 'https://www.google.com/search?q=%s',
       // Web ペイン(Electron)は Google にログインできないので、ログインが要る Google のサービスは最初から Chromium のペインで開く。
