@@ -554,9 +554,18 @@ async function startApp(leaf, cmd, cls = '', name = '', icon = '') {
   } else toast('起動できませんでした');
 }
 
-// ファイルを既定のアプリで開く。アプリはペインに取り込み、新しいタブか、leaf の右の分割に出す(設定「ファイルを開く場所」)。
+// ファイルを開く。新しいタブか、leaf の右の分割に出す(設定「ファイルを開く場所」)。
+// PDF など PRELUDE の中で表示できるもの(設定「PRELUDE の中で表示する拡張子」)は Web のペイン(Chromium の表示機能)で、
+// それ以外は既定のアプリをペインに取り込む。
 // where: 'tab' | 'split' | 'window'(取り込まずに別ウィンドウ)。取り込めない環境・既定のアプリが分からない時は別ウィンドウ
 async function openFileAt(tab, leaf, full, where = C.behavior.fileOpen || 'tab') {
+  const ext = /\.([^./]+)$/.exec(full)?.[1]?.toLowerCase();
+  const inside = String(C.behavior.viewInside || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+  if (where !== 'window' && ext && inside.includes(ext)) {
+    const url = 'file://' + full.split('/').map(encodeURIComponent).join('/');
+    if (where === 'split' && tab && leaf) splitLeaf(tab, leaf, 'row', 'web', { url }); else openTab('web', { url });
+    return;
+  }
   const a = where !== 'window' && S.appSupported ? await api.fs.openWith(full) : null;
   if (!a || NO_EMBED.test(a.cmd)) {
     const err = await api.fs.open(full);
