@@ -160,6 +160,7 @@ function reloadAllFiles() {
 function initFiles() {
   S.fileClip = null; // { paths:Set, cut } 切り取り中の項目を薄く出す
   api.fs.onChanged(({ id, dir }) => {
+    if (id.startsWith('field:')) { fieldOnChanged(id, dir); return; }
     const f = findLeaf(id);
     if (!f || f.leaf.type !== 'files') { api.fs.unwatch(id); return; }
     if (f.leaf.path === dir) reloadDir(f.leaf);

@@ -183,6 +183,7 @@ function destroyLeaf(l) {
   if (l.type === 'app' && l.running) api.app.close(l.id);
   if (l.mode === 'save' && l.dlId && !l.dlHandled) { l.dlHandled = true; api.dl.cancel(l.dlId); }
   if (l.type === 'files') api.fs.unwatch(l.id);
+  if (l.type === 'field') fieldUnwatchAll(l.fv);
 }
 
 function closeTab(tab) {
