@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.10] - 2026-10-22
+
 ### 追加
 - フィールドファイラの項目を、ドラッグで他のアプリ(Claude・エディタ・ブラウザ・取り込んだアプリなど)へ渡せるようにした。
   項目の上で押してそのまま動かすとファイルのドラッグになる。何もない所のドラッグは今までどおりフィールドを動かす。
@@ -266,7 +268,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.9...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.10...HEAD
+[0.4.10]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.9...v0.4.10
 [0.4.9]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.6...v0.4.7
