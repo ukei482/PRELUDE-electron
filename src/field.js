@@ -157,6 +157,7 @@ async function fieldLoad(fv, c, force) {
   const full = c.full;
   c.loading = true;
   fieldKick(fv);
+  const cached = !force && fieldCache.has(fieldKey(full));
   const r = await fieldChildren(full);
   if (c.full !== full) return false; // 読んでいる間に Ctrl+↑↓ で別のフォルダに替わった
   c.loading = false;
@@ -164,7 +165,21 @@ async function fieldLoad(fv, c, force) {
   c.err = r.ok ? '' : r.error;
   fieldApply(c, fv);
   for (const [i] of c.hot) if (c.list[i].isDir) fieldChildren(c.list[i].full); // よく使うフォルダは先に読んでおく
+  // 覚えていた中身(先読み・前に開いた時のもの)は古いかもしれない。カードを開いた時は読み直し、違っていれば差し替える
+  // (開いている間の変更は fieldWatch の監視で知る)
+  if (cached && r.ok) fieldRevalidate(fv, c, r.entries);
   return true;
+}
+async function fieldRevalidate(fv, c, old) {
+  const full = c.full;
+  fieldForget(full);
+  const r = await fieldChildren(full);
+  if (c.full !== full || !r.ok || !fv.cards.includes(c)) return;
+  const same = r.entries.length === old.length && r.entries.every((e, i) => e.name === old[i].name && e.isDir === old[i].isDir);
+  if (same) { fieldCache.set(fieldKey(full), old); return; } // 読んであったサイズ・日付を残す
+  c.entries = r.entries;
+  fieldApply(c, fv);
+  fieldSettle(fv, c);
 }
 
 // ------------------------------------------------------------------ 配置(一度置いたカードは動かさない)
@@ -220,7 +235,35 @@ function fieldCollect(fv) {
   const walk = (c) => { out.push(c); c.kids.forEach(walk); };
   walk(fv.root);
   fv.cards = out;
+  fieldWatch(fv);
   fieldKick(fv);
+}
+// 開いているカードのフォルダを監視して、外で増えた・消えたファイル(画面録画・ダウンロードなど)を反映する。
+// 監視の id は「field:ペインの id:フォルダ」。知らせは fieldOnChanged(files.js の initFiles から呼ぶ)
+const fieldWatchId = (fv, dir) => `field:${fv.id}:${dir}`;
+function fieldWatch(fv) {
+  if (!fv.id) return;
+  const want = new Set(fv.cards.map((k) => k.full));
+  const had = fv.watching || new Set();
+  for (const d of had) if (!want.has(d)) api.fs.unwatch(fieldWatchId(fv, d));
+  for (const d of want) if (!had.has(d)) api.fs.watch(fieldWatchId(fv, d), d);
+  fv.watching = want;
+}
+function fieldUnwatchAll(fv) {
+  for (const d of fv?.watching || []) api.fs.unwatch(fieldWatchId(fv, d));
+  if (fv) fv.watching = new Set();
+}
+function fieldOnChanged(id, dir) {
+  let open = false;
+  fieldEachLeaf((l) => { if (fieldWatchId(l.fv, dir) === id && l.fv.watching?.has(dir)) open = true; });
+  if (!open) { api.fs.unwatch(id); return; }
+  if (!fieldEachLeafBusy()) fieldRefresh([dir]);
+}
+// 名前の変更中は読み直さない(入力欄の位置がずれる)。終わった時の読み直しで反映される
+function fieldEachLeafBusy() {
+  let busy = false;
+  fieldEachLeaf((l) => { if (l.fv.renaming) busy = true; });
+  return busy;
 }
 
 // 親のカードの行に見出しをそろえたい c の y を決める。枝の上下の順(親のカードの行の順)を守れる範囲の中で、一番近い空きに置く。
@@ -1040,6 +1083,7 @@ function buildField(tab, leaf, head, body) {
   if (fresh) leaf.fv = { root: null, cur: null, cards: [], cam: { x: 0, y: 0, z: 1, tx: 0, ty: 0, tz: 1 }, follow: true, raf: 0, last: 0 };
   const fv = leaf.fv;
   fv.canvas = canvas;
+  fv.id = leaf.id;
   fv.ui = { path };
   if (fv.raf) { cancelAnimationFrame(fv.raf); fv.raf = 0; }
   fv.last = 0;
