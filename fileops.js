@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { pathToFileURL, fileURLToPath } = require('url');
-const { shell, clipboard, ClipboardItem } = require('electron');
+const { shell, clipboard, ClipboardItem, nativeImage } = require('electron');
 const { cleanShell } = require('./sys/util');
 
 const isWin = process.platform === 'win32';
@@ -285,6 +285,14 @@ function init(o) {
   ipcMain.handle('fs:terminal-cmd', (_e, dir) => terminalCmd(String(dir)));
   ipcMain.handle('fs:props', (_e, paths) => props(strs(paths)));
   ipcMain.handle('fs:dirsize', (_e, paths) => dirSize(strs(paths)));
+  // ファイルを OS のドラッグとして渡す(Claude・エディタ・ブラウザなど、他のアプリに落とせる)。icon は画面側で描いた札(data URL)
+  ipcMain.on('fs:drag', (e, paths, icon) => {
+    const files = strs(paths).filter((p) => fs.existsSync(p));
+    if (!files.length) return;
+    let img = typeof icon === 'string' ? nativeImage.createFromDataURL(icon) : null;
+    if (!img || img.isEmpty()) img = nativeImage.createFromBuffer(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64'));
+    e.sender.startDrag({ file: files[0], files, icon: img });
+  });
   ipcMain.handle('fs:drives', async () => {
     const out = [{ label: 'ホーム', path: os.homedir() }];
     if (isWin) {

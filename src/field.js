@@ -947,6 +947,23 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
 }
 
 // 画面の点 → { カード, 項目 }(見出しの上は項目 -1、︙ の上は menu: true)。カードの外なら null
+// ドラッグ中にマウスの横に出す札(ファイル名)。data URL で返す
+function fieldDragImage(en) {
+  const a = C.appearance; // 等倍で描く(nativeImage は data URL を等倍の画像として読む)
+  const font = `${a.fontSize}px ${getComputedStyle(document.body).fontFamily}`;
+  const cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+  ctx.font = font;
+  const label = (en.isDir ? '📁 ' : '📄 ') + en.name;
+  const w = Math.min(320, Math.ceil(ctx.measureText(label).width) + 20), hgt = a.fontSize + 14;
+  cv.width = w; cv.height = hgt;
+  ctx.fillStyle = a.panel;
+  ctx.beginPath(); ctx.roundRect(0.5, 0.5, w - 1, hgt - 1, 6); ctx.fill();
+  ctx.strokeStyle = a.line; ctx.stroke();
+  ctx.font = font; ctx.fillStyle = a.text; ctx.textBaseline = 'middle';
+  ctx.fillText(fieldFit(ctx, label, w - 20), 10, hgt / 2);
+  return cv.toDataURL('image/png');
+}
+
 function fieldHit(fv, ev) {
   const r = fv.canvas.getBoundingClientRect();
   const z = fv.cam.z;
@@ -992,6 +1009,9 @@ function buildField(tab, leaf, head, body) {
   canvas.addEventListener('pointerdown', (e) => {
     canvas.focus();
     const hit = fieldHit(fv, e);
+    // 項目の上で押したときだけ、そのままドラッグすると項目を外へ渡せる(何もない所のドラッグはフィールドを動かす)
+    fv.dragFrom = e.button === 0 && hit && hit.row >= 0 ? hit.c.list[hit.row] : null;
+    canvas.draggable = !!fv.dragFrom;
     if (hit) {
       if (hit.c !== fv.cur) fieldFocus(leaf, hit.c);
       if (hit.menu) { e.preventDefault(); fieldMenu(leaf, hit.c, e.clientX, e.clientY + 8); return; }
@@ -1006,6 +1026,14 @@ function buildField(tab, leaf, head, body) {
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
+  });
+  // 項目のドラッグ: ファイルを OS のドラッグとして渡す(Claude・エディタ・ブラウザ・取り込んだアプリなどに落とせる)
+  canvas.addEventListener('dragstart', (e) => {
+    e.preventDefault();
+    const en = fv.dragFrom;
+    fv.dragFrom = null;
+    canvas.draggable = false;
+    if (en) api.fs.drag([en.full], fieldDragImage(en));
   });
   // ︙ の上ではカーソルの形と背景を変える
   canvas.addEventListener('pointermove', (e) => {

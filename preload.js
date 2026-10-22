@@ -112,6 +112,7 @@ contextBridge.exposeInMainWorld('preludeApi', {
     terminalCmd: (dir) => ipcRenderer.invoke('fs:terminal-cmd', dir),
     props: (paths) => ipcRenderer.invoke('fs:props', paths),
     dirSize: (paths) => ipcRenderer.invoke('fs:dirsize', paths),
+    drag: (paths, icon) => ipcRenderer.send('fs:drag', paths, icon), // 他のアプリへファイルをドラッグで渡す(dragstart の中で呼ぶ)
   },
   dl: {
     choose: (id, dir) => ipcRenderer.invoke('dl:choose', id, dir),
