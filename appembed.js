@@ -221,9 +221,31 @@ function apply(w) {
   w.skipTaskbar = true; w.skipPager = true; w.skipSwitcher = true;
   var geo = { x: Math.round(g.x + p.rect.x), y: Math.round(g.y + p.rect.y), width: Math.round(p.rect.width), height: Math.round(p.rect.height) };
   if (w.transient) { placeChild(w, geo); return; }
+  if (w !== mainOf(p)) { placeExtra(w, geo); if (p.activate) workspace.activeWindow = w; return; }
   w.noBorder = true;
   w.frameGeometry = geo;
   if (p.activate) workspace.activeWindow = w;
+}
+// ペインの本体の窓: 取り込んだ順で最初の、今もある普通の窓(ダイアログは除く)。本体だけをペインいっぱいに広げる。
+// 本体が閉じたら、次に古い窓が本体になる
+var gone = {};
+function mainOf(p) {
+  var byId = {};
+  workspace.windowList().forEach(function (w) { if (!w.transient && !gone[wid(w)]) byId[wid(w)] = w; });
+  for (var i = 0; i < p.wids.length; i++) if (byId[p.wids[i]]) return byId[p.wids[i]];
+  return null;
+}
+// 本体のほかに開いた窓(「新しいウィンドウ」など)。本体と同じ大きさで重ねると下の窓が見えなくなるので、
+// ダイアログと同じく枠付きでペインの中に浮かべる。ペインいっぱいに広げていた窓(前の本体の置き方)や、ペインからはみ出す窓は、
+// 本体が見えるようにペインより少し小さくして中央に置く。ペインの中で動かした・大きさを変えた窓はそのまま
+// (スクリプトは何度も読み直されるので、置いたかどうかは覚えずに、今の枠と位置で決める)
+function placeExtra(w, pane) {
+  var f = w.frameGeometry;
+  var inside = f.x >= pane.x && f.y >= pane.y && f.x + f.width <= pane.x + pane.width && f.y + f.height <= pane.y + pane.height;
+  if (!w.noBorder && inside) return;
+  w.noBorder = false;
+  var width = Math.round(Math.min(f.width, pane.width * 0.85)), height = Math.round(Math.min(f.height, pane.height * 0.85));
+  w.frameGeometry = { x: Math.round(pane.x + (pane.width - width) / 2), y: Math.round(pane.y + (pane.height - height) / 2), width: width, height: height };
 }
 // 取り込んだアプリの子の窓(設定・保存・確認などのダイアログ)。ペインいっぱいに広げず、枠を付けたまま自分の大きさで、ペインの中に置く。
 // ペインからはみ出しているときだけ中央に置き直す(ペインの中で動かした位置は保つ)。ペインより大きければ縮める
@@ -304,13 +326,14 @@ function applySubs() {
     if (g.x !== t.x || g.y !== t.y || g.width !== t.width || g.height !== t.height) w.frameGeometry = t;
   });
 }
-// PRELUDEがアクティブになると同じ層の最前面に来るので、取り込んだアプリを前に出し直す
-// 子の窓(ダイアログ)は本体より前に出すので、本体を先に、子の窓を後に上げる
+// 取り込んだ窓の重なりの段。下から PRELUDE(0)→ 本体(1)→ 本体のほかの窓(2)→ 子の窓(ダイアログ)(3)
+function rank(w, p) { return w.transient ? 3 : w === mainOf(p) ? 1 : 2; }
+// PRELUDEがアクティブになると同じ層の最前面に来るので、取り込んだアプリを前に出し直す。段の低いものから順に上げる
 function raiseEmbedded() {
-  [false, true].forEach(function (child) {
+  [1, 2, 3].forEach(function (r) {
     workspace.windowList().forEach(function (w) {
       var p = paneOf(w);
-      if (p && p.rect && !w.minimized && !!w.transient === child) workspace.raiseWindow(w);
+      if (p && p.rect && !w.minimized && rank(w, p) === r) workspace.raiseWindow(w);
     });
   });
   // 通知・OSD は取り込んだアプリより前に出したままにする
@@ -318,9 +341,10 @@ function raiseEmbedded() {
     if (w.pid === EL_PID && /^PRELUDE-overlay:/.test(w.caption || '')) workspace.raiseWindow(w);
   });
 }
-// 表示中の取り込んだアプリが、その持ち主の PRELUDE の窓より後ろにあるか
+// 表示中の取り込んだ窓が、持ち主の PRELUDE の窓や、同じペインの段の低い窓より後ろにあるか
+// (本体をクリックすると本体が前に来て、ほかの窓がその後ろに隠れる)
 function buried() {
-  var order = workspace.stackingOrder, pos = {}, i, w, p, el;
+  var order = workspace.stackingOrder, pos = {}, i, j, w, p, el, r;
   for (i = 0; i < order.length; i++) pos[wid(order[i])] = i;
   for (i = 0; i < order.length; i++) {
     w = order[i];
@@ -328,13 +352,18 @@ function buried() {
     if (!p || !p.rect || w.minimized) continue;
     el = shellWin(p.owner);
     if (el && pos[wid(el)] > i) return true;
+    r = rank(w, p);
+    for (j = i + 1; j < order.length; j++) {
+      if (order[j].minimized || paneOf(order[j]) !== p) continue;
+      if (rank(order[j], p) < r) return true;
+    }
   }
   return false;
 }
 // KWin はクリックした窓をアクティブにしてから前に出す(windowActivated の後で持ち上がる)。
 // 既にアクティブな PRELUDE をクリックしたときは windowActivated も来ない。
 // そのため PRELUDE の窓の重なり順が変わるたびに確かめ、取り込んだアプリを覆っていたら前に出し直す
-// (workspace.stackingOrderChanged はスクリプトから使えないので、窓ごとの信号を使う)
+// (workspace.stackingOrderChanged はスクリプトから使えないので、窓ごとの信号を使う。取り込んだ窓にも hookCaption でつなぐ)
 var raising = false;
 function restacked() {
   if (orphan || raising || !buried()) return;
@@ -353,7 +382,7 @@ function report() {
     var p = paneOf(w);
     if (!p) return;
     counts[p.id]++;
-    if (!titles[p.id] && w.caption && !w.transient) titles[p.id] = w.caption; // ダイアログの題名ではなく本体の題名
+    if (w.caption && w === mainOf(p)) titles[p.id] = w.caption; // ダイアログやほかの窓の題名ではなく本体の題名
   });
   send('windows', { counts: counts, titles: titles, all: all });
 }
@@ -364,10 +393,14 @@ function hookCaption(w) {
   if (hooked[id] || !w.captionChanged) return;
   hooked[id] = true;
   w.captionChanged.connect(function () { if (paneOf(w)) report(); });
+  w.stackingOrderChanged && w.stackingOrderChanged.connect(restacked);
 }
 function applyEverything() { applyShell(); applyAll(); raiseEmbedded(); report(); }
 workspace.windowRemoved.connect(function (w) {
   if (!orphan && w.pid === EL_PID && w.normalWindow && !electron(w)) { releaseAll(); return; }
+  gone[wid(w)] = true;
+  var p = paneOf(w);
+  if (p && !w.transient) applyAll(); // 本体が閉じたら、次の窓を本体としてペインいっぱいに広げる
   report();
 });
 workspace.windowActivated.connect(function (w) {
