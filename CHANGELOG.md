@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.11] - 2026-10-22
+
 ### 修正
 - フィールドファイラで、フォルダを一度見た後にできたファイル(画面録画・ダウンロードなど)が出てこなかったのを直した。
   開いているカードのフォルダを監視して、外での追加・削除・名前の変更をすぐ反映する。
@@ -273,7 +275,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.10...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.11...HEAD
+[0.4.11]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.10...v0.4.11
 [0.4.10]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.9...v0.4.10
 [0.4.9]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.7...v0.4.8
