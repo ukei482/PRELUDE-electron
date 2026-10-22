@@ -313,6 +313,34 @@ function raiseEmbedded() {
       if (p && p.rect && !w.minimized && !!w.transient === child) workspace.raiseWindow(w);
     });
   });
+  // 通知・OSD は取り込んだアプリより前に出したままにする
+  workspace.windowList().forEach(function (w) {
+    if (w.pid === EL_PID && /^PRELUDE-overlay:/.test(w.caption || '')) workspace.raiseWindow(w);
+  });
+}
+// 表示中の取り込んだアプリが、その持ち主の PRELUDE の窓より後ろにあるか
+function buried() {
+  var order = workspace.stackingOrder, pos = {}, i, w, p, el;
+  for (i = 0; i < order.length; i++) pos[wid(order[i])] = i;
+  for (i = 0; i < order.length; i++) {
+    w = order[i];
+    p = paneOf(w);
+    if (!p || !p.rect || w.minimized) continue;
+    el = shellWin(p.owner);
+    if (el && pos[wid(el)] > i) return true;
+  }
+  return false;
+}
+// KWin はクリックした窓をアクティブにしてから前に出す(windowActivated の後で持ち上がる)。
+// 既にアクティブな PRELUDE をクリックしたときは windowActivated も来ない。
+// そのため PRELUDE の窓の重なり順が変わるたびに確かめ、取り込んだアプリを覆っていたら前に出し直す
+// (workspace.stackingOrderChanged はスクリプトから使えないので、窓ごとの信号を使う)
+var raising = false;
+function restacked() {
+  if (orphan || raising || !buried()) return;
+  raising = true;
+  raiseEmbedded();
+  raising = false;
 }
 // 各ペインのウィンドウ数をNode側へ知らせる(ウィンドウが閉じたら取り込みを終えるため)。
 // 宛先は PRELUDE の D-Bus サービス(sys/bus.js)
@@ -358,6 +386,7 @@ workspace.windowList().forEach(function (w) {
   if (!w) return;
   w.frameGeometryChanged.connect(applyEverything);
   w.minimizedChanged.connect(applyEverything);
+  w.stackingOrderChanged.connect(restacked);
 });
 applyEverything();
 `;
