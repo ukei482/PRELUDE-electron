@@ -275,6 +275,7 @@ function fieldSettle(fv, c) {
 // ------------------------------------------------------------------ 操作
 function fieldFocus(leaf, c) {
   const fv = leaf.fv;
+  if (fv.cur && fv.cur !== c) fieldClearSel(fv.cur); // 選択は1枚のカードの中だけ
   fv.cur = c;
   fv.follow = true;
   if (leaf.path !== c.full) { leaf.path = c.full; renderSidebar(); scheduleSave(); }
@@ -445,7 +446,12 @@ async function fieldOnKey(leaf, e) {
     return;
   }
   const zoom = (f) => { fv.cam.tz = clamp(f ? fv.cam.tz * f : 1, 0.3, 2); fieldKick(fv); };
-  const step = (dir, times = 1) => { let i = c.i; for (let t = 0; t < times; t++) { const s = fieldStep({ ...c, i }, dir); if (s == null) break; i = s; } fieldCursor(leaf, i); };
+  // ↑↓・PageUp/Down・Home/End: Shift を押していれば起点から範囲を選び、押していなければ選択を解く
+  const go = (i) => {
+    if (e.shiftKey) { if (c.anchor == null || !c.sel?.size) c.anchor = c.i; fieldSelRange(c, c.anchor, clamp(i, 0, c.list.length - 1)); } else fieldClearSel(c);
+    fieldCursor(leaf, i);
+  };
+  const step = (dir, times = 1) => { let i = c.i; for (let t = 0; t < times; t++) { const s = fieldStep({ ...c, i }, dir); if (s == null) break; i = s; } go(i); };
   const page = Math.max(1, Math.round(c.viewH / (fieldItem(c, c.i).tile ? FIELD.TILEH : FIELD.ROWH)) - 1);
   if (e.ctrlKey) {
     const kl = k.toLowerCase();
@@ -457,6 +463,7 @@ async function fieldOnKey(leaf, e) {
     else if (kl === 'x') fieldCopy(leaf, true);
     else if (kl === 'v') fieldPaste(leaf, c.full);
     else if (kl === 'h') toggleHidden();
+    else if (kl === 'a') { fieldSelRange(c, 0, c.list.length - 1); fieldKick(fv); }
     else if (k === 'Enter') { const en = fieldEn(leaf); if (en?.isDir) { const tab = fieldTabOf(leaf); if (tab) splitLeaf(tab, leaf, 'row', 'field', { path: en.full }); } else fieldEnter(leaf, 'split'); }
     else return;
   } else if (k === 'F2') fieldStartRename(leaf);
@@ -466,8 +473,10 @@ async function fieldOnKey(leaf, e) {
   else if (k === 'ArrowUp') step('up');
   else if (k === 'PageDown') step('down', page);
   else if (k === 'PageUp') step('up', page);
-  else if (k === 'Home') fieldCursor(leaf, 0);
-  else if (k === 'End') fieldCursor(leaf, Infinity);
+  else if (k === 'Home') go(0);
+  else if (k === 'End') go(Infinity);
+  else if (k === ' ') { fieldToggle(c, c.i); fieldKick(fv); }
+  else if (k === 'Escape' && c.sel?.size) { fieldClearSel(c); fieldKick(fv); }
   else if (k === 'ArrowRight') {
     const s = fieldStep(c, 'right');
     if (s != null) fieldCursor(leaf, s); else if (c.list[c.i]?.isDir) fieldEnter(leaf);
@@ -492,6 +501,29 @@ async function fieldOnKey(leaf, e) {
 // 対象はカーソルの項目(項目が無ければカードのフォルダ)。操作の後は、そのフォルダを表示しているカードをすべて読み直す。
 // 中身は fileops.js(api.fs)、確認・プロパティ・端末は files.js の fileConfirm / showPropsFor / openTerminalAt を使う。
 const fieldEn = (leaf) => { const c = leaf.fv.cur; return c?.list[c.i] || null; };
+// 複数選択。選べるのは1枚のカードの中だけ(c.sel = 選んだ項目のパス。c.anchor = 範囲選択の起点)。
+// 何も選んでいなければ、カーソルの項目だけが対象
+const fieldSel = (c) => c.sel || (c.sel = new Set());
+function fieldClearSel(c) { if (c?.sel?.size) c.sel.clear(); if (c) c.anchor = null; }
+function fieldSelRange(c, from, to) {
+  const s = fieldSel(c);
+  s.clear();
+  for (let j = Math.min(from, to); j <= Math.max(from, to); j++) if (c.list[j]) s.add(c.list[j].full);
+}
+function fieldToggle(c, idx) {
+  const s = fieldSel(c), en = c.list[idx];
+  if (!en) return;
+  if (s.has(en.full)) s.delete(en.full); else s.add(en.full);
+  c.anchor = idx;
+}
+function fieldTargets(leaf) {
+  const c = leaf.fv.cur, s = c?.sel;
+  const picked = s?.size ? c.list.filter((e) => s.has(e.full)) : [];
+  if (picked.length) return picked;
+  const en = fieldEn(leaf);
+  return en ? [en] : [];
+}
+const fieldNames = (list) => (list.length === 1 ? `「${list[0].name}」` : `${list.length} 個の項目`);
 const fieldTabOf = (leaf) => findLeaf(leaf.id)?.tab;
 
 function fieldEachLeaf(fn) {
@@ -527,13 +559,14 @@ function fieldCursorTo(leaf, c, name) {
 }
 
 async function fieldCopy(leaf, cut) {
-  const en = fieldEn(leaf);
-  if (!en) return;
-  await api.fs.clipWrite([en.full], cut);
-  S.fileClip = cut ? { paths: new Set([en.full]), cut } : null;
+  const list = fieldTargets(leaf);
+  if (!list.length) return;
+  const paths = list.map((e) => e.full);
+  await api.fs.clipWrite(paths, cut);
+  S.fileClip = cut ? { paths: new Set(paths), cut } : null;
   reloadAllPaint();
   fieldKickAll();
-  toast(`「${en.name}」を${cut ? '切り取りました' : 'コピーしました'}`);
+  toast(`${fieldNames(list)}を${cut ? '切り取りました' : 'コピーしました'}`);
 }
 
 async function fieldPaste(leaf, into) {
@@ -551,13 +584,15 @@ async function fieldPaste(leaf, into) {
 }
 
 async function fieldDelete(leaf, permanent) {
-  const c = leaf.fv.cur, en = fieldEn(leaf);
-  if (!en) return;
-  if (permanent && !(await fileConfirm(`完全に削除します（元に戻せません）\n${en.name}`, '削除', true))) return;
-  const r = await api.fs.remove([en.full], permanent);
+  const c = leaf.fv.cur, list = fieldTargets(leaf);
+  if (!list.length) return;
+  const shown = list.slice(0, 10).map((e) => e.name).join('\n') + (list.length > 10 ? `\nほか ${list.length - 10} 個` : '');
+  if (permanent && !(await fileConfirm(`完全に削除します（元に戻せません）\n${shown}`, '削除', true))) return;
+  const r = await api.fs.remove(list.map((e) => e.full), permanent);
+  fieldClearSel(c);
   await fieldRefresh([c.full]);
   if (!r.ok) toast(`削除できませんでした: ${r.errors[0]}${permanent ? '' : '（Shift+Delete で完全に削除）'}`);
-  else toast(`「${en.name}」を${permanent ? '削除しました' : 'ゴミ箱へ移動しました'}`);
+  else toast(`${fieldNames(list)}を${permanent ? '削除しました' : 'ゴミ箱へ移動しました'}`);
 }
 
 async function fieldNewFolder(leaf) {
@@ -611,11 +646,12 @@ function fieldStartRename(leaf) {
 }
 
 function fieldCopyPath(leaf) {
-  const p = fieldEn(leaf)?.full || leaf.fv.cur.full;
-  api.fs.copyText(p).then(() => toast('パスをコピーしました'));
+  const list = fieldTargets(leaf);
+  const p = list.length ? list.map((e) => e.full).join('\n') : leaf.fv.cur.full; // 複数なら1行に1つ
+  api.fs.copyText(p).then(() => toast(list.length > 1 ? `${list.length} 個のパスをコピーしました` : 'パスをコピーしました'));
 }
 const fieldTerminal = (leaf) => { const en = fieldEn(leaf); openTerminalAt(fieldTabOf(leaf), leaf, en?.isDir ? en.full : leaf.fv.cur.full); };
-const fieldProps = (leaf, ofCard) => { const c = leaf.fv.cur, en = !ofCard && fieldEn(leaf); showPropsFor([en ? en.full : c.full], c.full); };
+const fieldProps = (leaf, ofCard) => { const c = leaf.fv.cur, list = ofCard ? [] : fieldTargets(leaf); showPropsFor(list.length ? list.map((e) => e.full) : [c.full], c.full); };
 
 // カードを閉じる(どのカードでも)。中にいたら、その親のカードへ移る
 function fieldCloseCard(leaf, c) {
@@ -630,8 +666,9 @@ function fieldCloseCard(leaf, c) {
 function fieldItemMenu(leaf, x, y) {
   const c = leaf.fv.cur, en = fieldEn(leaf);
   if (!en) { fieldCardMenu(leaf, c, x, y); return; }
-  const tab = fieldTabOf(leaf);
+  const tab = fieldTabOf(leaf), n = fieldTargets(leaf).length;
   popup([
+    n > 1 ? { header: `${n} 個を選択中(切り取り・コピー・削除・パスのコピー・プロパティは全部が対象)` } : null,
     { label: en.isDir ? 'カードを開く' : '開く', icon: en.isDir ? 'folder' : 'file', key: 'Enter', run: () => fieldEnter(leaf) },
     en.isDir ? null : { label: '新しいタブで開く', icon: 'plus', run: () => fieldEnter(leaf, 'tab') },
     en.isDir || !tab ? null : { label: '右に分割して開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => fieldEnter(leaf, 'split') },
@@ -867,12 +904,13 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
     const en = c.list[idx], ix = x + it.x, iy = top + it.y, sel = idx === c.i;
     const base = S.fileClip?.cut && S.fileClip.paths.has(en.full) ? c.alpha * 0.45 : c.alpha; // 切り取り中は薄く
     ctx.globalAlpha = base;
-    if (sel && (focus || onPath || open.has(idx))) {
+    const marked = !!c.sel?.has(en.full);
+    if (marked || (sel && (focus || onPath || open.has(idx)))) {
       ctx.fillStyle = a.panel2;
       ctx.beginPath();
       ctx.roundRect(ix + 5, iy + 2, it.w - 10, it.h - 3, 6);
       ctx.fill();
-      if (focus) { ctx.strokeStyle = a.accent; ctx.lineWidth = 1.5; ctx.stroke(); }
+      if (sel && focus) { ctx.strokeStyle = a.accent; ctx.lineWidth = 1.5; ctx.stroke(); }
     }
     const col = en.isDir ? a.accent : FIELD_COLORS[en.kind] || a.dim;
     if (!it.tile) {
@@ -891,7 +929,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
       if (open.has(idx)) { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke(); } else { ctx.fillStyle = col; ctx.fill(); }
       const lw = FIELD.CARDW - 60;
       if (en._lf !== font) { en._lf = font; en._lab = fieldFit(ctx, en.name, lw); }
-      ctx.fillStyle = en.isDir || sel ? a.text : a.dim;
+      ctx.fillStyle = en.isDir || sel || marked ? a.text : a.dim;
       ctx.fillText(en._lab, ix + 30, ry);
       if (colsW) {
         ctx.fillStyle = a.dim;
@@ -947,6 +985,24 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
 }
 
 // 画面の点 → { カード, 項目 }(見出しの上は項目 -1、︙ の上は menu: true)。カードの外なら null
+// ドラッグ中にマウスの横に出す札(ファイル名)。data URL で返す
+function fieldDragImage(list) {
+  const en = list[0];
+  const a = C.appearance; // 等倍で描く(nativeImage は data URL を等倍の画像として読む)
+  const font = `${a.fontSize}px ${getComputedStyle(document.body).fontFamily}`;
+  const cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+  ctx.font = font;
+  const label = list.length > 1 ? `📄 ${en.name} ほか ${list.length - 1} 個` : (en.isDir ? '📁 ' : '📄 ') + en.name;
+  const w = Math.min(320, Math.ceil(ctx.measureText(label).width) + 20), hgt = a.fontSize + 14;
+  cv.width = w; cv.height = hgt;
+  ctx.fillStyle = a.panel;
+  ctx.beginPath(); ctx.roundRect(0.5, 0.5, w - 1, hgt - 1, 6); ctx.fill();
+  ctx.strokeStyle = a.line; ctx.stroke();
+  ctx.font = font; ctx.fillStyle = a.text; ctx.textBaseline = 'middle';
+  ctx.fillText(fieldFit(ctx, label, w - 20), 10, hgt / 2);
+  return cv.toDataURL('image/png');
+}
+
 function fieldHit(fv, ev) {
   const r = fv.canvas.getBoundingClientRect();
   const z = fv.cam.z;
@@ -977,7 +1033,7 @@ function buildField(tab, leaf, head, body) {
   head.append(ico('field'), path, home, ...commonButtons(tab, leaf));
 
   const canvas = h('canvas', { class: 'field', tabindex: '0' });
-  const hint = h('div', { class: 'field-hint' }, '↑↓ 選ぶ　→ フォルダを開く　← 親へ（Shift で閉じる）　Ctrl+↑↓ 兄弟フォルダへ　Enter・ダブルクリック 開く　右クリック・メニューキー 操作　︙ 表示の設定　F2 名前の変更　Delete ゴミ箱へ');
+  const hint = h('div', { class: 'field-hint' }, '↑↓ 選ぶ　→ フォルダを開く　← 親へ（Shift で閉じる）　Ctrl+↑↓ 兄弟フォルダへ　Enter・ダブルクリック 開く　Ctrl・Shift+クリック 複数選択　ドラッグ 他のアプリへ　右クリック・メニューキー 操作　︙ 表示の設定　F2 名前の変更　Delete ゴミ箱へ');
   body.append(canvas, hint);
 
   const fresh = !leaf.fv?.cards;
@@ -992,10 +1048,23 @@ function buildField(tab, leaf, head, body) {
   canvas.addEventListener('pointerdown', (e) => {
     canvas.focus();
     const hit = fieldHit(fv, e);
+    // 項目の上で押したときだけ、そのままドラッグすると項目を外へ渡せる(何もない所のドラッグはフィールドを動かす)
+    fv.dragFrom = e.button === 0 && hit && hit.row >= 0 ? hit.c.list[hit.row] : null;
+    canvas.draggable = !!fv.dragFrom;
+    fv.clearOnClick = false;
     if (hit) {
+      const prev = fv.cur;
       if (hit.c !== fv.cur) fieldFocus(leaf, hit.c);
       if (hit.menu) { e.preventDefault(); fieldMenu(leaf, hit.c, e.clientX, e.clientY + 8); return; }
-      if (hit.row >= 0) fieldCursor(leaf, hit.row);
+      if (hit.row >= 0) {
+        const c = hit.c, en = c.list[hit.row];
+        // Shift+クリック: 起点から範囲を選ぶ。Ctrl+クリック: 1つずつ足し引き(初めは、それまでのカーソルの項目も入れる)。
+        // ただのクリック: 選択を解く。選んである項目の上なら、ドラッグで全部を渡せるように、離した時(ドラッグしなかった時)に解く
+        if (e.button === 0 && e.shiftKey) { if (c.anchor == null || !c.sel?.size) c.anchor = prev === c ? c.i : hit.row; fieldSelRange(c, c.anchor, hit.row); }
+        else if (e.button === 0 && e.ctrlKey) { if (!c.sel?.size && prev === c && c.i !== hit.row) fieldToggle(c, c.i); fieldToggle(c, hit.row); }
+        else if (e.button === 0) { if (c.sel?.has(en.full)) fv.clearOnClick = true; else fieldClearSel(c); c.anchor = hit.row; }
+        fieldCursor(leaf, hit.row);
+      }
       return;
     }
     // 何もない所のドラッグでフィールドを動かす(次にキーを押すと操作中のカードへ戻る)
@@ -1007,6 +1076,19 @@ function buildField(tab, leaf, head, body) {
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
   });
+  // 項目のドラッグ: ファイルを OS のドラッグとして渡す(Claude・エディタ・ブラウザ・取り込んだアプリなどに落とせる)
+  // 選んである項目の上から始めたら、選んだ項目を全部渡す
+  canvas.addEventListener('dragstart', (e) => {
+    e.preventDefault();
+    const en = fv.dragFrom, c = fv.cur;
+    fv.dragFrom = null;
+    fv.clearOnClick = false;
+    canvas.draggable = false;
+    if (!en) return;
+    const list = c?.sel?.has(en.full) ? c.list.filter((x) => c.sel.has(x.full)) : [en];
+    api.fs.drag(list.map((x) => x.full), fieldDragImage(list));
+  });
+  canvas.addEventListener('click', () => { if (fv.clearOnClick) { fv.clearOnClick = false; fieldClearSel(fv.cur); fieldKick(fv); } });
   // ︙ の上ではカーソルの形と背景を変える
   canvas.addEventListener('pointermove', (e) => {
     const hit = fieldHit(fv, e);
@@ -1022,7 +1104,11 @@ function buildField(tab, leaf, head, body) {
     if (!hit) { fieldSpaceMenu(leaf, e.clientX, e.clientY); return; }
     if (hit.c !== fv.cur) fieldFocus(leaf, hit.c);
     if (hit.menu) fieldMenu(leaf, hit.c, e.clientX, e.clientY);
-    else if (hit.row >= 0) { fieldCursor(leaf, hit.row); fieldItemMenu(leaf, e.clientX, e.clientY); }
+    else if (hit.row >= 0) {
+      if (!hit.c.sel?.has(hit.c.list[hit.row].full)) fieldClearSel(hit.c); // 選んでいない項目の上なら、その項目だけが対象
+      fieldCursor(leaf, hit.row);
+      fieldItemMenu(leaf, e.clientX, e.clientY);
+    }
     else fieldCardMenu(leaf, hit.c, e.clientX, e.clientY);
   });
   // ダブルクリック: ファイルは既定のアプリで開き、フォルダは右にカードを開く
