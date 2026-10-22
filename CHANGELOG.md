@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.4.9] - 2026-10-22
+
 ### 修正
 - 分割画面でファイラなど PRELUDE 側のペインをクリックすると、PRELUDE の窓が前に出て、隣のペインに取り込んだアプリが隠れることがあったのを直した。
   KWin はクリックした窓をアクティブにしたあとで前に出すため、アクティブになった時に前へ出し直すだけでは足りなかった。重なり順が変わるたびに確かめて、アプリを前に戻す。
@@ -257,7 +259,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.8...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.9...HEAD
+[0.4.9]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.5...v0.4.6
