@@ -169,18 +169,48 @@ async function fieldLoad(fv, c, force) {
 
 // ------------------------------------------------------------------ 配置(一度置いたカードは動かさない)
 // 新しいカードは、親のカードのそのフォルダの行に見出しをそろえた位置に置く。ほかのカードと重なる時は、一番近い空き(上か下)に置く。
+// 兄弟の枝どうし(各段で)は、親のカードの行の順に上から並べる。
 // 置いたカードはその後動かさない(開く・閉じる・兄弟の切り替えで、ほかのカードの場所が変わらず、場所で覚えられる)。
+// ただし兄弟の枝の間に新しいカードの入る空きが無い時は、下の兄弟の枝を足りない分だけ下げる。
 // カードの大きさが変わって(表示の設定・読み直し)重なった時だけ、重なった相手を近くの空きへ移す。
 const fieldHits = (a, ax, ay, b) => ax < b.x + b.w + FIELD.HGAP && b.x < ax + a.w + FIELD.HGAP && ay < b.y + b.h + FIELD.VGAP && b.y < ay + a.h + FIELD.VGAP;
 
-// x の位置で、y に一番近い、ほかのカードと重ならない y
-function fieldFreeY(fv, c, x, y) {
+// x の位置で、y に一番近い、ほかのカードと重ならない y。lo / hi: カードの上端・下端が入るべき範囲(省略は制限なし)。範囲の中に空きが無ければ null
+function fieldFreeY(fv, c, x, y, lo = -Infinity, hi = Infinity) {
   const others = fv.cards.filter((k) => k !== c && k.placed);
-  const fits = (yy) => !others.some((k) => fieldHits(c, x, yy, k));
-  if (fits(y)) return y;
-  const cand = [];
+  const fits = (yy) => yy >= lo && yy + c.h <= hi && !others.some((k) => fieldHits(c, x, yy, k));
+  const want = clamp(y, lo, hi - c.h);
+  if (fits(want)) return want;
+  const cand = [lo, hi - c.h];
   for (const k of others) cand.push(k.y + k.h + FIELD.VGAP, k.y - c.h - FIELD.VGAP);
-  return cand.filter(fits).sort((a, b) => Math.abs(a - y) - Math.abs(b - y))[0] ?? y;
+  return cand.filter((yy) => Number.isFinite(yy) && fits(yy)).sort((a, b) => Math.abs(a - y) - Math.abs(b - y))[0] ?? null;
+}
+
+// 枝(カードとその子孫の、置いてあるカード)の上端と下端
+function fieldSpan(c) {
+  let top = Infinity, bot = -Infinity;
+  const walk = (q) => { if (q.placed) { top = Math.min(top, q.y); bot = Math.max(bot, q.y + q.h); } q.kids.forEach(walk); };
+  walk(c);
+  return { top, bot };
+}
+
+// 新しいカード c を置いてよい y の範囲。c と各祖先について、親の中で上の行の兄弟の枝より下(lo)、下の行の兄弟の枝より上(hi)。
+// after: 下の行の兄弟の枝のカード(空きが足りない時に押し下げる)
+function fieldOrderRange(c) {
+  let lo = -Infinity, hi = Infinity;
+  const after = [];
+  for (let a = c; a.parent; a = a.parent) {
+    for (const s of a.parent.kids) {
+      if (s === a) continue;
+      const sp = fieldSpan(s);
+      if (sp.top === Infinity) continue;
+      if (s.row < a.row) { lo = Math.max(lo, sp.bot + FIELD.VGAP); continue; }
+      hi = Math.min(hi, sp.top - FIELD.VGAP);
+      const walk = (q) => { if (q.placed) after.push(q); q.kids.forEach(walk); };
+      walk(s);
+    }
+  }
+  return { lo, hi, after };
 }
 
 // 木をたどって、描く順のカードの一覧を作り直す
@@ -199,7 +229,15 @@ function fieldPlace(fv, c) {
   if (p) {
     const want = p.y + fieldRowY(p, c.row) - FIELD.HEAD / 2;
     c.x = p.x + p.w + FIELD.GAP;
-    c.y = fieldFreeY(fv, c, c.x, want);
+    // 枝の上下の順(親のカードの行の順)を守れる範囲の中で、一番近い空きに置く。
+    // 範囲に入りきらない時だけ、上の兄弟の枝のすぐ下に置き、下の兄弟の枝をまとめて足りない分だけ下げる
+    const { lo, hi, after } = fieldOrderRange(c);
+    c.y = fieldFreeY(fv, c, c.x, want, lo, hi);
+    if (c.y == null) {
+      c.y = Number.isFinite(lo) ? lo : Number.isFinite(hi) ? hi - c.h : want;
+      const d = c.y + c.h - hi;
+      if (d > 0) for (const k of after) k.y += d;
+    }
     Object.assign(c, { dx: p.dx + p.w - 60, dy: p.dy + fieldRowY(p, c.row) - FIELD.HEAD / 2, alpha: 0 });
   } else Object.assign(c, { x: 0, y: 0, dx: 0, dy: 0 });
   c.placed = true;
@@ -220,7 +258,7 @@ function fieldSettle(fv, c) {
   }
   for (const m of moved) for (const k of fv.cards) {
     if (!k.placed || moved.has(k) || !fieldHits(m, m.x, m.y, k)) continue;
-    k.y = fieldFreeY(fv, k, k.x, k.y);
+    k.y = fieldFreeY(fv, k, k.x, k.y) ?? k.y;
   }
   fieldKick(fv);
 }
