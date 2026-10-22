@@ -170,9 +170,10 @@ async function fieldLoad(fv, c, force) {
 // ------------------------------------------------------------------ 配置(一度置いたカードは動かさない)
 // 新しいカードは、親のカードのそのフォルダの行に見出しをそろえた位置に置く。ほかのカードと重なる時は、一番近い空き(上か下)に置く。
 // 兄弟の枝どうし(各段で)は、親のカードの行の順に上から並べる。
-// 置いたカードはその後動かさない(開く・閉じる・兄弟の切り替えで、ほかのカードの場所が変わらず、場所で覚えられる)。
-// ただし兄弟の枝の間に新しいカードの入る空きが無い時は、下の兄弟の枝を足りない分だけ下げる。
-// カードの大きさが変わって(表示の設定・読み直し)重なった時だけ、重なった相手を近くの空きへ移す。
+// 置いたカードはその後動かさない(開く・閉じるで、ほかのカードの場所が変わらず、場所で覚えられる)。
+// ただし兄弟の枝の間に新しいカードの入る空きが無い時と、カードが伸びて下の兄弟の枝にかかった時は、下の兄弟の枝を足りない分だけ下げる。
+// Ctrl+↑↓ で中身を替えたカードは、新しく開いたのと同じ決め方で置き直す。
+// カードの大きさが変わって(表示の設定・読み直し)、それでもほかのカードと重なった時だけ、重なった相手を近くの空きへ移す。
 const fieldHits = (a, ax, ay, b) => ax < b.x + b.w + FIELD.HGAP && b.x < ax + a.w + FIELD.HGAP && ay < b.y + b.h + FIELD.VGAP && b.y < ay + a.h + FIELD.VGAP;
 
 // x の位置で、y に一番近い、ほかのカードと重ならない y。lo / hi: カードの上端・下端が入るべき範囲(省略は制限なし)。範囲の中に空きが無ければ null
@@ -222,29 +223,35 @@ function fieldCollect(fv) {
   fieldKick(fv);
 }
 
+// 親のカードの行に見出しをそろえたい c の y を決める。枝の上下の順(親のカードの行の順)を守れる範囲の中で、一番近い空きに置く。
+// 範囲に入りきらない時だけ、上の兄弟の枝のすぐ下に置き、下の兄弟の枝をまとめて足りない分だけ下げる
+function fieldOrderY(fv, c) {
+  const p = c.parent;
+  const want = p.y + fieldRowY(p, c.row) - FIELD.HEAD / 2;
+  const { lo, hi, after } = fieldOrderRange(c);
+  const y = fieldFreeY(fv, c, c.x, want, lo, hi);
+  if (y != null) return y;
+  const yy = Number.isFinite(lo) ? lo : Number.isFinite(hi) ? hi - c.h : want;
+  fieldPush(after, yy + c.h - hi);
+  return yy;
+}
+const fieldPush = (cards, d) => { if (d > 0) for (const k of cards) k.y += d; };
+
 // 読み込んで大きさの決まった新しいカードを置く。親のカードのその行から伸びてくる
 function fieldPlace(fv, c) {
   const p = c.parent;
   fieldCollect(fv);
   if (p) {
-    const want = p.y + fieldRowY(p, c.row) - FIELD.HEAD / 2;
     c.x = p.x + p.w + FIELD.GAP;
-    // 枝の上下の順(親のカードの行の順)を守れる範囲の中で、一番近い空きに置く。
-    // 範囲に入りきらない時だけ、上の兄弟の枝のすぐ下に置き、下の兄弟の枝をまとめて足りない分だけ下げる
-    const { lo, hi, after } = fieldOrderRange(c);
-    c.y = fieldFreeY(fv, c, c.x, want, lo, hi);
-    if (c.y == null) {
-      c.y = Number.isFinite(lo) ? lo : Number.isFinite(hi) ? hi - c.h : want;
-      const d = c.y + c.h - hi;
-      if (d > 0) for (const k of after) k.y += d;
-    }
+    c.y = fieldOrderY(fv, c);
     Object.assign(c, { dx: p.dx + p.w - 60, dy: p.dy + fieldRowY(p, c.row) - FIELD.HEAD / 2, alpha: 0 });
   } else Object.assign(c, { x: 0, y: 0, dx: 0, dy: 0 });
   c.placed = true;
   fieldKick(fv);
 }
 
-// c の大きさが変わった後。広がって子のカードにかかったら、その枝を右へずらす。重なったほかのカードは近くの空きへ移す
+// c の大きさが変わった後。広がって子のカードにかかったら、その枝を右へずらす。
+// 下へ伸びて下の兄弟の枝(各段)にかかったら、その枝をまとめて下げる(上下の順を保つ)。それでも重なるカードは近くの空きへ移す
 function fieldSettle(fv, c) {
   if (!c.placed) return;
   fieldCollect(fv);
@@ -256,6 +263,8 @@ function fieldSettle(fv, c) {
     const walk = (q) => { q.x += d; moved.add(q); q.kids.forEach(walk); };
     walk(k);
   }
+  const { hi, after } = fieldOrderRange(c);
+  fieldPush(after, fieldSpan(c).bot - hi);
   for (const m of moved) for (const k of fv.cards) {
     if (!k.placed || moved.has(k) || !fieldHits(m, m.x, m.y, k)) continue;
     k.y = fieldFreeY(fv, k, k.x, k.y) ?? k.y;
@@ -350,7 +359,10 @@ async function fieldSibling(leaf, d) {
   fieldApply(c);
   fieldCollect(fv);
   fieldFocus(leaf, c);
-  if (await fieldLoad(fv, c)) { fieldSettle(fv, c); if (fv.cur === c) fieldCursor(leaf, c.i); } // カードの場所はそのまま
+  if (!(await fieldLoad(fv, c))) return;
+  // 新しく開いた時と同じく、親のカードの行の順を守る場所へ移す(今の場所からなめらかに動く)
+  if (c.parent) { fieldCollect(fv); c.y = fieldOrderY(fv, c); fieldKick(fv); }
+  if (fv.cur === c) fieldCursor(leaf, c.i);
 }
 
 // ひとつ上のフォルダのカードを根にして、今までの木をその子としてつなぐ
