@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.5.1] - 2026-10-23
+
 ### 変更
 - フィールドファイラのカードの配置の計算を `src/fieldlayout.js` に分けて、テスト(`test/fieldlayout.test.js`)を付けた。`npm test` で動く。
   配置の決め方は変わらない。
@@ -314,7 +316,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.5.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.11...v0.5.0
 [0.4.11]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.10...v0.4.11
 [0.4.10]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.9...v0.4.10
