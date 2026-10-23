@@ -86,11 +86,14 @@ function applyTheme() {
   const mode = C.behavior.sidebarMode;
   document.body.classList.toggle('no-sidebar', mode === 'hidden');
   document.body.classList.toggle('sb-compact', mode === 'compact');
-  $('#tb-sidebar').title = `サイドバー(次は${{ full: '細い列', compact: '非表示', hidden: '全部表示' }[mode] || '細い列'})`;
+  document.querySelectorAll('.sb-toggle').forEach((b) => { b.title = sidebarTip(); });
 }
+const sidebarTip = () => `サイドバー(次は${{ full: '細い列', compact: '非表示', hidden: '全部表示' }[C.behavior.sidebarMode] || '細い列'})`;
 // タイトルバーの ☰: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す
 const SB_MODES = ['full', 'compact', 'hidden'];
 const cycleSidebar = () => api.config.set('behavior.sidebarMode', SB_MODES[(SB_MODES.indexOf(C.behavior.sidebarMode) + 1) % SB_MODES.length]);
+// ☰ は、タブの一番左上のペインの見出しの先頭に置く(上のタイトルバーは無い)
+const topLeftLeaf = (n) => (n.k === 'leaf' ? n : topLeftLeaf(n.a));
 
 const tabTitle = (tab) => leafTitle(activeLeaf(tab));
 function leafTitle(l) {
@@ -598,6 +601,7 @@ function buildLeaf(tab, leaf) {
   else if (leaf.type === 'home') buildHome(tab, leaf, head, body);
   else if (leaf.type === 'field') buildField(tab, leaf, head, body);
   else buildSettings(tab, leaf, head, body);
+  if (topLeftLeaf(tab.root) === leaf) head.prepend(h('button', { class: 'ibtn sb-toggle', title: sidebarTip(), onclick: cycleSidebar }, ico('menu')));
   return pane;
 }
 
@@ -982,17 +986,10 @@ async function boot() {
   initFiles();
   S.appSupported = await api.app.supported();
 
-  $('#tb-sidebar').append(ico('menu'));
-  $('#tb-fullscreen').append(ico('fullscreen'));
-  $('#tb-max').append(ico('maximize'));
   $('#new-tab').append(ico('plus'));
   $('#open-settings').append(ico('settings'), h('span', { class: 'label' }, '設定'));
   document.body.classList.toggle('sub', IS_SUB);
-  if (IS_SUB) $('#tb-title').textContent = `PRELUDE ${WIN_KEY.replace(/^sub(\d+)$/, (_m, n) => `画面${Number(n) + 1}`)}`;
   api.win.screens().then((list) => { S.screens = list || []; });
-  $('#tb-sidebar').onclick = cycleSidebar;
-  $('#tb-fullscreen').onclick = () => api.win.cmd('toggleFullscreen');
-  $('#tb-max').onclick = () => api.win.cmd('toggleMaximize');
   $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [
     { header: '新しいタブ' },
     { label: 'ホーム', icon: 'home', run: () => openTab('home') },

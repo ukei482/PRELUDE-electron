@@ -35,6 +35,8 @@ const LAUNCHER_COMMANDS = [
   { name: '新しいタブ(フォルダ)', keys: 'new tab folder files あたらしい', run: () => openTab('files') },
   { name: '新しいタブ(フィールド)', keys: 'new tab field tree folder files ふぃーるど あたらしい', run: () => openTab('field') },
   { name: '全画面の切り替え', keys: 'fullscreen ぜんがめん', when: () => !IS_SUB, run: () => api.win.cmd('toggleFullscreen') },
+  { name: '最大化の切り替え', keys: 'maximize window さいだいか', when: () => !IS_SUB, run: () => api.win.cmd('toggleMaximize') },
+  { name: 'サイドバーの切り替え', keys: 'sidebar tabs さいどばー たぶ', run: () => cycleSidebar() },
   { name: 'スクリーンショット(範囲を選ぶ)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい', run: () => api.quick.do('screenshot', 'region') },
   { name: 'スクリーンショット(今の画面)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい', run: () => api.quick.do('screenshot', 'screen') },
   { name: 'スクリーンショット(前面の窓)', keys: 'screenshot capture print window すくりーんしょっと まど', run: () => api.quick.do('screenshot', 'window') },

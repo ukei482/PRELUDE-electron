@@ -182,7 +182,7 @@ function createShellWindow(key) {
     height: sub ? 800 : 900,
     minWidth: 640,
     minHeight: 400,
-    frame: false, // タイトルバーは自前で描く
+    frame: false, // タイトルバーは無い(☰ は左上のペインの見出しに置く)
     show: false,
     title: sub ? `PRELUDE:${key}` : 'PRELUDE',
     backgroundColor: config.get('appearance.bg'),

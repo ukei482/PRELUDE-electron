@@ -58,7 +58,7 @@ const SCHEMA = [
       { path: 'behavior.downloadDir', label: 'ダウンロードの開始フォルダ（空=ダウンロードフォルダ）', type: 'text' },
       { path: 'behavior.showHidden', label: '隠しファイル（.で始まる）を表示', type: 'bool' },
       { path: 'behavior.terminal', label: '端末のコマンド（%d がフォルダ。空=Konsole / Windows Terminal）', type: 'text' },
-      { path: 'behavior.sidebarMode', label: 'サイドバー（タイトルバーの ☰ で 全部→細い列→非表示 の順に切り替え）', type: 'select', options: [['full', '全部表示'], ['compact', '細い列（アイコンだけ）'], ['hidden', '非表示']] },
+      { path: 'behavior.sidebarMode', label: 'サイドバー（左上の ☰ で 全部→細い列→非表示 の順に切り替え）', type: 'select', options: [['full', '全部表示'], ['compact', '細い列（アイコンだけ）'], ['hidden', '非表示']] },
       { path: 'behavior.startFullscreen', label: '起動時に全画面で開く（次回起動から）', type: 'bool' },
       { path: 'behavior.subDisplays', label: '2枚目以降の画面にも PRELUDE の窓を開く', type: 'bool' },
     ],

@@ -37,20 +37,12 @@ input:focus, select:focus { border-color: var(--accent); }
 .textbtn.primary:hover { filter: brightness(1.15); background: var(--accent); }
 .textbtn.danger { color: var(--danger); }
 
-/* ---- titlebar */
-#titlebar {
-  display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 6px; flex: none;
-  background: var(--panel); -webkit-app-region: drag;
-}
-#titlebar button { -webkit-app-region: no-drag; }
-#tb-title { font-weight: 600; letter-spacing: .12em; color: var(--accent); margin-left: 4px; }
-.tbtn.close:hover { background: var(--danger) !important; color: #fff; }
 
 /* ---- layout */
 #main { flex: 1; display: flex; min-height: 0; }
 #sidebar {
   width: var(--sbw); flex: none; display: flex; flex-direction: column; min-height: 0;
-  background: var(--panel); border-top: 1px solid var(--line); padding: 6px; gap: 2px; overflow: hidden;
+  background: var(--panel); padding: 6px; gap: 2px; overflow: hidden;
 }
 body.no-sidebar #sidebar { display: none; }
 .sb-title {
@@ -61,7 +53,7 @@ body.no-sidebar #sidebar { display: none; }
 #tab-list { flex: 1; overflow-y: auto; min-height: 0; }
 .sb-foot { border-top: 1px solid var(--line); padding-top: 4px; }
 /* 2枚目以降の画面の窓(role=sub): 設定・全画面・最大化は主画面だけ */
-body.sub .sb-foot, body.sub #tb-fullscreen, body.sub #tb-max { display: none; }
+body.sub .sb-foot { display: none; }
 .item {
   display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px; border-radius: 6px; cursor: pointer;
 }
@@ -125,6 +117,7 @@ body.sb-compact #open-settings { padding: 6px; }
 .pane-head { display: flex; align-items: center; gap: 2px; height: 36px; flex: none; padding: 0 4px; background: var(--panel); }
 .pane-head .addr { flex: 1; margin: 0 4px; height: 26px; min-width: 48px; }
 .pane-head { overflow: hidden; }
+.pane-head .sb-toggle { margin-right: 2px; }
 .pane-head .ptitle { flex: 1; font-weight: 600; margin-left: 6px; }
 .pane-body { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .web-slot { position: absolute; inset: 0; background: var(--bg); }
