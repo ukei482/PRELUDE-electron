@@ -68,23 +68,25 @@ body.sub .sb-foot { display: none; }
 .item img { -webkit-user-drag: none; }
 #tab-count { margin-left: 4px; opacity: .8; }
 /* 分割しているタブのペイン(タブの下に1行ずつ) */
-.item.pane-item { height: 24px; padding-left: 22px; font-size: .92em; color: var(--dim); }
-.item.pane-item.active { color: var(--text); background: none; box-shadow: inset 2px 0 0 var(--accent); }
-.item.pane-item .ico, .item.pane-item img.fav { width: 14px; height: 14px; }
-.item.pane-item .ico svg { width: 14px; height: 14px; }
 /* ブックマークのフォルダ(1段だけ) */
 .item.bm-folder .chev { width: 10px; flex: none; color: var(--dim); font-size: .8em; margin-right: -4px; }
 .item.in-folder { padding-left: 24px; }
 .item.drop-in { background: var(--panel2); box-shadow: inset 0 0 0 1px var(--accent); }
 /* 2分割のタブ(Arc と同じく1行を左右に分ける)。+1 は細い列でだけ出す */
-.item.pair { gap: 0; padding: 0 2px; }
-.item.pair > .badge { display: none; }
-.item .seg { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 4px; border-radius: 4px; }
+/* 分割したタブ: 1行をペインの数で分ける。狭くて名前が入らなければアイコンだけ。+N は 7 枚以上で隠れた分、細い列では cnt を出す */
+.item.multi { gap: 0; padding: 0 2px 0 4px; }
+.item .badge.cnt { display: none; }
+.item .seg { container-type: inline-size; flex: 1 1 0; min-width: 0; height: 24px; border-radius: 4px; }
+.item .seg-in { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 4px; }
 .item .seg + .seg { margin-left: 3px; position: relative; }
 .item .seg + .seg::before { content: ''; position: absolute; left: -2px; top: 5px; bottom: 5px; width: 1px; background: var(--line); }
 .item .seg:hover { background: var(--panel2); }
 .item.active .seg.cur { background: var(--panel); }
-.item.loading .seg > .ico, .item.loading .seg > img.fav { animation: sb-pulse .7s ease-in-out infinite alternate; }
+@container (max-width: 64px) { .seg .label, .seg .snd { display: none; } .seg-in { justify-content: center; } }
+/* 番号(名札)。ランチャーで 3 / b3、Ctrl+1〜9 で呼ぶ */
+.item .num { flex: none; min-width: 12px; font-size: .72em; color: var(--dim); text-align: right; margin-right: -2px; font-variant-numeric: tabular-nums; }
+.item.multi .num { margin-right: 2px; }
+.item.loading .seg-in > .ico, .item.loading .seg-in > img.fav { animation: sb-pulse .7s ease-in-out infinite alternate; }
 /* 読み込み中のタブはアイコンを点滅させる */
 .item.loading > .ico, .item.loading > img.fav { animation: sb-pulse .7s ease-in-out infinite alternate; }
 @keyframes sb-pulse { from { opacity: 1; } to { opacity: .3; } }
@@ -100,17 +102,25 @@ body.sub .sb-foot { display: none; }
 body.sb-compact #sidebar { width: 44px; padding: 6px 4px; }
 body.sb-compact .sb-title { justify-content: center; padding: 4px 0 2px; }
 body.sb-compact .sb-title .label { display: none; }
-body.sb-compact .sb-title:first-child { border-bottom: 1px solid var(--line); padding: 0; margin: 2px 6px 4px; }
-body.sb-compact #bm-list .empty, body.sb-compact .item .label, body.sb-compact .item .x, body.sb-compact .item.pane-item { display: none; }
+body.sb-compact .sb-title:first-child { display: none; }
+/* 細い列は、ブックマークとタブを別々の枠に分けて、それぞれでスクロールする */
+body.sb-compact #bm-list, body.sb-compact #tab-list { background: color-mix(in srgb, var(--bg) 40%, transparent); border-radius: 8px; padding: 2px 0; scrollbar-width: none; }
+body.sb-compact #bm-list { max-height: 40%; flex: none; }
+body.sb-compact #bm-list:empty, body.sb-compact #bm-list:has(> .empty:only-child) { display: none; }
+body.sb-compact .item .num { position: absolute; left: 1px; top: 1px; font-size: .6em; line-height: 1; min-width: 0; text-align: left; margin: 0; }
+body.sb-compact #bm-list .empty, body.sb-compact .item .label, body.sb-compact .item .x { display: none; }
 body.sb-compact .item { justify-content: center; padding: 0; height: 34px; }
 body.sb-compact .item.active { box-shadow: inset 2px 0 0 var(--accent); }
 body.sb-compact .item .badge { position: absolute; right: 1px; bottom: 1px; font-size: .68em; line-height: 1; }
 body.sb-compact .item.open .badge { font-size: .5em; }
 body.sb-compact .item.bm-folder .chev, body.sb-compact .item.in-folder { display: none; }
-body.sb-compact .item.pair { padding: 0; }
 body.sb-compact .item .seg:not(.cur) { display: none; }
-body.sb-compact .item .seg { flex: none; padding: 0; background: none !important; }
-body.sb-compact .item.pair > .badge { display: block; }
+body.sb-compact .item .seg { flex: none; padding: 0; background: none !important; container-type: normal; }
+body.sb-compact .item.multi { padding: 0; }
+body.sb-compact .item .seg::before { display: none; }
+body.sb-compact .item .seg-in { padding: 0; }
+body.sb-compact .item .badge.hidden-n { display: none; }
+body.sb-compact .item .badge.cnt { display: block; }
 body.sb-compact .item .snd { position: absolute; right: -3px; top: -2px; width: 16px; height: 16px; }
 body.sb-compact .item .snd .ico, body.sb-compact .item .snd svg { width: 11px; height: 11px; }
 body.sb-compact .sb-foot { display: flex; justify-content: center; }

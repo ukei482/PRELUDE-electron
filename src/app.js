@@ -179,36 +179,28 @@ function renderSidebar() {
     const l = activeLeaf(tab);
     const ls = leaves(tab.root);
     const place = leafPlace(l);
-    // 2分割のタブは Arc と同じく1行を左右に分けて、両方のペインのアイコンと名前を出す(押した側のペインへ)。
-    // 3分割以上は今のペインと +N を出し、ペインの一覧を下に並べる。細い列では今のペインのアイコンと +N だけ
+    // 分割したタブは Arc と同じく1行をペインの数で分けて、それぞれのアイコンと名前を出す(押した側のペインへ)。
+    // 幅が足りなければ名前を消してアイコンだけにする。7枚以上は 6 枚まで出して残りは +N。細い列では今のペインのアイコンと +N だけ
     const seg = (x) => h('span', {
       class: 'seg' + (x.id === l.id ? ' cur' : ''), title: leafTitle(x) + (leafPlace(x) ? '\n' + leafPlace(x) : ''),
       onclick: (e) => { e.stopPropagation(); tab.activePane = x.id; showTab(tab); },
-    }, leafIconEl(x), h('span', { class: 'label' }, leafTitle(x)), soundBtn([x]));
-    const body = ls.length === 2 ? [seg(ls[0]), seg(ls[1])]
-      : [leafIconEl(l), h('span', { class: 'label' }, tabTitle(tab)), soundBtn(ls)];
+    }, h('span', { class: 'seg-in' }, leafIconEl(x), h('span', { class: 'label' }, leafTitle(x)), soundBtn([x])));
+    const multi = ls.length > 1;
+    const shown = ls.length > 7 ? ls.slice(0, 6) : ls;
+    if (multi && !shown.includes(l)) shown[shown.length - 1] = l; // 今のペインは必ず出す
+    const body = multi ? shown.map(seg) : [leafIconEl(l), h('span', { class: 'label' }, tabTitle(tab)), soundBtn(ls)];
     const el = h('div', {
-      class: 'item' + (ls.length === 2 ? ' pair' : '') + (tab.id === S.active ? ' active' : '') + (ls.some((x) => x.loading) ? ' loading' : ''),
-      title: ls.length === 2 ? '' : tabTitle(tab) + (place && place !== tabTitle(tab) ? '\n' + place : '') + (ls.length > 1 ? `\n(${ls.length} 枚のペイン)` : ''),
+      class: 'item' + (multi ? ' multi' : '') + (ls.length > shown.length ? ' more' : '') + (tab.id === S.active ? ' active' : '') + (ls.some((x) => x.loading) ? ' loading' : ''),
+      title: multi ? '' : tabTitle(tab) + (place && place !== tabTitle(tab) ? '\n' + place : ''),
       onclick: () => showTab(tab),
       onauxclick: (e) => { if (e.button === 1) closeTab(tab); },
       oncontextmenu: (e) => { e.preventDefault(); tabMenu(tab, e.clientX, e.clientY); },
-    }, ...body, ls.length > 1 ? h('span', { class: 'badge' }, '+' + (ls.length - 1)) : null,
+    }, h('span', { class: 'num', title: `タブ ${tab.num}(ランチャーで ${tab.num}${tab.num <= 9 ? `、Ctrl+${tab.num}` : ''})` }, String(tab.num ?? '')),
+    ...body, ls.length > shown.length ? h('span', { class: 'badge hidden-n', title: `ほかに ${ls.length - shown.length} 枚` }, '+' + (ls.length - shown.length)) : null,
+    multi ? h('span', { class: 'badge cnt' }, '+' + (ls.length - 1)) : null,
     h('button', { class: 'ibtn x', title: '閉じる', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close')));
     sortable(el, S.tabs, tab, render);
     tl.append(el);
-    // 3分割以上のタブは、ペインを1行ずつ下に並べる(押すとそのペインへ。細い列では出さない)
-    if (ls.length > 2) {
-      for (const x of ls) {
-        tl.append(h('div', {
-          class: 'item pane-item' + (tab.id === S.active && x.id === l.id ? ' active' : ''),
-          title: leafTitle(x) + (leafPlace(x) ? '\n' + leafPlace(x) : ''),
-          onclick: () => { tab.activePane = x.id; showTab(tab); },
-          onauxclick: (e) => { if (e.button === 1) closeLeaf(tab, x); },
-        }, leafIconEl(x), h('span', { class: 'label' }, leafTitle(x)), soundBtn([x]),
-        h('button', { class: 'ibtn x', title: 'ペインを閉じる', onclick: (e) => { e.stopPropagation(); closeLeaf(tab, x); } }, ico('close'))));
-      }
-    }
   }
 }
 
@@ -258,7 +250,7 @@ function bmRow(b, cur, inFolder = false) {
     title: `${b.title || b.target}\n${b.target}`,
     onclick: () => openBookmark(b),
     oncontextmenu: (e) => { e.preventDefault(); bmMenu(b, e.clientX, e.clientY); },
-  }, ico(bmIcon(b)), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
+  }, h('span', { class: 'num', title: `ブックマーク b${b.num}(ランチャーで b${b.num})` }, b.num ? 'b' + b.num : ''), ico(bmIcon(b)), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
   bmDraggable(el, b);
   return el;
 }
@@ -267,6 +259,7 @@ function bmMenu(b, x, y) {
   popup([
     { label: '名前を変更', icon: 'text', run: () => renameBookmark(b) },
     { label: 'フォルダへ移す…', icon: 'folder', run: () => moveToFolderMenu(b, x, y) },
+    { label: `番号を変える…(今は b${b.num})`, icon: 'text', run: () => renumberBookmark(b) },
     tab ? { label: '今の配置で上書き', icon: 'split-h', run: () => { b.root = serNode(tab.root); b.target = layoutLabel(b.root); saveBookmarks(); toast('今の配置で上書きしました'); } } : null,
     { sep: true },
     { label: '削除', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((z) => z !== b); saveBookmarks(); renderSidebar(); } },
@@ -348,6 +341,46 @@ function bmDraggable(el, b) {
   };
 }
 
+// ---- 番号(名札)。タブは開いた時に空いている一番小さい番号(全部の画面の窓で重ならない。main.js が振る)、
+// ブックマークは b1, b2… で、どちらも並べ替えても変わらない。ランチャーで「3」「b3」、Ctrl+1〜9、prelude.sh tab 3 で呼ぶ
+const reportNums = () => api.tab.nums(S.tabs.map((t) => t.num).filter(Boolean));
+async function renumberTab(tab) {
+  const v = await askText('タブの番号', String(tab.num));
+  const n = parseInt(v, 10);
+  if (!(n > 0) || n === tab.num) return;
+  const other = S.tabs.find((t) => t.num === n);
+  if (other) other.num = tab.num; // この窓のタブが使っていれば入れ替える
+  else if (api.tab.where(n)) { toast(`番号 ${n} は${api.tab.where(n).label}のタブが使っています`); return; }
+  else api.tab.allocNum(n);
+  tab.num = n;
+  render();
+}
+function gotoTabNum(n) {
+  const tab = S.tabs.find((t) => t.num === n);
+  if (tab) showTab(tab); else api.tab.goto(String(n)); // 別の画面の窓にあれば、その窓が前に出て切り替える
+}
+const nextBmNum = () => { const used = new Set(S.bookmarks.map((b) => b.num)); let n = 1; while (used.has(n)) n++; return n; };
+async function renumberBookmark(b) {
+  const v = await askText('ブックマークの番号(b の後の数字)', String(b.num));
+  const n = parseInt(String(v).replace(/^b/i, ''), 10);
+  if (!(n > 0) || n === b.num) return;
+  const other = S.bookmarks.find((x) => x.num === n);
+  if (other) other.num = b.num;
+  b.num = n;
+  saveBookmarks();
+  renderSidebar();
+}
+api.tab.onGoto(({ bookmark, num, missing }) => {
+  if (missing) { toast(`タブ ${num} はありません`); return; }
+  if (bookmark) {
+    const b = S.bookmarks.find((x) => x.num === num && x.kind !== 'folder');
+    if (b) openBookmark(b); else toast(`ブックマーク b${num} はありません`);
+    return;
+  }
+  const tab = S.tabs.find((t) => t.num === num);
+  if (tab) showTab(tab);
+});
+
 // タブの右クリックメニュー
 function tabMenu(tab, x, y) {
   const l = activeLeaf(tab);
@@ -360,6 +393,7 @@ function tabMenu(tab, x, y) {
     ['web', 'files', 'field'].includes(l.type) ? { label: '再読込', icon: 'reload', run: () => (l.type === 'web' ? webCmd(l, 'reload') : l.type === 'files' ? reloadDir(l) : fieldReload(l)) } : null,
     web.length ? { label: muted ? '音を出す' : '音を消す', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
     { label: '複製', icon: 'plus', run: () => duplicateTab(tab) },
+    { label: `番号を変える…(今は ${tab.num})`, icon: 'text', run: () => renumberTab(tab) },
     ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'ブックマークに追加', icon: 'bookmark', run: () => addBookmark(l) } : null,
     ls.length > 1 ? { label: '分割ごとブックマーク', icon: 'split-h', run: () => addLayoutBookmark(tab) } : null,
     others.length ? { sep: true } : null,
@@ -384,7 +418,7 @@ function showTab(tab) {
 function openTab(kind, o = {}) {
   if (kind === 'app' && !S.appSupported) kind = 'files';
   const leaf = makeLeaf(kind, o);
-  const tab = { id: nid('t'), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(0), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null };
   const pos = C.tabs?.newTabPosition;
   const cur = S.tabs.findIndex((t) => t.id === S.active);
   if (pos === 'top') S.tabs.unshift(tab);
@@ -431,7 +465,7 @@ S.closed = [];
 function rememberClosed(tab) {
   const ls = leaves(tab.root);
   if (ls.length === 1 && ls[0].type === 'home') return; // 何もしていないホームだけのタブは覚えない
-  S.closed.unshift({ bookmarkId: tab.bookmarkId, root: serNode(tab.root), activeIndex: ls.findIndex((l) => l.id === tab.activePane), index: S.tabs.indexOf(tab) });
+  S.closed.unshift({ num: tab.num, bookmarkId: tab.bookmarkId, root: serNode(tab.root), activeIndex: ls.findIndex((l) => l.id === tab.activePane), index: S.tabs.indexOf(tab) });
   S.closed.length = Math.min(S.closed.length, 20);
 }
 function reopenClosedTab() {
@@ -439,14 +473,14 @@ function reopenClosedTab() {
   if (!c) { toast('開き直せるタブはありません'); return; }
   // ブックマークのタブがもう開いていれば、ブックマークとのつながりは外す(1ブックマーク = 最大1タブ)
   const bookmarkId = c.bookmarkId && !S.tabs.some((t) => t.bookmarkId === c.bookmarkId) && S.bookmarks.some((b) => b.id === c.bookmarkId) ? c.bookmarkId : null;
-  insertTab(c.root, { bookmarkId, activeIndex: c.activeIndex, index: c.index });
+  insertTab(c.root, { bookmarkId, num: c.num, activeIndex: c.activeIndex, index: c.index }); // 番号が空いていれば元の番号
 }
 // タブの複製。分割もそのまま写す(ブックマークとのつながりは写さない)
 const duplicateTab = (tab) => insertTab(serNode(tab.root), { activeIndex: leaves(tab.root).findIndex((l) => l.id === tab.activePane), index: S.tabs.indexOf(tab) + 1 });
 function insertTab(data, o) {
   const root = deserNode(data);
   const ls = leaves(root);
-  const tab = { id: nid('t'), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null };
   S.tabs.splice(clamp(o.index ?? 0, 0, S.tabs.length), 0, tab);
   S.active = tab.id;
   render();
@@ -458,7 +492,7 @@ function insertTab(data, o) {
 // o.quiet: 残りのタブが無くなっても新しいタブを開かない(画面を外して全部移すとき)
 const LIVE_ONLY = new Set(['el', 'ui', 'slot', 'vl', 'apps', 'entries', 'view', 'sel', 'ta', 'fv']); // 画面の部品など、移った先で作り直すもの
 function moveTab(tab, to, o = {}) {
-  const data = JSON.parse(JSON.stringify({ bookmarkId: tab.bookmarkId, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
+  const data = JSON.parse(JSON.stringify({ num: tab.num, bookmarkId: tab.bookmarkId, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
   const i = S.tabs.indexOf(tab);
   S.tabs.splice(i, 1);
   if (S.active === tab.id) S.active = S.tabs[Math.min(i, S.tabs.length - 1)]?.id ?? null;
@@ -470,7 +504,7 @@ function moveTab(tab, to, o = {}) {
 // 別の窓から移ってきたタブ。ペインは id も状態もそのまま(Webビューは作り直さず、アプリも起動し直さない)
 function adoptTab(data) {
   const ids = new Set(leaves(data.root).map((l) => l.id));
-  const tab = { id: nid('t'), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(data.num || 0), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null };
   // フォルダペインは一覧を持ってこない(大きい)ので、同じフォルダを読み直す。並べ方と戻る/進むの履歴は引き継ぐ
   for (const l of leaves(tab.root)) if (l.type === 'files') Object.assign(l, newFilesState(l), { hist: l.hist || { back: [], fwd: [] }, loaded: false, paintQ: false });
   S.tabs.unshift(tab);
@@ -511,7 +545,7 @@ const bmToJson = (b) => {
   const o = b.kind === 'app' ? { cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' }
     : b.kind === 'tab' ? { root: b.root }
     : { [b.kind === 'web' ? 'url' : 'path']: b.target };
-  return { id: b.id, kind: b.kind, title: b.title, ...(b.folder ? { folder: b.folder } : {}), ...o };
+  return { id: b.id, kind: b.kind, num: b.num, title: b.title, ...(b.folder ? { folder: b.folder } : {}), ...o };
 };
 function loadBookmarks() {
   S.bookmarks = [];
@@ -524,15 +558,25 @@ function loadBookmarks() {
     else if (b.kind === 'app' && (b.cmd || b.webUrl)) S.bookmarks.push({ id: b.id, kind: 'app', folder, title: b.title || '', target: b.webUrl || b.cmd, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' });
     else if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, folder, title: b.title || '', target: b.url || b.path || '' });
     else if (b.kind === 'tab' && b.root) S.bookmarks.push({ id: b.id, kind: 'tab', folder, title: b.title || '', root: b.root, target: layoutLabel(b.root) });
-    else S.foreignBm.push(b); // Rust版のアプリ取り込みブックマークなどは保持だけする
+    else { S.foreignBm.push(b); continue; } // Rust版のアプリ取り込みブックマークなどは保持だけする
+    if (b.kind !== 'folder') S.bookmarks[S.bookmarks.length - 1].num = Number(b.num) > 0 ? Number(b.num) : 0;
   }
+  // 番号の無い(この版より前の)ブックマーク・重なった番号には、空いている番号を振って保存する(主画面の窓だけ)
+  const seen = new Set();
+  let changed = false;
+  for (const b of S.bookmarks) {
+    if (b.kind === 'folder') continue;
+    if (!b.num || seen.has(b.num)) { b.num = 0; b.num = nextBmNum(); changed = true; }
+    seen.add(b.num);
+  }
+  if (changed && !IS_SUB) saveBookmarks();
 }
 // 分割ごとのブックマークの説明(中のペインの名前を | でつなぐ)
 const layoutLabel = (root) => leaves(root).map((l) => (l.type === 'web' ? hostOf(l.url || '') : l.type === 'app' ? l.name : l.type === 'files' || l.type === 'field' ? baseName(l.path || '') : l.type === 'home' ? 'ホーム' : '設定') || l.type).join(' | ');
 // 今のタブの配置(分割・各ペインの中身)をそのままブックマークにする。開くと同じ配置で開く
 function addLayoutBookmark(tab) {
   const root = serNode(tab.root);
-  const b = { id: 'b' + Date.now().toString(36), kind: 'tab', folder: '', title: leaves(tab.root).map(leafTitle).join(' | '), root, target: layoutLabel(root) };
+  const b = { id: 'b' + Date.now().toString(36), kind: 'tab', num: nextBmNum(), folder: '', title: leaves(tab.root).map(leafTitle).join(' | '), root, target: layoutLabel(root) };
   S.bookmarks.push(b);
   if (!tab.bookmarkId) tab.bookmarkId = b.id;
   saveBookmarks();
@@ -546,7 +590,7 @@ function addBookmark(leaf) {
     const target = leaf.webUrl || leaf.cmd;
     if (!target) return;
     if (S.bookmarks.some((b) => b.kind === 'app' && b.target === target)) { toast('登録済みです'); return; }
-    S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind: 'app', title: leaf.name || target, target, cmd: leaf.webUrl ? '' : leaf.cmd, cls: leaf.webUrl ? '' : leaf.cls, webUrl: leaf.webUrl || '' });
+    S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind: 'app', num: nextBmNum(), title: leaf.name || target, target, cmd: leaf.webUrl ? '' : leaf.cmd, cls: leaf.webUrl ? '' : leaf.cls, webUrl: leaf.webUrl || '' });
     saveBookmarks();
     renderSidebar();
     toast('ブックマークに追加しました');
@@ -556,7 +600,7 @@ function addBookmark(leaf) {
   const target = kind === 'web' ? leaf.url : leaf.path;
   if (!target) return;
   if (S.bookmarks.some((b) => b.kind === kind && b.target === target)) { toast('登録済みです'); return; }
-  S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind, title: (kind === 'web' ? leaf.title || hostOf(target) : baseName(target)) || target, target });
+  S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind, num: nextBmNum(), title: (kind === 'web' ? leaf.title || hostOf(target) : baseName(target)) || target, target });
   saveBookmarks();
   renderSidebar();
   toast('ブックマークに追加しました');
@@ -686,6 +730,7 @@ function syncViews() {
 
 function render() {
   renderSidebar();
+  reportNums();
   const ws = $('#workspace');
   ws.replaceChildren();
   const tab = activeTab();
@@ -985,7 +1030,7 @@ let saveTimer = 0;
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ bookmarkId: t.bookmarkId, root: serNode(t.root) })) });
+    api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ num: t.num, bookmarkId: t.bookmarkId, root: serNode(t.root) })) });
   }, 600);
 }
 
@@ -993,7 +1038,7 @@ function restore(ws) {
   for (const t of ws.tabs) {
     try {
       const root = deserNode(t.root);
-      S.tabs.push({ id: nid('t'), root, activePane: leaves(root)[0].id, bookmarkId: t.bookmarkId || null });
+      S.tabs.push({ id: nid('t'), num: api.tab.allocNum(t.num || 0), root, activePane: leaves(root)[0].id, bookmarkId: t.bookmarkId || null });
     } catch {}
   }
   if (S.tabs.length) S.active = S.tabs[clamp(ws.active | 0, 0, S.tabs.length - 1)].id;
@@ -1014,6 +1059,7 @@ api.onShortcut(({ action, paneId }) => {
   if (action === 'newTab') openTab(C.behavior.startKind);
   else if (action === 'closeTab') closeTab(tab);
   else if (action === 'reopenTab') reopenClosedTab();
+  else if (action.startsWith('goto:')) gotoTabNum(Number(action.slice(5)));
   else if (action === 'fullscreen') api.win.cmd('toggleFullscreen');
   else if (action === 'focusAddress') focusAddress();
   else if (action === 'launcher') openLauncher();
@@ -1104,6 +1150,7 @@ api.tab.onEvacuate((to) => {
     if (ls.length === 1 && ls[0].type === 'home') continue;
     moveTab(tab, to, { quiet: true });
   }
+  reportNums();
   clearTimeout(saveTimer);
   api.ws.save({ active: 0, tabs: [] }); // 次にこの画面をつないだときは新しいタブから始める
   api.tab.evacuated();
@@ -1163,6 +1210,7 @@ async function boot() {
   new ResizeObserver(() => syncViews()).observe($('#workspace'));
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePopup(); closeLauncher(); closeQuick(); closeNotifications(); } });
 
+  reportNums(); // 再読込の前に使っていた番号を main.js から消してから、保存した番号で戻す
   if (ws && Array.isArray(ws.tabs)) restore(ws);
   if (!S.tabs.length) openTab(C.behavior.startKind);
   else render();
