@@ -1,0 +1,10 @@
+/* CRT(琥珀): 琥珀色の蛍光の一色。字はにじんで光り、画面に走査線が入る */
+@import url("cui.css");
+@import url("crt-common.css");
+:root {
+  --bg: #1a0f02; --panel: #241504; --panel2: #3a2306; --line: #8a5a12;
+  --text: #ffb000; --dim: #b87a00; --accent: #ffd27a; --danger: #ff6a3d;
+  --k-image: #ffb000; --k-video: #ffb000; --k-audio: #ffb000; --k-archive: #ffb000; --k-code: #ffb000; --k-doc: #ffb000; --k-bookmark: #ffb000;
+  --glow: 0 0 4px color-mix(in srgb, var(--text) 55%, transparent);
+  --mono-img: grayscale(1) sepia(1) hue-rotate(-12deg) saturate(3) brightness(.95);
+}

@@ -17,10 +17,19 @@ const KINDS = [
   ['app', 'アプリ'],
 ];
 
+// 見た目のテーマ。classic 以外は src/themes/<id>.css を style.css の後に重ねる(色も形もテーマが決める)
+const THEMES = [
+  ['classic', 'クラシック'],
+  ['terminal', 'ターミナル（黒地・ls の色）'],
+  ['crt', 'CRT（緑の蛍光画面）'],
+  ['amber', 'CRT（琥珀の蛍光画面）'],
+];
+
 const SCHEMA = [
   {
     title: '外観',
     fields: [
+      { path: 'appearance.theme', label: 'テーマ（下の色はクラシックのときだけ使う）', type: 'select', options: THEMES },
       { path: 'appearance.accent', label: 'アクセント色', type: 'color' },
       { path: 'appearance.bg', label: '背景色', type: 'color' },
       { path: 'appearance.panel', label: 'パネル色', type: 'color' },
@@ -80,6 +89,7 @@ const SCHEMA = [
 function defaults() {
   return {
     appearance: {
+      theme: 'classic',
       bg: '#faf3e0', panel: '#d7bfae', panel2: '#a1887f', line: '#a1887f',
       text: '#3e2f2a', dim: '#6f5a52', accent: '#5d4037', danger: '#9c4a3a',
       wallpaper: '', fontSize: 13, sidebarWidth: 220,

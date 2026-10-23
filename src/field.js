@@ -15,8 +15,23 @@ const FIELD = {
   SIZEW: 84, DATEW: 128, TILEW: 100, TILEH: 104, ICONCOLS: 4, THUMBS: 400,
   HOT: 3, HOTMIN: 0.3, // 印を付けるのは、点数が HOTMIN 以上の上位 HOT 件
 };
-// 種類ごとの色はフォルダペインのアイコン(style.css の .ico.k-*)と同じ
-const FIELD_COLORS = { bookmark: '#b08a2e', image: '#4f8a5b', video: '#8a4f7d', audio: '#4f6f8a', archive: '#a0712c', code: '#3f7f86', doc: '#a04a3c' };
+// 描く色・角の丸み。テーマ(themes/*.css)が CSS 変数を変えるので、画面の CSS から読む。種類ごとの色(--k-*)はフォルダペインのアイコンと同じ
+const FIELD_KINDS = ['bookmark', 'image', 'video', 'audio', 'archive', 'code', 'doc'];
+let fieldThemeCache = null;
+function fieldTheme() {
+  if (fieldThemeCache) return fieldThemeCache;
+  const cs = getComputedStyle(document.documentElement);
+  const v = (k) => cs.getPropertyValue('--' + k).trim();
+  const a = { fontSize: C.appearance.fontSize, round: parseFloat(v('round')) || 0, kinds: {} };
+  for (const k of ['bg', 'panel', 'panel2', 'line', 'text', 'dim', 'accent', 'danger']) a[k] = v(k) || C.appearance[k];
+  for (const k of FIELD_KINDS) a.kinds[k] = v('k-' + k);
+  return (fieldThemeCache = a);
+}
+// テーマが変わった: 色を読み直して描き直す
+function fieldThemeChanged() {
+  fieldThemeCache = null;
+  fieldKickAll();
+}
 const fieldSortName = (a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
 // ------------------------------------------------------------------ 読み込み(キャッシュ・先読み)
@@ -776,7 +791,7 @@ function fieldDraw(fv) {
   const W = canvas.clientWidth, H = canvas.clientHeight;
   const dpr = window.devicePixelRatio || 1;
   if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
-  const a = C.appearance;
+  const a = fieldTheme();
   const font = `${a.fontSize}px ${getComputedStyle(document.body).fontFamily}`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = a.bg;
@@ -818,12 +833,17 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
   const focus = c === fv.cur;
   ctx.globalAlpha = c.alpha;
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,.16)';
-  ctx.shadowBlur = focus ? 22 : 12;
-  ctx.shadowOffsetY = focus ? 5 : 3;
+  if (a.round) {
+    ctx.shadowColor = 'rgba(0,0,0,.16)';
+    ctx.shadowBlur = focus ? 22 : 12;
+    ctx.shadowOffsetY = focus ? 5 : 3;
+  } else { // 角のないテーマ(端末風)はぼかさない影を右下に落とす
+    ctx.shadowColor = 'rgba(0,0,0,.55)';
+    ctx.shadowOffsetX = ctx.shadowOffsetY = focus ? 6 : 4;
+  }
   ctx.fillStyle = a.panel;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 10);
+  ctx.roundRect(x, y, w, h, 10 * a.round);
   ctx.fill();
   ctx.restore();
   ctx.strokeStyle = focus ? a.accent : a.line;
@@ -843,7 +863,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
   ctx.fillStyle = c.err ? a.danger : a.dim;
   ctx.fillText(count, x + w - 34 - cw, y + HD / 2);
   const mb = fieldMenuBtn(c);
-  if (fv.hoverMenu === c) { ctx.fillStyle = a.panel2; ctx.beginPath(); ctx.roundRect(mb.x, mb.y, mb.w, mb.h, 5); ctx.fill(); }
+  if (fv.hoverMenu === c) { ctx.fillStyle = a.panel2; ctx.beginPath(); ctx.roundRect(mb.x, mb.y, mb.w, mb.h, 5 * a.round); ctx.fill(); }
   ctx.fillStyle = fieldViewStore()[c.full] ? a.accent : a.dim; // 表示を変えたフォルダは ︙ に色を付ける
   for (let d = -1; d <= 1; d++) { ctx.beginPath(); ctx.arc(mb.x + mb.w / 2, mb.y + mb.h / 2 + d * 5, 1.6, 0, Math.PI * 2); ctx.fill(); }
   ctx.strokeStyle = a.line;
@@ -881,11 +901,11 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
     if (marked || (sel && (focus || onPath || open.has(idx)))) {
       ctx.fillStyle = a.panel2;
       ctx.beginPath();
-      ctx.roundRect(ix + 5, iy + 2, it.w - 10, it.h - 3, 6);
+      ctx.roundRect(ix + 5, iy + 2, it.w - 10, it.h - 3, 6 * a.round);
       ctx.fill();
       if (sel && focus) { ctx.strokeStyle = a.accent; ctx.lineWidth = 1.5; ctx.stroke(); }
     }
-    const col = en.isDir ? a.accent : FIELD_COLORS[en.kind] || a.dim;
+    const col = en.isDir ? a.accent : a.kinds[en.kind] || a.dim;
     if (!it.tile) {
       const ry = iy + R / 2;
       const rank = c.hot.get(idx);
@@ -893,7 +913,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
         ctx.fillStyle = a.accent;
         ctx.globalAlpha = base * [1, 0.7, 0.45][rank];
         ctx.beginPath();
-        ctx.roundRect(ix + 4, iy + 7, 3, R - 14, 1.5);
+        ctx.roundRect(ix + 4, iy + 7, 3, R - 14, 1.5 * a.round);
         ctx.fill();
         ctx.globalAlpha = base;
       }
@@ -923,7 +943,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
         ctx.fillStyle = col;
         ctx.globalAlpha = base * 0.22;
         ctx.beginPath();
-        ctx.roundRect(bx + 8, by + 4, bw - 16, bh - 8, 8);
+        ctx.roundRect(bx + 8, by + 4, bw - 16, bh - 8, 8 * a.round);
         ctx.fill();
         ctx.globalAlpha = base;
         ctx.fillStyle = col;
@@ -952,7 +972,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
     const ty = y + HD + 2 + (c.viewH - 4 - th) * (c.sy / (c.contentH - c.viewH));
     ctx.fillStyle = a.line;
     ctx.beginPath();
-    ctx.roundRect(x + w - 6, ty, 3, th, 1.5);
+    ctx.roundRect(x + w - 6, ty, 3, th, 1.5 * a.round);
     ctx.fill();
   }
 }
@@ -961,7 +981,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
 // ドラッグ中にマウスの横に出す札(ファイル名)。data URL で返す
 function fieldDragImage(list) {
   const en = list[0];
-  const a = C.appearance; // 等倍で描く(nativeImage は data URL を等倍の画像として読む)
+  const a = fieldTheme(); // 等倍で描く(nativeImage は data URL を等倍の画像として読む)
   const font = `${a.fontSize}px ${getComputedStyle(document.body).fontFamily}`;
   const cv = document.createElement('canvas'), ctx = cv.getContext('2d');
   ctx.font = font;
@@ -969,7 +989,7 @@ function fieldDragImage(list) {
   const w = Math.min(320, Math.ceil(ctx.measureText(label).width) + 20), hgt = a.fontSize + 14;
   cv.width = w; cv.height = hgt;
   ctx.fillStyle = a.panel;
-  ctx.beginPath(); ctx.roundRect(0.5, 0.5, w - 1, hgt - 1, 6); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(0.5, 0.5, w - 1, hgt - 1, 6 * a.round); ctx.fill();
   ctx.strokeStyle = a.line; ctx.stroke();
   ctx.font = font; ctx.fillStyle = a.text; ctx.textBaseline = 'middle';
   ctx.fillText(fieldFit(ctx, label, w - 20), 10, hgt / 2);

@@ -2,6 +2,9 @@
   --bg: #faf3e0; --panel: #d7bfae; --panel2: #a1887f; --line: #a1887f;
   --text: #3e2f2a; --dim: #6f5a52; --accent: #5d4037; --danger: #9c4a3a;
   --fs: 13px; --sbw: 220px;
+  /* 種類ごとの色(フォルダのアイコンとフィールド)。--round はフィールドのカードの角の丸み(0 で角を立てる) */
+  --k-image: #4f8a5b; --k-video: #8a4f7d; --k-audio: #4f6f8a; --k-archive: #a0712c; --k-code: #3f7f86; --k-doc: #a04a3c; --k-bookmark: #b08a2e;
+  --round: 1;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
@@ -197,13 +200,13 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .frow .col { color: var(--dim); font-size: .85em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .frow .ren { flex: 1; min-width: 0; height: 24px; padding: 0 6px; }
 .ico.k-dir { color: var(--accent); }
-.ico.k-image { color: #4f8a5b; }
-.ico.k-video { color: #8a4f7d; }
-.ico.k-audio { color: #4f6f8a; }
-.ico.k-archive { color: #a0712c; }
-.ico.k-code { color: #3f7f86; }
-.ico.k-doc { color: #a04a3c; }
-.ico.k-bookmark { color: #b08a2e; }
+.ico.k-image { color: var(--k-image); }
+.ico.k-video { color: var(--k-video); }
+.ico.k-audio { color: var(--k-audio); }
+.ico.k-archive { color: var(--k-archive); }
+.ico.k-code { color: var(--k-code); }
+.ico.k-doc { color: var(--k-doc); }
+.ico.k-bookmark { color: var(--k-bookmark); }
 .ico.k-text, .ico.k-file { color: var(--dim); }
 .band { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); pointer-events: none; z-index: 2; }
 .ferr { position: absolute; left: 0; right: 0; top: 0; padding: 16px; color: var(--danger); }

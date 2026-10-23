@@ -1,0 +1,10 @@
+/* CRT(緑): 緑の蛍光の一色。字はにじんで光り、画面に走査線が入る */
+@import url("cui.css");
+@import url("crt-common.css");
+:root {
+  --bg: #031a09; --panel: #062410; --panel2: #0b3a1a; --line: #1f7a3c;
+  --text: #39ff7a; --dim: #22a34d; --accent: #8cffb0; --danger: #ffd23f;
+  --k-image: #39ff7a; --k-video: #39ff7a; --k-audio: #39ff7a; --k-archive: #39ff7a; --k-code: #39ff7a; --k-doc: #39ff7a; --k-bookmark: #39ff7a;
+  --glow: 0 0 4px color-mix(in srgb, var(--text) 55%, transparent);
+  --mono-img: grayscale(1) sepia(1) hue-rotate(75deg) saturate(4) brightness(.9);
+}

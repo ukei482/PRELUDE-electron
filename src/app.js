@@ -80,13 +80,28 @@ function makeLeaf(type, o = {}) {
 function applyTheme() {
   const a = C.appearance;
   const r = document.documentElement.style;
-  for (const k of ['bg', 'panel', 'panel2', 'line', 'text', 'dim', 'accent', 'danger']) r.setProperty('--' + k, a[k]);
+  // クラシックは設定の色を使う。ほかのテーマは色もテーマの CSS が決める
+  const theme = a.theme && a.theme !== 'classic' ? a.theme : '';
+  for (const k of ['bg', 'panel', 'panel2', 'line', 'text', 'dim', 'accent', 'danger']) {
+    if (theme) r.removeProperty('--' + k); else r.setProperty('--' + k, a[k]);
+  }
+  setThemeCss(theme);
   r.setProperty('--fs', a.fontSize + 'px');
   r.setProperty('--sbw', a.sidebarWidth + 'px');
   const mode = C.behavior.sidebarMode;
   document.body.classList.toggle('no-sidebar', mode === 'hidden');
   document.body.classList.toggle('sb-compact', mode === 'compact');
   document.querySelectorAll('.sb-toggle').forEach((b) => { b.title = sidebarTip(); });
+}
+// テーマの CSS を style.css の後に重ねる(theme が空ならはずす)。読み終えたらフィールドを描き直す
+function setThemeCss(theme) {
+  let link = document.getElementById('theme-css');
+  const href = theme ? `themes/${theme}.css` : '';
+  if ((link?.getAttribute('href') || '') === href) return;
+  if (!href) { link?.remove(); fieldThemeChanged(); return; }
+  if (!link) { link = h('link', { id: 'theme-css', rel: 'stylesheet' }); document.head.append(link); }
+  link.onload = fieldThemeChanged;
+  link.setAttribute('href', href);
 }
 const sidebarTip = () => `サイドバー(次は${{ full: '細い列', compact: '非表示', hidden: '全部表示' }[C.behavior.sidebarMode] || '細い列'})`;
 // タイトルバーの ☰: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す

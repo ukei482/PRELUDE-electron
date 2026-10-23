@@ -65,7 +65,13 @@ if (kind === 'osd') { root.style.display = 'none'; api.onOsd(renderOsd); }
 
 api.theme().then((a) => {
   const r = document.documentElement.style;
-  for (const k of ['bg', 'panel', 'line', 'text', 'dim', 'accent', 'danger']) if (a[k]) r.setProperty('--' + k, a[k]);
+  // クラシック以外はテーマの CSS(メインの画面と同じ themes/*.css)が色も決める
+  if (a.theme && a.theme !== 'classic') {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `themes/${a.theme}.css`;
+    document.head.append(link);
+  } else for (const k of ['bg', 'panel', 'line', 'text', 'dim', 'accent', 'danger']) if (a[k]) r.setProperty('--' + k, a[k]);
   if (a.fontSize) r.setProperty('--fs', a.fontSize + 'px');
 }).finally(() => { if (kind === 'notify') api.toasts().then(render); });
 if (kind === 'notify') api.onToasts(render);
