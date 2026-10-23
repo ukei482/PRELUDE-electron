@@ -70,7 +70,7 @@ function launcherEntries(q) {
     .sort((a, b) => a.r - b.r || rank(a.x) - rank(b.x));
 
   for (const { x: tab } of pick(S.tabs, tabTitle)) out.push({ kind: 'タブ', name: tabTitle(tab), run: () => showTab(tab) });
-  for (const { x: b } of pick(S.bookmarks, (b) => b.title || b.target)) out.push({ kind: 'ブックマーク', name: b.title || b.target, run: () => openBookmark(b) });
+  for (const { x: b } of pick(S.bookmarks.filter((b) => b.kind !== 'folder'), (b) => b.title || b.target)) out.push({ kind: 'ブックマーク', name: b.title || b.target, run: () => openBookmark(b) });
   for (const { x: a } of pick(S.appList || [], (a) => a.name, usedRank).slice(0, 8)) out.push({ kind: 'アプリ', name: a.name, run: () => launchApp(a) });
   for (const { x: c } of pick(LAUNCHER_COMMANDS.filter((c) => !c.when || c.when()), (c) => c.name + ' ' + c.keys)) out.push({ kind: 'コマンド', name: c.name, run: c.run });
   out.push({ kind: 'Web', name: `Webで開く／検索: ${q}`, run: () => openTab('web', { url: q }) });

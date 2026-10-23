@@ -72,8 +72,8 @@ function buildHome(tab, leaf, head, body) {
   if (S.appList) paintApps(S.appList);
   else api.app.list().then((l) => { S.appList = l; if (root.isConnected) paintApps(l); });
 
-  marks.replaceChildren(...(S.bookmarks.length ? S.bookmarks.map((b) => h('button', {
+  marks.replaceChildren(...(S.bookmarks.some((b) => b.kind !== 'folder') ? S.bookmarks.filter((b) => b.kind !== 'folder').map((b) => h('button', {
     class: 'textbtn hchip', title: b.target, onclick: () => openBookmark(b),
-  }, ico(b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : 'folder'), b.title || b.target))
+  }, ico(bmIcon(b)), b.title || b.target))
     : [h('div', { class: 'empty' }, 'ペインの ☆ で追加')]));
 }

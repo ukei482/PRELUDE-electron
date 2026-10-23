@@ -162,26 +162,7 @@ function sortable(el, list, item, done) {
 }
 
 function renderSidebar() {
-  const bl = $('#bm-list');
-  bl.replaceChildren();
-  if (!S.bookmarks.length) bl.append(h('div', { class: 'empty' }, 'ペインの ☆ で追加'));
-  for (const b of S.bookmarks) {
-    const open = S.tabs.some((t) => t.bookmarkId === b.id);
-    const el = h('div', {
-      class: 'item' + (activeTab()?.bookmarkId === b.id ? ' active' : '') + (open ? ' open' : ''),
-      title: `${b.title || b.target}\n${b.target}`,
-      onclick: () => openBookmark(b),
-      oncontextmenu: (e) => {
-        e.preventDefault();
-        popup([
-          { label: '名前を変更', icon: 'text', run: () => renameBookmark(b) },
-          { label: '削除', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((x) => x !== b); saveBookmarks(); renderSidebar(); } },
-        ], e.clientX, e.clientY);
-      },
-    }, ico(b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : 'folder'), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
-    sortable(el, S.bookmarks, b, () => { saveBookmarks(); renderSidebar(); });
-    bl.append(el);
-  }
+  renderBookmarks();
 
   $('#tab-count').textContent = S.tabs.length > 1 ? String(S.tabs.length) : '';
   const tl = $('#tab-list');
@@ -231,6 +212,142 @@ function renderSidebar() {
   }
 }
 
+// ブックマーク欄。フォルダは1段だけ(フォルダの中にフォルダは作れない)。▸ で開閉し、開閉は覚えておく。
+// 細い列ではフォルダはアイコン1つで、押すと中身をメニューで出す
+const bmIcon = (b) => (b.kind === 'folder' ? 'folder' : b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : b.kind === 'tab' ? 'split-h' : 'folder');
+const bmChildren = (f) => S.bookmarks.filter((b) => b.folder === f.id);
+const bmOpen = (b) => S.tabs.some((t) => t.bookmarkId === b.id);
+function renderBookmarks() {
+  const bl = $('#bm-list');
+  bl.replaceChildren();
+  bl.oncontextmenu = (e) => {
+    if (e.target !== bl && !e.target.classList.contains('empty')) return;
+    e.preventDefault();
+    popup([{ label: '新しいフォルダ', icon: 'folder', run: () => newBmFolder() }], e.clientX, e.clientY);
+  };
+  if (!S.bookmarks.length) bl.append(h('div', { class: 'empty' }, 'ペインの ☆ で追加'));
+  const cur = activeTab()?.bookmarkId;
+  for (const b of S.bookmarks) {
+    if (b.folder) continue;
+    if (b.kind !== 'folder') { bl.append(bmRow(b, cur)); continue; }
+    const kids = bmChildren(b);
+    const el = h('div', {
+      class: 'item bm-folder' + (!b.open && kids.some((k) => k.id === cur) ? ' active' : '') + (kids.some(bmOpen) ? ' open' : ''),
+      title: `${b.title}(${kids.length} 件)`,
+      onclick: (e) => {
+        if (document.body.classList.contains('sb-compact')) {
+          const r = e.currentTarget.getBoundingClientRect();
+          popup([{ header: b.title }, ...(kids.length ? kids.map((k) => ({ label: k.title || k.target, icon: bmIcon(k), run: () => openBookmark(k) })) : [{ label: '(空です)', disabled: true, run: () => {} }])], r.right + 4, r.top);
+          return;
+        }
+        b.open = !b.open;
+        saveBookmarks();
+        renderSidebar();
+      },
+      oncontextmenu: (e) => { e.preventDefault(); bmFolderMenu(b, e.clientX, e.clientY); },
+    }, h('span', { class: 'chev' }, b.open ? '▾' : '▸'), ico('folder'), h('span', { class: 'label' }, b.title), kids.some(bmOpen) ? h('span', { class: 'badge' }, '●') : null);
+    bmDraggable(el, b);
+    bl.append(el);
+    if (b.open) for (const k of kids) bl.append(bmRow(k, cur, true));
+  }
+}
+function bmRow(b, cur, inFolder = false) {
+  const open = bmOpen(b);
+  const el = h('div', {
+    class: 'item' + (inFolder ? ' in-folder' : '') + (cur === b.id ? ' active' : '') + (open ? ' open' : ''),
+    title: `${b.title || b.target}\n${b.target}`,
+    onclick: () => openBookmark(b),
+    oncontextmenu: (e) => { e.preventDefault(); bmMenu(b, e.clientX, e.clientY); },
+  }, ico(bmIcon(b)), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
+  bmDraggable(el, b);
+  return el;
+}
+function bmMenu(b, x, y) {
+  const tab = b.kind === 'tab' ? S.tabs.find((t) => t.bookmarkId === b.id) : null;
+  popup([
+    { label: '名前を変更', icon: 'text', run: () => renameBookmark(b) },
+    { label: 'フォルダへ移す…', icon: 'folder', run: () => moveToFolderMenu(b, x, y) },
+    tab ? { label: '今の配置で上書き', icon: 'split-h', run: () => { b.root = serNode(tab.root); b.target = layoutLabel(b.root); saveBookmarks(); toast('今の配置で上書きしました'); } } : null,
+    { sep: true },
+    { label: '削除', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((z) => z !== b); saveBookmarks(); renderSidebar(); } },
+  ].filter(Boolean), x, y);
+}
+function moveToFolderMenu(b, x, y) {
+  const folders = S.bookmarks.filter((f) => f.kind === 'folder');
+  popup([
+    { header: 'フォルダへ移す' },
+    ...folders.map((f) => ({ label: f.title, icon: 'folder', disabled: b.folder === f.id, run: () => moveBm(b, f, 'into') })),
+    folders.length ? { sep: true } : null,
+    { label: '新しいフォルダに入れる', icon: 'plus', run: async () => { const f = await newBmFolder(); if (f) moveBm(b, f, 'into'); } },
+    b.folder ? { label: 'フォルダから出す', icon: 'up', run: () => moveBm(b, S.bookmarks.find((f) => f.id === b.folder), 'after') } : null,
+  ].filter(Boolean), x, y);
+}
+function bmFolderMenu(f, x, y) {
+  const kids = bmChildren(f);
+  popup([
+    { label: f.open ? '閉じる' : '開く', icon: 'folder', run: () => { f.open = !f.open; saveBookmarks(); renderSidebar(); } },
+    { label: `中を全部開く(${kids.length} 件)`, icon: 'plus', disabled: !kids.length, run: () => kids.forEach((k) => openBookmark(k)) },
+    { label: '名前を変更', icon: 'text', run: () => renameBookmark(f) },
+    { sep: true },
+    // 中のブックマークは消さずに、フォルダのあった場所へ出す
+    { label: 'フォルダを削除(中身は残す)', icon: 'close', danger: true, run: () => { for (const k of kids) k.folder = ''; S.bookmarks = S.bookmarks.filter((z) => z !== f); saveBookmarks(); renderSidebar(); } },
+  ], x, y);
+}
+async function newBmFolder() {
+  const name = await askText('フォルダ名', '新しいフォルダ');
+  if (name == null || !name.trim()) return null;
+  const f = { id: 'b' + Date.now().toString(36), kind: 'folder', title: name.trim(), open: true };
+  S.bookmarks.push(f);
+  saveBookmarks();
+  renderSidebar();
+  return f;
+}
+// x を y の前・後ろ・中(y がフォルダの時)へ動かす。並びは S.bookmarks の順で、フォルダの中身もその順に出る
+function moveBm(x, y, where) {
+  const L = S.bookmarks;
+  L.splice(L.indexOf(x), 1);
+  if (where === 'into') {
+    x.folder = y.id;
+    y.open = true;
+    L.push(x);
+  } else {
+    x.folder = y.kind === 'folder' ? '' : y.folder || '';
+    L.splice(L.indexOf(y) + (where === 'after' ? 1 : 0), 0, x);
+  }
+  saveBookmarks();
+  renderSidebar();
+}
+// ブックマークのドラッグ。フォルダの行の真ん中に落とすと中へ、上下の端なら前後へ。フォルダはフォルダの中へは入れない
+function bmDraggable(el, b) {
+  el.draggable = true;
+  el.ondragstart = (e) => { sbDrag = { list: S.bookmarks, item: b }; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); };
+  el.ondragend = () => { sbDrag = null; document.querySelectorAll('#sidebar .drop-a, #sidebar .drop-b, #sidebar .drop-in, #sidebar .dragging').forEach((z) => z.classList.remove('drop-a', 'drop-b', 'drop-in', 'dragging')); };
+  const where = (e) => {
+    const x = sbDrag?.list === S.bookmarks ? sbDrag.item : null;
+    if (!x || x === b || (x.kind === 'folder' && b.folder)) return null;
+    const r = el.getBoundingClientRect();
+    const t = (e.clientY - r.top) / r.height;
+    if (b.kind === 'folder' && x.kind !== 'folder' && t > 0.25 && t < 0.75) return 'into';
+    return t > 0.5 ? 'after' : 'before';
+  };
+  el.ondragover = (e) => {
+    const w = where(e);
+    if (!w) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    el.classList.toggle('drop-a', w === 'before');
+    el.classList.toggle('drop-b', w === 'after');
+    el.classList.toggle('drop-in', w === 'into');
+  };
+  el.ondragleave = () => el.classList.remove('drop-a', 'drop-b', 'drop-in');
+  el.ondrop = (e) => {
+    const w = where(e);
+    if (!w) return;
+    e.preventDefault();
+    moveBm(sbDrag.item, b, w);
+  };
+}
+
 // タブの右クリックメニュー
 function tabMenu(tab, x, y) {
   const l = activeLeaf(tab);
@@ -244,6 +361,7 @@ function tabMenu(tab, x, y) {
     web.length ? { label: muted ? '音を出す' : '音を消す', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
     { label: '複製', icon: 'plus', run: () => duplicateTab(tab) },
     ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'ブックマークに追加', icon: 'bookmark', run: () => addBookmark(l) } : null,
+    ls.length > 1 ? { label: '分割ごとブックマーク', icon: 'split-h', run: () => addLayoutBookmark(tab) } : null,
     others.length ? { sep: true } : null,
     ...others.map((s) => ({ label: `${s.label}へ移す`, icon: 'window', run: () => moveTab(tab, s.key) })),
     { sep: true },
@@ -387,17 +505,39 @@ function setActivePane(tab, leaf) {
 }
 
 // ------------------------------------------------------------------ bookmarks
-const bmToJson = (b) => (b.kind === 'app'
-  ? { id: b.id, kind: 'app', title: b.title, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' }
-  : { id: b.id, kind: b.kind, title: b.title, [b.kind === 'web' ? 'url' : 'path']: b.target });
+// 種類: web / files / app / tab(分割ごとの配置。root は serNode の形)/ folder(1段だけ)。folder はブックマークの入っているフォルダの id
+const bmToJson = (b) => {
+  if (b.kind === 'folder') return { id: b.id, kind: 'folder', title: b.title, open: !!b.open };
+  const o = b.kind === 'app' ? { cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' }
+    : b.kind === 'tab' ? { root: b.root }
+    : { [b.kind === 'web' ? 'url' : 'path']: b.target };
+  return { id: b.id, kind: b.kind, title: b.title, ...(b.folder ? { folder: b.folder } : {}), ...o };
+};
 function loadBookmarks() {
   S.bookmarks = [];
   S.foreignBm = [];
-  for (const b of C.bookmarks || []) {
-    if (b.kind === 'app' && (b.cmd || b.webUrl)) S.bookmarks.push({ id: b.id, kind: 'app', title: b.title || '', target: b.webUrl || b.cmd, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' });
-    else if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, title: b.title || '', target: b.url || b.path || '' });
+  const src = C.bookmarks || [];
+  const folders = new Set(src.filter((b) => b.kind === 'folder').map((b) => b.id));
+  for (const b of src) {
+    const folder = folders.has(b.folder) ? b.folder : '';
+    if (b.kind === 'folder') S.bookmarks.push({ id: b.id, kind: 'folder', title: b.title || 'フォルダ', open: !!b.open, folder: '' });
+    else if (b.kind === 'app' && (b.cmd || b.webUrl)) S.bookmarks.push({ id: b.id, kind: 'app', folder, title: b.title || '', target: b.webUrl || b.cmd, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' });
+    else if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, folder, title: b.title || '', target: b.url || b.path || '' });
+    else if (b.kind === 'tab' && b.root) S.bookmarks.push({ id: b.id, kind: 'tab', folder, title: b.title || '', root: b.root, target: layoutLabel(b.root) });
     else S.foreignBm.push(b); // Rust版のアプリ取り込みブックマークなどは保持だけする
   }
+}
+// 分割ごとのブックマークの説明(中のペインの名前を | でつなぐ)
+const layoutLabel = (root) => leaves(root).map((l) => (l.type === 'web' ? hostOf(l.url || '') : l.type === 'app' ? l.name : l.type === 'files' || l.type === 'field' ? baseName(l.path || '') : l.type === 'home' ? 'ホーム' : '設定') || l.type).join(' | ');
+// 今のタブの配置(分割・各ペインの中身)をそのままブックマークにする。開くと同じ配置で開く
+function addLayoutBookmark(tab) {
+  const root = serNode(tab.root);
+  const b = { id: 'b' + Date.now().toString(36), kind: 'tab', folder: '', title: leaves(tab.root).map(leafTitle).join(' | '), root, target: layoutLabel(root) };
+  S.bookmarks.push(b);
+  if (!tab.bookmarkId) tab.bookmarkId = b.id;
+  saveBookmarks();
+  renderSidebar();
+  toast('分割ごとブックマークに追加しました');
 }
 const saveBookmarks = () => api.config.set('bookmarks', [...S.bookmarks.map(bmToJson), ...S.foreignBm]);
 
@@ -425,6 +565,8 @@ function addBookmark(leaf) {
 function openBookmark(b) {
   const tab = S.tabs.find((t) => t.bookmarkId === b.id);
   if (tab) { showTab(tab); return; } // 1ブックマーク = 最大1タブ
+  if (b.kind === 'folder') return;
+  if (b.kind === 'tab') { insertTab(b.root, { bookmarkId: b.id, index: 0 }); return; }
   if (b.kind === 'app') {
     const t = openTab('app', { cmd: b.cmd, cls: b.cls, name: b.title, webUrl: b.webUrl, bookmarkId: b.id });
     startApp(t.root, b.cmd, b.cls, b.title);
@@ -434,7 +576,7 @@ function openBookmark(b) {
 }
 
 async function renameBookmark(b) {
-  const name = await askText('ブックマーク名', b.title);
+  const name = await askText(b.kind === 'folder' ? 'フォルダ名' : 'ブックマーク名', b.title);
   if (name != null && name.trim()) { b.title = name.trim(); saveBookmarks(); renderSidebar(); }
 }
 
