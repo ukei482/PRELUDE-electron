@@ -5,6 +5,11 @@
 
 ## [未リリース]
 
+### 変更
+- フィールドファイラのカードの配置の計算を `src/fieldlayout.js` に分けて、テスト(`test/fieldlayout.test.js`)を付けた。`npm test` で動く。
+  配置の決め方は変わらない。
+- PR と main への push で、GitHub Actions が `npm test` を回すようにした(`.github/workflows/test.yml`)。
+
 ## [0.5.0] - 2026-10-23
 
 ### 追加

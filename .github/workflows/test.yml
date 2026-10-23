@@ -1,0 +1,19 @@
+# PR と main への push で npm test を回す
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # テストは Node の node:test だけを使い、DOM・Electron は要らない。
+      # npm ci は Electron 本体のダウンロードで遅くなるので省く(依存が要るテストを足したら npm ci を入れる)
+      - run: npm test
