@@ -30,6 +30,12 @@ contextBridge.exposeInMainWorld('preludeApi', {
     evacuated: () => ipcRenderer.send('tab:evacuated'),
     onAdopt: (cb) => on('tab:adopt', cb),
     onEvacuate: (cb) => on('tab:evacuate', cb),
+    // タブの番号(名札)。main.js が全部の窓で重ならないように振る
+    allocNum: (want) => ipcRenderer.sendSync('tab:alloc-num', want),
+    nums: (list) => ipcRenderer.sendSync('tab:nums', list), // 番号の振り出し(同期)に追い越されないよう、同期で送る
+    where: (n) => ipcRenderer.sendSync('tab:where', n),
+    goto: (s) => ipcRenderer.send('tab:goto', s),
+    onGoto: (cb) => on('tab:goto', cb),
   },
   web: {
     create: (id, url) => ipcRenderer.send('web:create', id, url),

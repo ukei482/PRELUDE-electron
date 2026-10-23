@@ -8,6 +8,7 @@
 #   prelude.sh restart          stop してから start
 #   prelude.sh status           シェルモード・動いている PRELUDE・リリースの状態
 #   prelude.sh log [embed]      シェルのログを追う(journalctl)。embed なら取り込みのデバッグログ
+#   prelude.sh tab N            番号 N のタブへ切り替える(bN ならブックマーク N を開く)。KDE のショートカットに割り当てられる
 #
 #   prelude.sh shell on [--now] PRELUDE をデスクトップシェルにする(= shell-mode.sh on)
 #   prelude.sh shell off [--now] plasmashell に戻す(確認なしで即座に入れ替え。= shell-mode.sh off)
@@ -109,6 +110,14 @@ cmd_stop() {
   kill -KILL "$pid" 2>/dev/null || true
 }
 
+# 番号のタブ・ブックマークを呼ぶ。動いている PRELUDE の Report('goto', JSON文字列) を D-Bus で呼ぶ
+cmd_tab() {
+  local n="${1:-}"
+  [[ "$n" =~ ^[bB]?[0-9]+$ ]] || die "使い方: prelude.sh tab 3 (ブックマークは tab b3)"
+  busctl --user call "$BUS" /org/prelude/Shell "$BUS" Report ss goto "\"$n\"" >/dev/null 2>&1 \
+    || die "PRELUDE が動いていません"
+}
+
 cmd_status() {
   "$APPDIR/scripts/shell-mode.sh" status
   local pid; pid="$(running_pid)"
@@ -141,6 +150,7 @@ case "${1:-start}" in
   restart) cmd_stop; sleep 1; shift; cmd_start "$@" ;;
   status) cmd_status ;;
   log) shift; cmd_log "$@" ;;
+  tab) shift; cmd_tab "$@" ;;
   shell) shift; exec "$APPDIR/scripts/shell-mode.sh" "$@" ;;
   return) exec "$APPDIR/scripts/shell-mode.sh" return ;;
   release) shift; exec "$APPDIR/scripts/release.sh" "$@" ;;

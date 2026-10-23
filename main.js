@@ -138,6 +138,7 @@ function bindings() {
   return [
     ['newTab', config.get('shortcuts.newTab')],
     ['closeTab', config.get('shortcuts.closeTab')],
+    ['reopenTab', config.get('shortcuts.reopenTab')],
     ['fullscreen', config.get('shortcuts.fullscreen')],
     ['launcher', config.get('shortcuts.launcher')],
     ['focusAddress', 'Ctrl+L'],
@@ -146,6 +147,7 @@ function bindings() {
     ['back', 'Alt+ArrowLeft'],
     ['forward', 'Alt+ArrowRight'],
     ['devtools', 'F12'],
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`goto:${n}`, `Ctrl+${n}`]), // その番号のタブへ
   ].map(([action, accel]) => [action, parseAccel(accel)]);
 }
 
@@ -181,7 +183,7 @@ function createShellWindow(key) {
     height: sub ? 800 : 900,
     minWidth: 640,
     minHeight: 400,
-    frame: false, // タイトルバーは自前で描く
+    frame: false, // タイトルバーは無い(☰ は左上のペインの見出しに置く)
     show: false,
     title: sub ? `PRELUDE:${key}` : 'PRELUDE',
     backgroundColor: config.get('appearance.bg'),
@@ -281,6 +283,7 @@ function evacuate(s) {
 function dropShell(key) {
   if (!shells.has(key)) return;
   shells.delete(key);
+  tabNums.delete(key);
   suspended.delete(key);
   for (const [id, k] of [...owners]) {
     if (k !== key) continue;
@@ -316,6 +319,31 @@ ipcMain.on('tab:move', (e, to, data) => {
   sendTo(to, 'tab:adopt', data);
 });
 ipcMain.on('tab:evacuated', (e) => shells.get(keyOf(e.sender))?.finish?.());
+
+// タブの番号(名札)。並べ替えても変わらず、全部の画面の窓で重ならないように、ここで振る。
+// 開いた時に空いている一番小さい番号(want が空いていればそれ)を渡す。各窓は使っている番号の一覧を tab:nums で知らせる
+const tabNums = new Map(); // 窓の key -> Set<番号>
+const numOwner = (n) => { for (const [k, s] of tabNums) if (s.has(n) && shellWin(k)) return k; return null; };
+ipcMain.on('tab:alloc-num', (e, want) => {
+  const key = keyOf(e.sender);
+  let n = Number(want) > 0 && !numOwner(Number(want)) ? Number(want) : 1;
+  if (n !== Number(want)) while (numOwner(n)) n++;
+  if (key) (tabNums.get(key) || tabNums.set(key, new Set()).get(key)).add(n);
+  e.returnValue = n;
+});
+ipcMain.on('tab:nums', (e, list) => { const key = keyOf(e.sender); if (key) tabNums.set(key, new Set(list)); e.returnValue = true; });
+ipcMain.on('tab:where', (e, n) => { const k = numOwner(Number(n)); e.returnValue = k ? { key: k, label: screenLabel(k) } : null; });
+// 番号で呼ぶ(ランチャー・Ctrl+数字・prelude.sh tab)。"3" はタブ3(持っている窓を前に出す)、"b3" はブックマーク3(今の窓で開く)
+function gotoNum(s, from = lastKey) {
+  const m = /^(b?)(\d+)$/i.exec(String(s).trim());
+  if (!m) return;
+  const key = m[1] ? (shellWin(from) ? from : 'main') : numOwner(Number(m[2]));
+  if (!key) { sendTo(shellWin(from) ? from : 'main', 'tab:goto', { num: Number(m[2]), missing: true }); return; }
+  const w = shellWin(key);
+  if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
+  sendTo(key, 'tab:goto', { bookmark: !!m[1], num: Number(m[2]) });
+}
+ipcMain.on('tab:goto', (e, s) => gotoNum(s, keyOf(e.sender)));
 ipcMain.handle('win:screens', () => liveShells().map((s) => ({ key: s.key, label: screenLabel(s.key) })));
 
 // KDE(Wayland)では本物の全画面にすると取り込んだアプリが後ろに隠れるので、KWinスクリプトで画面いっぱいに広げる疑似全画面にする
@@ -477,9 +505,9 @@ function createWeb(paneId, input, key) {
 
   const push = () => sendPane(paneId, 'web:state', {
     paneId, url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(),
-    canBack: navBack(wc), canFwd: navFwd(wc),
+    canBack: navBack(wc), canFwd: navFwd(wc), audible: wc.isCurrentlyAudible(), muted: wc.isAudioMuted(),
   });
-  ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'dom-ready']
+  ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'dom-ready', 'audio-state-changed']
     .forEach((ev) => wc.on(ev, () => push()));
   wc.on('page-favicon-updated', (_e, icons) => sendPane(paneId, 'web:favicon', { paneId, icon: icons[0] || '' }));
   wc.on('focus', () => { lastKey = owners.get(paneId) || 'main'; sendPane(paneId, 'web:focused', { paneId }); });
@@ -535,6 +563,7 @@ ipcMain.on('web:cmd', (_e, paneId, cmd, arg) => {
   else if (cmd === 'forward') { if (navFwd(wc)) (wc.navigationHistory ? wc.navigationHistory.goForward() : wc.goForward()); }
   else if (cmd === 'reload') wc.reload();
   else if (cmd === 'stop') wc.stop();
+  else if (cmd === 'mute') { wc.setAudioMuted(!!arg); wc.emit('audio-state-changed'); } // 状態を画面へ送り直す
   else if (cmd === 'focus') wc.focus();
   else if (cmd === 'pin') e.pin = arg ? siteOf(String(arg)) : ''; // ブックマークのタブなら、そのサイト
 });
@@ -674,6 +703,7 @@ app.whenReady().then(async () => {
       launcher: { key: config.get('shortcuts.globalLauncher'), raise: true },
       brightnessReset: { key: 'Meta+Shift+B', raise: false }, // 緊急用: 画面が暗すぎるとき
     });
+    bus.onReport('goto', (s) => gotoNum(s)); // prelude.sh tab 3 / tab b3
     bus.onReport('shortcut', (name) => {
       if (name === 'launcher') { shellWin(lastKey)?.webContents.focus(); sendTo(shellWin(lastKey) ? lastKey : 'main', 'shortcut', { action: 'launcher', paneId: null }); }
       else if (name === 'brightnessReset') osd.resetBrightness();

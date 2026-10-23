@@ -35,6 +35,8 @@ const LAUNCHER_COMMANDS = [
   { name: '新しいタブ(フォルダ)', keys: 'new tab folder files あたらしい', run: () => openTab('files') },
   { name: '新しいタブ(フィールド)', keys: 'new tab field tree folder files ふぃーるど あたらしい', run: () => openTab('field') },
   { name: '全画面の切り替え', keys: 'fullscreen ぜんがめん', when: () => !IS_SUB, run: () => api.win.cmd('toggleFullscreen') },
+  { name: '最大化の切り替え', keys: 'maximize window さいだいか', when: () => !IS_SUB, run: () => api.win.cmd('toggleMaximize') },
+  { name: 'サイドバーの切り替え', keys: 'sidebar tabs さいどばー たぶ', run: () => cycleSidebar() },
   { name: 'スクリーンショット(範囲を選ぶ)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい', run: () => api.quick.do('screenshot', 'region') },
   { name: 'スクリーンショット(今の画面)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい', run: () => api.quick.do('screenshot', 'screen') },
   { name: 'スクリーンショット(前面の窓)', keys: 'screenshot capture print window すくりーんしょっと まど', run: () => api.quick.do('screenshot', 'window') },
@@ -67,8 +69,20 @@ function launcherEntries(q) {
     .filter((m) => m.r >= 0)
     .sort((a, b) => a.r - b.r || rank(a.x) - rank(b.x));
 
-  for (const { x: tab } of pick(S.tabs, tabTitle)) out.push({ kind: 'タブ', name: tabTitle(tab), run: () => showTab(tab) });
-  for (const { x: b } of pick(S.bookmarks, (b) => b.title || b.target)) out.push({ kind: 'ブックマーク', name: b.title || b.target, run: () => openBookmark(b) });
+  // 数字だけならその番号のタブ(別の画面の窓のタブも)、b+数字ならその番号のブックマークを一番上に出す
+  const num = /^(b?)(\d+)$/.exec(q);
+  if (num && !num[1]) {
+    const n = Number(num[2]);
+    const tab = S.tabs.find((t) => t.num === n);
+    const where = tab ? null : api.tab.where(n);
+    if (tab) out.push({ kind: `タブ ${n}`, name: tabTitle(tab), run: () => showTab(tab) });
+    else if (where) out.push({ kind: `タブ ${n}`, name: `${where.label}のタブ`, run: () => api.tab.goto(String(n)) });
+  } else if (num) {
+    const b = S.bookmarks.find((x) => x.num === Number(num[2]) && x.kind !== 'folder');
+    if (b) out.push({ kind: `ブックマーク b${b.num}`, name: b.title || b.target, run: () => openBookmark(b) });
+  }
+  for (const { x: tab } of pick(S.tabs, tabTitle)) out.push({ kind: `タブ ${tab.num}`, name: tabTitle(tab), run: () => showTab(tab) });
+  for (const { x: b } of pick(S.bookmarks.filter((b) => b.kind !== 'folder'), (b) => b.title || b.target)) out.push({ kind: `ブックマーク b${b.num}`, name: b.title || b.target, run: () => openBookmark(b) });
   for (const { x: a } of pick(S.appList || [], (a) => a.name, usedRank).slice(0, 8)) out.push({ kind: 'アプリ', name: a.name, run: () => launchApp(a) });
   for (const { x: c } of pick(LAUNCHER_COMMANDS.filter((c) => !c.when || c.when()), (c) => c.name + ' ' + c.keys)) out.push({ kind: 'コマンド', name: c.name, run: c.run });
   out.push({ kind: 'Web', name: `Webで開く／検索: ${q}`, run: () => openTab('web', { url: q }) });
