@@ -12,11 +12,12 @@ const KINDS = {
   code: 'js mjs cjs ts jsx tsx rs py c cc cpp h hpp java kt go rb php lua html css scss json toml yaml yml xml sh bash zsh bat ps1 sql vue svelte',
   text: 'txt md log csv tsv ini conf cfg',
   doc: 'pdf doc docx xls xlsx ppt pptx odt ods odp epub',
+  bookmark: 'prelude', // ブックマークのファイル(bmfile.js)
 };
 const KIND_OF = new Map();
 for (const [k, list] of Object.entries(KINDS)) for (const e of list.split(' ')) KIND_OF.set(e, k);
 // 種類 → アイコン(無いものは file アイコンを色違いで出す)
-const KIND_ICON = { dir: 'folder', image: 'image', archive: 'archive', code: 'code', text: 'text' };
+const KIND_ICON = { dir: 'folder', image: 'image', archive: 'archive', code: 'code', text: 'text', bookmark: 'bookmark' };
 
 const collator = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
 const DF = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -572,6 +573,7 @@ function fileMenu(tab, leaf, x, y, kb = false) {
     has && !t.some((e) => e.isDir) ? { label: '新しいタブで開く', icon: 'plus', run: () => openEntries(tab, leaf, t, 'tab') } : null,
     one && !one.isDir ? { label: '右に分割して開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, 'split') } : null,
     has && !t.some((e) => e.isDir) ? { label: '別のウィンドウで開く', icon: 'window', run: () => openEntries(tab, leaf, t, 'window') } : null,
+    one?.ext === BMFILE_EXT ? { label: 'サイドバーのブックマークに入れる', icon: 'bookmark', run: () => importBmFile(one.full) } : null,
     { sep: true },
     { label: '切り取り', key: 'Ctrl+X', run: () => doCopy(leaf, true) },
     { label: 'コピー', key: 'Ctrl+C', run: () => doCopy(leaf, false) },

@@ -215,7 +215,10 @@ function renderBookmarks() {
   bl.oncontextmenu = (e) => {
     if (e.target !== bl && !e.target.classList.contains('empty')) return;
     e.preventDefault();
-    popup([{ label: '新しいフォルダ', icon: 'folder', run: () => newBmFolder() }], e.clientX, e.clientY);
+    popup([
+      { label: '新しいフォルダ', icon: 'folder', run: () => newBmFolder() },
+      { label: 'ブックマークのファイルのフォルダを開く', icon: 'file', run: openBmDir },
+    ], e.clientX, e.clientY);
   };
   if (!S.bookmarks.length) bl.append(h('div', { class: 'empty' }, 'ペインの ☆ で追加'));
   const cur = activeTab()?.bookmarkId;
@@ -261,6 +264,9 @@ function bmMenu(b, x, y) {
     { label: 'フォルダへ移す…', icon: 'folder', run: () => moveToFolderMenu(b, x, y) },
     { label: `番号を変える…(今は b${b.num})`, icon: 'text', run: () => renumberBookmark(b) },
     tab ? { label: '今の配置で上書き', icon: 'split-h', run: () => { b.root = serNode(tab.root); b.target = layoutLabel(b.root); saveBookmarks(); toast('今の配置で上書きしました'); } } : null,
+    { sep: true },
+    { label: 'ファイルに書き出す', icon: 'file', run: () => exportBookmark(b, false) },
+    { label: 'ファイルにしまう(サイドバーから外す)', icon: 'file', run: () => exportBookmark(b, true) },
     { sep: true },
     { label: '削除', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((z) => z !== b); saveBookmarks(); renderSidebar(); } },
   ].filter(Boolean), x, y);
@@ -396,6 +402,8 @@ function tabMenu(tab, x, y) {
     { label: `番号を変える…(今は ${tab.num})`, icon: 'text', run: () => renumberTab(tab) },
     ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'ブックマークに追加', icon: 'bookmark', run: () => addBookmark(l) } : null,
     ls.length > 1 ? { label: '分割ごとブックマーク', icon: 'split-h', run: () => addLayoutBookmark(tab) } : null,
+    { label: '配置をファイルに保存', icon: 'file', run: () => saveTabToFile(tab) },
+    tab.bmFile ? { label: `ファイル(${bmFileShort(tab.bmFile)})を今の配置で上書き`, icon: 'file', run: () => overwriteBmFile(tab) } : null,
     others.length ? { sep: true } : null,
     ...others.map((s) => ({ label: `${s.label}へ移す`, icon: 'window', run: () => moveTab(tab, s.key) })),
     { sep: true },
@@ -480,7 +488,7 @@ const duplicateTab = (tab) => insertTab(serNode(tab.root), { activeIndex: leaves
 function insertTab(data, o) {
   const root = deserNode(data);
   const ls = leaves(root);
-  const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null, bmFile: o.bmFile || null };
   S.tabs.splice(clamp(o.index ?? 0, 0, S.tabs.length), 0, tab);
   S.active = tab.id;
   render();
@@ -492,7 +500,7 @@ function insertTab(data, o) {
 // o.quiet: 残りのタブが無くなっても新しいタブを開かない(画面を外して全部移すとき)
 const LIVE_ONLY = new Set(['el', 'ui', 'slot', 'vl', 'apps', 'entries', 'view', 'sel', 'ta', 'fv']); // 画面の部品など、移った先で作り直すもの
 function moveTab(tab, to, o = {}) {
-  const data = JSON.parse(JSON.stringify({ num: tab.num, bookmarkId: tab.bookmarkId, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
+  const data = JSON.parse(JSON.stringify({ num: tab.num, bookmarkId: tab.bookmarkId, bmFile: tab.bmFile, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
   const i = S.tabs.indexOf(tab);
   S.tabs.splice(i, 1);
   if (S.active === tab.id) S.active = S.tabs[Math.min(i, S.tabs.length - 1)]?.id ?? null;
@@ -504,7 +512,7 @@ function moveTab(tab, to, o = {}) {
 // 別の窓から移ってきたタブ。ペインは id も状態もそのまま(Webビューは作り直さず、アプリも起動し直さない)
 function adoptTab(data) {
   const ids = new Set(leaves(data.root).map((l) => l.id));
-  const tab = { id: nid('t'), num: api.tab.allocNum(data.num || 0), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(data.num || 0), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null, bmFile: data.bmFile || null };
   // フォルダペインは一覧を持ってこない(大きい)ので、同じフォルダを読み直す。並べ方と戻る/進むの履歴は引き継ぐ
   for (const l of leaves(tab.root)) if (l.type === 'files') Object.assign(l, newFilesState(l), { hist: l.hist || { back: [], fwd: [] }, loaded: false, paintQ: false });
   S.tabs.unshift(tab);
@@ -617,6 +625,107 @@ function openBookmark(b) {
     return;
   }
   openTab(b.kind, { url: b.target, path: b.target, bookmarkId: b.id });
+}
+
+// ------------------------------------------------------------------ bookmark files
+// ブックマークをファイル(.prelude。形は bmfile.js)にして、普通のフォルダ(設定「ブックマークのファイルの保存先」。既定は ~/ブックマーク)にしまう。
+// あまり使わないものはサイドバーから外してファイルにしておき、フォルダ・フィールドから開く(開くと同じ配置の新しいタブ)。
+// ファイルから開いたタブはそのファイルを覚えていて(tab.bmFile)、同じファイルをもう一度開くとそのタブへ移る。
+async function bmFileDir() {
+  const home = await api.fs.home();
+  const d = String(C.behavior.bookmarkDir || '').trim();
+  return !d ? home + '/ブックマーク' : d === '~' || d.startsWith('~/') ? home + d.slice(1) : d;
+}
+const bmFileShort = (p) => baseName(p).replace(/\.prelude$/i, '');
+async function saveBmFile(title, root) {
+  const r = await api.fs.bmSave(await bmFileDir(), bmFileName(title), bmFileText(title, root, await api.fs.home()));
+  if (r.error) toast(`保存できません（${r.error}）`);
+  return r.path || null;
+}
+// サイドバーのブックマークをファイルにする。remove: サイドバーから外す(開いているタブはファイルのタブになる)
+async function exportBookmark(b, remove) {
+  const root = bmFileRoot(b);
+  if (!root) return;
+  const p = await saveBmFile(b.title || b.target, root);
+  if (!p) return;
+  if (remove) {
+    S.bookmarks = S.bookmarks.filter((z) => z.id !== b.id); // 書いている間に設定の知らせで S.bookmarks が作り直されていることがあるので、id で比べる
+    for (const t of S.tabs) if (t.bookmarkId === b.id) Object.assign(t, { bookmarkId: null, bmFile: p });
+    saveBookmarks();
+    renderSidebar();
+    scheduleSave();
+  }
+  toast(`${remove ? 'ファイルにしまいました' : 'ファイルに書き出しました'}: ${bmFileShort(p)}`);
+}
+// タブの配置をファイルにする
+async function saveTabToFile(tab) {
+  const p = await saveBmFile(leaves(tab.root).map(leafTitle).join(' | '), serNode(tab.root));
+  if (!p) return;
+  tab.bmFile = p;
+  scheduleSave();
+  toast(`ファイルに保存しました: ${bmFileShort(p)}`);
+}
+// ファイルから開いたタブの今の配置で、そのファイルを書き直す(タイトルはファイルのものを残す)
+async function overwriteBmFile(tab) {
+  const home = await api.fs.home();
+  const r = await api.fs.bmRead(tab.bmFile);
+  let title = bmFileShort(tab.bmFile);
+  try { title = bmFileParse(r.text, home).title || title; } catch {}
+  const w = await api.fs.bmWrite(tab.bmFile, bmFileText(title, serNode(tab.root), home));
+  toast(w.error ? `保存できません（${w.error}）` : '今の配置で上書きしました');
+}
+// ファイルを読んで、起動コマンドを確かめた配置 { title, root } にする。開かない時は null
+async function readBmFile(full) {
+  const r = await api.fs.bmRead(full);
+  let d = null;
+  try {
+    if (r.error) throw new Error(r.error);
+    d = bmFileParse(r.text, await api.fs.home());
+  } catch (e) { toast(`開けません: ${baseName(full)}（${e.message}）`); return null; }
+  const root = await checkBmCommands(d.root, baseName(full));
+  return root && { title: d.title || bmFileShort(full), root };
+}
+// ファイルは人からもらうこともあるので、インストール済みのアプリ(.desktop の Exec)と同じでない起動コマンドは、黙って起動しない。
+// 既定は「起動しないで開く」(そのペインは「アプリを取り込む」の画面になる)
+async function checkBmCommands(root, name) {
+  const cmds = bmFileCommands(root);
+  if (!cmds.length) return root;
+  const known = new Set((await api.app.list().catch(() => [])).map((a) => a.exec));
+  const unknown = cmds.filter((c) => !known.has(c));
+  if (!unknown.length) return root;
+  const body = h('div', {},
+    h('div', {}, `「${name}」は、インストールされているアプリと一致しないコマンドを起動します。自分で作ったファイルでなければ、起動しないで開いてください。`),
+    h('div', { class: 'cmds' }, unknown.map((c) => h('code', {}, c))));
+  const v = await fileDialog('知らないコマンドがあります', body, [
+    { label: 'キャンセル', value: null },
+    { label: '起動する', value: 'run', danger: true },
+    { label: '起動しないで開く', value: 'strip', primary: true },
+  ]);
+  return v === 'run' ? root : v === 'strip' ? bmFileStripCommands(root, unknown) : null;
+}
+async function openBmFile(full) {
+  const open = S.tabs.find((t) => t.bmFile === full);
+  if (open) { showTab(open); return; } // 1ファイル = 最大1タブ
+  const d = await readBmFile(full);
+  if (d) insertTab(d.root, { bmFile: full, index: 0 });
+}
+// ファイルをサイドバーのブックマークに入れる(ファイルは残す)
+async function importBmFile(full) {
+  const d = await readBmFile(full);
+  if (!d) return;
+  const b = { id: 'b' + Date.now().toString(36), num: nextBmNum(), folder: '', ...bmFileToBookmark(d.title, d.root) };
+  if (b.kind === 'tab') b.target = layoutLabel(b.root);
+  else if (S.bookmarks.some((z) => z.kind === b.kind && z.target === b.target)) { toast('登録済みです'); return; }
+  S.bookmarks.push(b);
+  saveBookmarks();
+  renderSidebar();
+  toast('ブックマークに追加しました');
+}
+async function openBmDir() {
+  const dir = await bmFileDir();
+  const r = await api.fs.bmMkdir(dir);
+  if (r.error) { toast(`開けません（${r.error}）`); return; }
+  openTab('files', { path: dir });
 }
 
 async function renameBookmark(b) {
@@ -890,6 +999,7 @@ async function startApp(leaf, cmd, cls = '', name = '', icon = '') {
 // where: 'tab' | 'split' | 'window'(取り込まずに別ウィンドウ)。取り込めない環境・既定のアプリが分からない時は別ウィンドウ
 async function openFileAt(tab, leaf, full, where = C.behavior.fileOpen || 'tab') {
   const ext = /\.([^./]+)$/.exec(full)?.[1]?.toLowerCase();
+  if (ext === BMFILE_EXT) { openBmFile(full); return; } // ブックマークのファイルは、どこで開いても同じ配置の新しいタブ
   const inside = String(C.behavior.viewInside || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
   if (where !== 'window' && ext && inside.includes(ext)) {
     const url = 'file://' + full.split('/').map(encodeURIComponent).join('/');
@@ -1030,7 +1140,7 @@ let saveTimer = 0;
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ num: t.num, bookmarkId: t.bookmarkId, root: serNode(t.root) })) });
+    api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ num: t.num, bookmarkId: t.bookmarkId, bmFile: t.bmFile || undefined, root: serNode(t.root) })) });
   }, 600);
 }
 
@@ -1038,7 +1148,7 @@ function restore(ws) {
   for (const t of ws.tabs) {
     try {
       const root = deserNode(t.root);
-      S.tabs.push({ id: nid('t'), num: api.tab.allocNum(t.num || 0), root, activePane: leaves(root)[0].id, bookmarkId: t.bookmarkId || null });
+      S.tabs.push({ id: nid('t'), num: api.tab.allocNum(t.num || 0), root, activePane: leaves(root)[0].id, bookmarkId: t.bookmarkId || null, bmFile: typeof t.bmFile === 'string' ? t.bmFile : null });
     } catch {}
   }
   if (S.tabs.length) S.active = S.tabs[clamp(ws.active | 0, 0, S.tabs.length - 1)].id;

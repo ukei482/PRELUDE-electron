@@ -106,6 +106,11 @@ contextBridge.exposeInMainWorld('preludeApi', {
     open: (p) => ipcRenderer.invoke('fs:open', p),
     openWith: (p) => ipcRenderer.invoke('fs:open-with', p),
     home: () => ipcRenderer.invoke('fs:home'),
+    // ブックマークのファイル(.prelude)。{ path } / { text } か { error }
+    bmSave: (dir, name, text) => ipcRenderer.invoke('fs:bm-save', dir, name, text),
+    bmMkdir: (dir) => ipcRenderer.invoke('fs:bm-mkdir', dir),
+    bmWrite: (full, text) => ipcRenderer.invoke('fs:bm-write', full, text),
+    bmRead: (full) => ipcRenderer.invoke('fs:bm-read', full),
     drives: () => ipcRenderer.invoke('fs:drives'),
     mkdir: (dir, name) => ipcRenderer.invoke('fs:mkdir', dir, name),
     rename: (full, name) => ipcRenderer.invoke('fs:rename', full, name),

@@ -16,7 +16,7 @@ const FIELD = {
   HOT: 3, HOTMIN: 0.3, // 印を付けるのは、点数が HOTMIN 以上の上位 HOT 件
 };
 // 種類ごとの色はフォルダペインのアイコン(style.css の .ico.k-*)と同じ
-const FIELD_COLORS = { image: '#4f8a5b', video: '#8a4f7d', audio: '#4f6f8a', archive: '#a0712c', code: '#3f7f86', doc: '#a04a3c' };
+const FIELD_COLORS = { bookmark: '#b08a2e', image: '#4f8a5b', video: '#8a4f7d', audio: '#4f6f8a', archive: '#a0712c', code: '#3f7f86', doc: '#a04a3c' };
 const fieldSortName = (a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
 // ------------------------------------------------------------------ 読み込み(キャッシュ・先読み)
@@ -645,6 +645,7 @@ function fieldItemMenu(leaf, x, y) {
     en.isDir ? null : { label: '新しいタブで開く', icon: 'plus', run: () => fieldEnter(leaf, 'tab') },
     en.isDir || !tab ? null : { label: '右に分割して開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => fieldEnter(leaf, 'split') },
     en.isDir ? null : { label: '別のウィンドウで開く', icon: 'window', run: () => fieldEnter(leaf, 'window') },
+    en.ext === BMFILE_EXT ? { label: 'サイドバーのブックマークに入れる', icon: 'bookmark', run: () => importBmFile(en.full) } : null,
     en.isDir ? { label: '新しいタブで開く', icon: 'field', key: '中クリック', run: () => openTab('field', { path: en.full }) } : null,
     en.isDir && tab ? { label: 'フォルダ表示で右に開く', icon: 'split-h', run: () => splitLeaf(tab, leaf, 'row', 'files', { path: en.full }) } : null,
     { sep: true },
