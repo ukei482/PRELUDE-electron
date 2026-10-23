@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.5.0] - 2026-10-23
+
 ### 追加
 - 左のサイドバーに「細い列」の表示を足した。アイコンだけを並べ、名前はマウスを乗せると出る。
   左上の ☰ で「全部表示 → 細い列 → 非表示」の順に切り替わる(設定の「動作」→「サイドバー」でも選べる)。
@@ -307,7 +309,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.11...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.11...v0.5.0
 [0.4.11]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.10...v0.4.11
 [0.4.10]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.9...v0.4.10
 [0.4.9]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.8...v0.4.9
