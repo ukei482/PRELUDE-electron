@@ -198,18 +198,26 @@ function renderSidebar() {
     const l = activeLeaf(tab);
     const ls = leaves(tab.root);
     const place = leafPlace(l);
+    // 2分割のタブは Arc と同じく1行を左右に分けて、両方のペインのアイコンと名前を出す(押した側のペインへ)。
+    // 3分割以上は今のペインと +N を出し、ペインの一覧を下に並べる。細い列では今のペインのアイコンと +N だけ
+    const seg = (x) => h('span', {
+      class: 'seg' + (x.id === l.id ? ' cur' : ''), title: leafTitle(x) + (leafPlace(x) ? '\n' + leafPlace(x) : ''),
+      onclick: (e) => { e.stopPropagation(); tab.activePane = x.id; showTab(tab); },
+    }, leafIconEl(x), h('span', { class: 'label' }, leafTitle(x)), soundBtn([x]));
+    const body = ls.length === 2 ? [seg(ls[0]), seg(ls[1])]
+      : [leafIconEl(l), h('span', { class: 'label' }, tabTitle(tab)), soundBtn(ls)];
     const el = h('div', {
-      class: 'item' + (tab.id === S.active ? ' active' : '') + (ls.some((x) => x.loading) ? ' loading' : ''),
-      title: tabTitle(tab) + (place && place !== tabTitle(tab) ? '\n' + place : '') + (ls.length > 1 ? `\n(${ls.length} 枚のペイン)` : ''),
+      class: 'item' + (ls.length === 2 ? ' pair' : '') + (tab.id === S.active ? ' active' : '') + (ls.some((x) => x.loading) ? ' loading' : ''),
+      title: ls.length === 2 ? '' : tabTitle(tab) + (place && place !== tabTitle(tab) ? '\n' + place : '') + (ls.length > 1 ? `\n(${ls.length} 枚のペイン)` : ''),
       onclick: () => showTab(tab),
       onauxclick: (e) => { if (e.button === 1) closeTab(tab); },
       oncontextmenu: (e) => { e.preventDefault(); tabMenu(tab, e.clientX, e.clientY); },
-    }, leafIconEl(l), h('span', { class: 'label' }, tabTitle(tab)), soundBtn(ls), ls.length > 1 ? h('span', { class: 'badge' }, '+' + (ls.length - 1)) : null,
+    }, ...body, ls.length > 1 ? h('span', { class: 'badge' }, '+' + (ls.length - 1)) : null,
     h('button', { class: 'ibtn x', title: '閉じる', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close')));
     sortable(el, S.tabs, tab, render);
     tl.append(el);
-    // 分割しているタブは、ペインを1行ずつ下に並べる(押すとそのペインへ。細い列では出さない)
-    if (ls.length > 1) {
+    // 3分割以上のタブは、ペインを1行ずつ下に並べる(押すとそのペインへ。細い列では出さない)
+    if (ls.length > 2) {
       for (const x of ls) {
         tl.append(h('div', {
           class: 'item pane-item' + (tab.id === S.active && x.id === l.id ? ' active' : ''),
