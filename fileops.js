@@ -257,6 +257,39 @@ async function dirSize(paths, limitMs = 4000) {
   return { size, files, dirs, partial };
 }
 
+// ---------------------------------------------------------------- ブックマークのファイル(.prelude)
+// 中身の形は画面側(src/bmfile.js)が決める。ここでは .prelude のファイルだけを読み書きする
+const BM_EXT = '.prelude';
+const BM_MAX = 256 * 1024;
+const isBm = (p) => path.isAbsolute(p) && p.toLowerCase().endsWith(BM_EXT);
+
+// dir の中に新しく作る(同じ名前があれば「名前 (1).prelude」)。dir が無ければ作る
+async function bmSave(dir, name, text) {
+  const n = validName(name);
+  if (!path.isAbsolute(dir) || !n || !n.toLowerCase().endsWith(BM_EXT)) return { error: '保存先が正しくありません' };
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+    const p = await freePath(dir, n, false);
+    await fsp.writeFile(p, String(text), { flag: 'wx' });
+    return { path: p };
+  } catch (e) { return { error: e.message }; }
+}
+async function bmMkdir(dir) {
+  if (!path.isAbsolute(dir)) return { error: '保存先が正しくありません' };
+  try { await fsp.mkdir(dir, { recursive: true }); return { path: dir }; } catch (e) { return { error: e.message }; }
+}
+async function bmWrite(full, text) {
+  if (!isBm(full)) return { error: 'ブックマークのファイルではありません' };
+  try { await fsp.writeFile(full, String(text)); return { path: full }; } catch (e) { return { error: e.message }; }
+}
+async function bmRead(full) {
+  if (!isBm(full)) return { error: 'ブックマークのファイルではありません' };
+  try {
+    if ((await fsp.stat(full)).size > BM_MAX) return { error: 'ファイルが大きすぎます' };
+    return { text: await fsp.readFile(full, 'utf8') };
+  } catch (e) { return { error: e.message }; }
+}
+
 // ---------------------------------------------------------------- IPC
 const strs = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && x) : []);
 
@@ -270,6 +303,10 @@ function init(o) {
   ipcMain.handle('fs:open', (_e, p) => shell.openPath(String(p)));
   ipcMain.handle('fs:open-with', (_e, p) => require('./sys/apps').forFile(String(p))); // 既定のアプリ(ペインに取り込んで開く用)
   ipcMain.handle('fs:home', () => os.homedir());
+  ipcMain.handle('fs:bm-save', (_e, dir, name, text) => bmSave(String(dir), name, text));
+  ipcMain.handle('fs:bm-mkdir', (_e, dir) => bmMkdir(String(dir)));
+  ipcMain.handle('fs:bm-write', (_e, full, text) => bmWrite(String(full), text));
+  ipcMain.handle('fs:bm-read', (_e, full) => bmRead(String(full)));
   ipcMain.handle('fs:mkdir', (_e, dir, name) => mkdir(String(dir), name));
   ipcMain.handle('fs:rename', (_e, full, name) => rename(String(full), name));
   ipcMain.handle('fs:remove', (_e, paths, permanent) => remove(strs(paths), !!permanent));
