@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "start:linux": "electron . --no-sandbox"
+    "start:linux": "electron . --no-sandbox",
+    "test": "node --test"
   },
   "devDependencies": {
     "electron": "^44.5.1"
