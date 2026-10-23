@@ -58,7 +58,7 @@ const SCHEMA = [
       { path: 'behavior.downloadDir', label: 'ダウンロードの開始フォルダ（空=ダウンロードフォルダ）', type: 'text' },
       { path: 'behavior.showHidden', label: '隠しファイル（.で始まる）を表示', type: 'bool' },
       { path: 'behavior.terminal', label: '端末のコマンド（%d がフォルダ。空=Konsole / Windows Terminal）', type: 'text' },
-      { path: 'behavior.sidebarVisible', label: 'サイドバーを表示', type: 'bool' },
+      { path: 'behavior.sidebarMode', label: 'サイドバー（タイトルバーの ☰ で 全部→細い列→非表示 の順に切り替え）', type: 'select', options: [['full', '全部表示'], ['compact', '細い列（アイコンだけ）'], ['hidden', '非表示']] },
       { path: 'behavior.startFullscreen', label: '起動時に全画面で開く（次回起動から）', type: 'bool' },
       { path: 'behavior.subDisplays', label: '2枚目以降の画面にも PRELUDE の窓を開く', type: 'bool' },
     ],
@@ -68,6 +68,7 @@ const SCHEMA = [
     fields: [
       { path: 'shortcuts.newTab', label: '新しいタブ', type: 'text' },
       { path: 'shortcuts.closeTab', label: 'タブを閉じる', type: 'text' },
+      { path: 'shortcuts.reopenTab', label: '閉じたタブを開き直す', type: 'text' },
       { path: 'shortcuts.fullscreen', label: '全画面', type: 'text' },
       { path: 'shortcuts.launcher', label: 'ランチャー（PRELUDEが前面のとき）', type: 'text' },
       { path: 'shortcuts.globalLauncher', label: 'グローバルのランチャーキー（初回登録時の既定。以降の変更はKDEのショートカット設定で）', type: 'text' },
@@ -102,13 +103,13 @@ function defaults() {
       downloadDir: '',
       showHidden: false,
       terminal: '',
-      sidebarVisible: true,
+      sidebarMode: 'full',
       startFullscreen: true,
       subDisplays: true,
     },
     bookmarks: [],
     appUsage: [],
-    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', fullscreen: 'F11', launcher: 'Ctrl+Shift+P', globalLauncher: 'Meta+Space' },
+    shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', reopenTab: 'Ctrl+Shift+T', fullscreen: 'F11', launcher: 'Ctrl+Shift+P', globalLauncher: 'Meta+Space' },
   };
 }
 
@@ -148,7 +149,11 @@ class Config {
     }
     if (raw) {
       try {
-        merge(this.data, JSON.parse(raw));
+        const over = JSON.parse(raw);
+        // 0.4.11 までの「サイドバーを表示」(on/off)は、サイドバーの3段階(全部・細い列・非表示)へ引き継ぐ
+        const b = over?.behavior;
+        if (b && b.sidebarMode == null && b.sidebarVisible === false) b.sidebarMode = 'hidden';
+        merge(this.data, over);
       } catch {}
     }
   }

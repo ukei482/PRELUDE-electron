@@ -83,11 +83,17 @@ function applyTheme() {
   for (const k of ['bg', 'panel', 'panel2', 'line', 'text', 'dim', 'accent', 'danger']) r.setProperty('--' + k, a[k]);
   r.setProperty('--fs', a.fontSize + 'px');
   r.setProperty('--sbw', a.sidebarWidth + 'px');
-  document.body.classList.toggle('no-sidebar', !C.behavior.sidebarVisible);
+  const mode = C.behavior.sidebarMode;
+  document.body.classList.toggle('no-sidebar', mode === 'hidden');
+  document.body.classList.toggle('sb-compact', mode === 'compact');
+  $('#tb-sidebar').title = `サイドバー(次は${{ full: '細い列', compact: '非表示', hidden: '全部表示' }[mode] || '細い列'})`;
 }
+// タイトルバーの ☰: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す
+const SB_MODES = ['full', 'compact', 'hidden'];
+const cycleSidebar = () => api.config.set('behavior.sidebarMode', SB_MODES[(SB_MODES.indexOf(C.behavior.sidebarMode) + 1) % SB_MODES.length]);
 
-function tabTitle(tab) {
-  const l = activeLeaf(tab);
+const tabTitle = (tab) => leafTitle(activeLeaf(tab));
+function leafTitle(l) {
   if (!l) return '';
   if (l.type === 'web') return l.title || hostOf(l.url) || '新しいタブ';
   if (l.type === 'files') return l.mode === 'save' ? '保存先を選択' : baseName(l.path) || 'フォルダ';
@@ -110,15 +116,57 @@ function appLeafIcon(l) {
   return ico('window');
 }
 
+// サイドバーの項目に出すアイコン(Web はファビコン、アプリは .desktop のアイコン)
+const leafIconEl = (l) => (l.type === 'web' && l.favicon ? h('img', { class: 'fav', src: l.favicon, onerror: (e) => e.target.replaceWith(ico('globe')) })
+  : l.type === 'app' ? appLeafIcon(l) : ico(leafIcon(l)));
+const leafPlace = (l) => (l.type === 'web' ? l.url : l.type === 'app' ? l.webUrl || l.cmd : l.path) || '';
+// 音が鳴っている(または消してある)Web ペインの音のボタン。押すと消す/戻す
+function soundBtn(ls) {
+  const web = ls.filter((l) => l.type === 'web' && (l.audible || l.muted));
+  if (!web.length) return null;
+  const muted = web.every((l) => l.muted);
+  return h('button', {
+    class: 'ibtn snd' + (muted ? ' muted' : ''), title: muted ? '音を出す' : '音を消す',
+    onclick: (e) => { e.stopPropagation(); setMuted(ls, !muted); },
+  }, ico(muted ? 'volume-off' : 'volume'));
+}
+const setMuted = (ls, on) => ls.forEach((l) => { if (l.type === 'web') webCmd(l, 'mute', on); });
+
+// ドラッグで並べ替える。list は並び順そのもの(S.tabs・S.bookmarks)で、同じ list の中だけで動かせる
+let sbDrag = null;
+function sortable(el, list, item, done) {
+  el.draggable = true;
+  el.ondragstart = (e) => { sbDrag = { list, item }; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); };
+  el.ondragend = () => { sbDrag = null; document.querySelectorAll('#sidebar .drop-a, #sidebar .drop-b, #sidebar .dragging').forEach((x) => x.classList.remove('drop-a', 'drop-b', 'dragging')); };
+  const after = (e) => { const r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
+  el.ondragover = (e) => {
+    if (sbDrag?.list !== list || sbDrag.item === item) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const b = after(e);
+    el.classList.toggle('drop-b', b);
+    el.classList.toggle('drop-a', !b);
+  };
+  el.ondragleave = () => el.classList.remove('drop-a', 'drop-b');
+  el.ondrop = (e) => {
+    if (sbDrag?.list !== list || sbDrag.item === item) return;
+    e.preventDefault();
+    const b = after(e);
+    list.splice(list.indexOf(sbDrag.item), 1);
+    list.splice(list.indexOf(item) + (b ? 1 : 0), 0, sbDrag.item);
+    done();
+  };
+}
+
 function renderSidebar() {
   const bl = $('#bm-list');
   bl.replaceChildren();
   if (!S.bookmarks.length) bl.append(h('div', { class: 'empty' }, 'ペインの ☆ で追加'));
   for (const b of S.bookmarks) {
     const open = S.tabs.some((t) => t.bookmarkId === b.id);
-    bl.append(h('div', {
-      class: 'item' + (activeTab()?.bookmarkId === b.id ? ' active' : ''),
-      title: b.target,
+    const el = h('div', {
+      class: 'item' + (activeTab()?.bookmarkId === b.id ? ' active' : '') + (open ? ' open' : ''),
+      title: `${b.title || b.target}\n${b.target}`,
       onclick: () => openBookmark(b),
       oncontextmenu: (e) => {
         e.preventDefault();
@@ -127,32 +175,72 @@ function renderSidebar() {
           { label: '削除', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((x) => x !== b); saveBookmarks(); renderSidebar(); } },
         ], e.clientX, e.clientY);
       },
-    }, ico(b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : 'folder'), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null));
+    }, ico(b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : 'folder'), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
+    sortable(el, S.bookmarks, b, () => { saveBookmarks(); renderSidebar(); });
+    bl.append(el);
   }
 
+  $('#tab-count').textContent = S.tabs.length > 1 ? String(S.tabs.length) : '';
   const tl = $('#tab-list');
   tl.replaceChildren();
+  tl.oncontextmenu = (e) => {
+    if (e.target !== tl) return;
+    e.preventDefault();
+    popup([
+      { label: '新しいタブ', icon: 'plus', run: () => openTab(C.behavior.startKind) },
+      { label: '閉じたタブを開き直す', icon: 'back', key: C.shortcuts.reopenTab, disabled: !S.closed.length, run: reopenClosedTab },
+    ], e.clientX, e.clientY);
+  };
   for (const tab of S.tabs) {
     const l = activeLeaf(tab);
-    const n = leaves(tab.root).length;
-    const icon = l.type === 'web' && l.favicon ? h('img', { class: 'fav', src: l.favicon, onerror: (e) => e.target.replaceWith(ico('globe')) })
-      : l.type === 'app' ? appLeafIcon(l) : ico(leafIcon(l));
-    tl.append(h('div', {
-      class: 'item' + (tab.id === S.active ? ' active' : ''),
+    const ls = leaves(tab.root);
+    const place = leafPlace(l);
+    const el = h('div', {
+      class: 'item' + (tab.id === S.active ? ' active' : '') + (ls.some((x) => x.loading) ? ' loading' : ''),
+      title: tabTitle(tab) + (place && place !== tabTitle(tab) ? '\n' + place : '') + (ls.length > 1 ? `\n(${ls.length} 枚のペイン)` : ''),
       onclick: () => showTab(tab),
       onauxclick: (e) => { if (e.button === 1) closeTab(tab); },
-      oncontextmenu: (e) => {
-        e.preventDefault();
-        const others = S.screens.filter((x) => x.key !== WIN_KEY);
-        popup([
-          ...others.map((x) => ({ label: `${x.label}へ移す`, icon: 'window', run: () => moveTab(tab, x.key) })),
-          others.length ? { sep: true } : null,
-          { label: '閉じる', icon: 'close', danger: true, run: () => closeTab(tab) },
-        ].filter(Boolean), e.clientX, e.clientY);
-      },
-    }, icon, h('span', { class: 'label' }, tabTitle(tab)), n > 1 ? h('span', { class: 'badge' }, '+' + (n - 1)) : null,
-    h('button', { class: 'ibtn x', title: '閉じる', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close'))));
+      oncontextmenu: (e) => { e.preventDefault(); tabMenu(tab, e.clientX, e.clientY); },
+    }, leafIconEl(l), h('span', { class: 'label' }, tabTitle(tab)), soundBtn(ls), ls.length > 1 ? h('span', { class: 'badge' }, '+' + (ls.length - 1)) : null,
+    h('button', { class: 'ibtn x', title: '閉じる', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close')));
+    sortable(el, S.tabs, tab, render);
+    tl.append(el);
+    // 分割しているタブは、ペインを1行ずつ下に並べる(押すとそのペインへ。細い列では出さない)
+    if (ls.length > 1) {
+      for (const x of ls) {
+        tl.append(h('div', {
+          class: 'item pane-item' + (tab.id === S.active && x.id === l.id ? ' active' : ''),
+          title: leafTitle(x) + (leafPlace(x) ? '\n' + leafPlace(x) : ''),
+          onclick: () => { tab.activePane = x.id; showTab(tab); },
+          onauxclick: (e) => { if (e.button === 1) closeLeaf(tab, x); },
+        }, leafIconEl(x), h('span', { class: 'label' }, leafTitle(x)), soundBtn([x]),
+        h('button', { class: 'ibtn x', title: 'ペインを閉じる', onclick: (e) => { e.stopPropagation(); closeLeaf(tab, x); } }, ico('close'))));
+      }
+    }
   }
+}
+
+// タブの右クリックメニュー
+function tabMenu(tab, x, y) {
+  const l = activeLeaf(tab);
+  const ls = leaves(tab.root);
+  const i = S.tabs.indexOf(tab);
+  const others = S.screens.filter((s) => s.key !== WIN_KEY);
+  const web = ls.filter((p) => p.type === 'web');
+  const muted = web.length && web.every((p) => p.muted);
+  popup([
+    ['web', 'files', 'field'].includes(l.type) ? { label: '再読込', icon: 'reload', run: () => (l.type === 'web' ? webCmd(l, 'reload') : l.type === 'files' ? reloadDir(l) : fieldReload(l)) } : null,
+    web.length ? { label: muted ? '音を出す' : '音を消す', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
+    { label: '複製', icon: 'plus', run: () => duplicateTab(tab) },
+    ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'ブックマークに追加', icon: 'bookmark', run: () => addBookmark(l) } : null,
+    others.length ? { sep: true } : null,
+    ...others.map((s) => ({ label: `${s.label}へ移す`, icon: 'window', run: () => moveTab(tab, s.key) })),
+    { sep: true },
+    { label: '閉じたタブを開き直す', icon: 'back', key: C.shortcuts.reopenTab, disabled: !S.closed.length, run: reopenClosedTab },
+    { label: '下のタブを閉じる', disabled: i === S.tabs.length - 1, run: () => closeTabs(S.tabs.slice(i + 1)) },
+    { label: 'ほかのタブを閉じる', disabled: S.tabs.length < 2, run: () => closeTabs(S.tabs.filter((t) => t !== tab)) },
+    { label: '閉じる', icon: 'close', danger: true, key: C.shortcuts.closeTab, run: () => closeTab(tab) },
+  ].filter(Boolean), x, y);
 }
 
 // ------------------------------------------------------------------ tabs / panes
@@ -187,12 +275,54 @@ function destroyLeaf(l) {
 }
 
 function closeTab(tab) {
+  rememberClosed(tab);
   leaves(tab.root).forEach(destroyLeaf);
   const i = S.tabs.indexOf(tab);
   S.tabs.splice(i, 1);
   if (!S.tabs.length) { openTab(C.behavior.startKind); return; }
   if (S.active === tab.id) S.active = S.tabs[Math.min(i, S.tabs.length - 1)].id;
   render();
+}
+
+// まとめて閉じる(下のタブ・ほかのタブ)。今のタブが閉じたら、残ったうちの一番近いものへ
+function closeTabs(list) {
+  if (!list.length) return;
+  for (const tab of list) {
+    rememberClosed(tab);
+    leaves(tab.root).forEach(destroyLeaf);
+    S.tabs.splice(S.tabs.indexOf(tab), 1);
+  }
+  if (!S.tabs.length) { openTab(C.behavior.startKind); return; }
+  if (!S.tabs.some((t) => t.id === S.active)) S.active = S.tabs[S.tabs.length - 1].id;
+  render();
+}
+
+// 閉じたタブ(新しい順に最大 20)。中身は保存と同じ形(serNode)で持ち、開き直すと元の位置に戻す
+S.closed = [];
+function rememberClosed(tab) {
+  const ls = leaves(tab.root);
+  if (ls.length === 1 && ls[0].type === 'home') return; // 何もしていないホームだけのタブは覚えない
+  S.closed.unshift({ bookmarkId: tab.bookmarkId, root: serNode(tab.root), activeIndex: ls.findIndex((l) => l.id === tab.activePane), index: S.tabs.indexOf(tab) });
+  S.closed.length = Math.min(S.closed.length, 20);
+}
+function reopenClosedTab() {
+  const c = S.closed.shift();
+  if (!c) { toast('開き直せるタブはありません'); return; }
+  // ブックマークのタブがもう開いていれば、ブックマークとのつながりは外す(1ブックマーク = 最大1タブ)
+  const bookmarkId = c.bookmarkId && !S.tabs.some((t) => t.bookmarkId === c.bookmarkId) && S.bookmarks.some((b) => b.id === c.bookmarkId) ? c.bookmarkId : null;
+  insertTab(c.root, { bookmarkId, activeIndex: c.activeIndex, index: c.index });
+}
+// タブの複製。分割もそのまま写す(ブックマークとのつながりは写さない)
+const duplicateTab = (tab) => insertTab(serNode(tab.root), { activeIndex: leaves(tab.root).findIndex((l) => l.id === tab.activePane), index: S.tabs.indexOf(tab) + 1 });
+function insertTab(data, o) {
+  const root = deserNode(data);
+  const ls = leaves(root);
+  const tab = { id: nid('t'), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null };
+  S.tabs.splice(clamp(o.index ?? 0, 0, S.tabs.length), 0, tab);
+  S.active = tab.id;
+  render();
+  if (S.appSupported) for (const l of ls) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
+  return tab;
 }
 
 // タブを別の画面の窓へ移す。ペインは壊さずに渡す(Webページ・取り込んだアプリは main.js が移った先の窓へ付け替える)。
@@ -689,24 +819,26 @@ function buildSettings(tab, leaf, head, body) {
 }
 
 // ------------------------------------------------------------------ persistence (workspace)
+// タブの中身を保存する形(JSON)にする/戻す。閉じたタブ・タブの複製もこの形を使う
+const serNode = (n) => (n.k === 'split'
+  ? { k: 'split', dir: n.dir, ratio: n.ratio, a: serNode(n.a), b: serNode(n.b) }
+  : { k: 'leaf', type: n.type, url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl, sort: n.type === 'files' ? n.sort : undefined });
+const deserNode = (n) => (n.k === 'split'
+  ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deserNode(n.a), b: deserNode(n.b) }
+  : makeLeaf(['web', 'files', 'settings', 'app', 'home', 'field'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl, sort: n.sort }));
+
 let saveTimer = 0;
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const ser = (n) => (n.k === 'split'
-      ? { k: 'split', dir: n.dir, ratio: n.ratio, a: ser(n.a), b: ser(n.b) }
-      : { k: 'leaf', type: n.type, url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl, sort: n.type === 'files' ? n.sort : undefined });
-    api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ bookmarkId: t.bookmarkId, root: ser(t.root) })) });
+    api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ bookmarkId: t.bookmarkId, root: serNode(t.root) })) });
   }, 600);
 }
 
 function restore(ws) {
-  const deser = (n) => (n.k === 'split'
-    ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deser(n.a), b: deser(n.b) }
-    : makeLeaf(['web', 'files', 'settings', 'app', 'home', 'field'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl, sort: n.sort }));
   for (const t of ws.tabs) {
     try {
-      const root = deser(t.root);
+      const root = deserNode(t.root);
       S.tabs.push({ id: nid('t'), root, activePane: leaves(root)[0].id, bookmarkId: t.bookmarkId || null });
     } catch {}
   }
@@ -727,6 +859,7 @@ api.onShortcut(({ action, paneId }) => {
   const cur = paneId ? findLeaf(paneId)?.leaf || leaf : leaf;
   if (action === 'newTab') openTab(C.behavior.startKind);
   else if (action === 'closeTab') closeTab(tab);
+  else if (action === 'reopenTab') reopenClosedTab();
   else if (action === 'fullscreen') api.win.cmd('toggleFullscreen');
   else if (action === 'focusAddress') focusAddress();
   else if (action === 'launcher') openLauncher();
@@ -739,7 +872,7 @@ api.onShortcut(({ action, paneId }) => {
 api.web.onState((s) => {
   const f = findLeaf(s.paneId);
   if (!f) return;
-  Object.assign(f.leaf, { url: s.url, title: s.title, loading: s.loading, canBack: s.canBack, canFwd: s.canFwd });
+  Object.assign(f.leaf, { url: s.url, title: s.title, loading: s.loading, canBack: s.canBack, canFwd: s.canFwd, audible: !!s.audible, muted: !!s.muted });
   updateWebUI(f.leaf);
   renderSidebar();
 });
@@ -853,11 +986,11 @@ async function boot() {
   $('#tb-fullscreen').append(ico('fullscreen'));
   $('#tb-max').append(ico('maximize'));
   $('#new-tab').append(ico('plus'));
-  $('#open-settings').append(ico('settings'), '設定');
+  $('#open-settings').append(ico('settings'), h('span', { class: 'label' }, '設定'));
   document.body.classList.toggle('sub', IS_SUB);
   if (IS_SUB) $('#tb-title').textContent = `PRELUDE ${WIN_KEY.replace(/^sub(\d+)$/, (_m, n) => `画面${Number(n) + 1}`)}`;
   api.win.screens().then((list) => { S.screens = list || []; });
-  $('#tb-sidebar').onclick = () => api.config.set('behavior.sidebarVisible', !C.behavior.sidebarVisible);
+  $('#tb-sidebar').onclick = cycleSidebar;
   $('#tb-fullscreen').onclick = () => api.win.cmd('toggleFullscreen');
   $('#tb-max').onclick = () => api.win.cmd('toggleMaximize');
   $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [

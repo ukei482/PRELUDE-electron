@@ -72,6 +72,40 @@ body.sub .sb-foot, body.sub #tb-fullscreen, body.sub #tb-max { display: none; }
 .item .x { opacity: 0; width: 22px; height: 22px; }
 .item:hover .x { opacity: 1; }
 .item img.fav, .pane-head img.fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+.item { position: relative; }
+.item img { -webkit-user-drag: none; }
+#tab-count { margin-left: 4px; opacity: .8; }
+/* 分割しているタブのペイン(タブの下に1行ずつ) */
+.item.pane-item { height: 24px; padding-left: 22px; font-size: .92em; color: var(--dim); }
+.item.pane-item.active { color: var(--text); background: none; box-shadow: inset 2px 0 0 var(--accent); }
+.item.pane-item .ico, .item.pane-item img.fav { width: 14px; height: 14px; }
+.item.pane-item .ico svg { width: 14px; height: 14px; }
+/* 読み込み中のタブはアイコンを点滅させる */
+.item.loading > .ico, .item.loading > img.fav { animation: sb-pulse .7s ease-in-out infinite alternate; }
+@keyframes sb-pulse { from { opacity: 1; } to { opacity: .3; } }
+/* 音が鳴っているタブ。押すと消す/戻す */
+.item .snd { width: 22px; height: 22px; color: var(--accent); }
+.item .snd.muted { color: var(--dim); }
+/* ドラッグで並べ替え: 落とす位置に線を出す */
+.item.dragging { opacity: .4; }
+.item.drop-a { box-shadow: inset 0 2px 0 var(--accent); }
+.item.drop-b { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* 細い列(サイドバー「細い列」): アイコンだけを並べ、名前はマウスを乗せると出る */
+body.sb-compact #sidebar { width: 44px; padding: 6px 4px; }
+body.sb-compact .sb-title { justify-content: center; padding: 4px 0 2px; }
+body.sb-compact .sb-title .label { display: none; }
+body.sb-compact .sb-title:first-child { border-bottom: 1px solid var(--line); padding: 0; margin: 2px 6px 4px; }
+body.sb-compact #bm-list .empty, body.sb-compact .item .label, body.sb-compact .item .x, body.sb-compact .item.pane-item { display: none; }
+body.sb-compact .item { justify-content: center; padding: 0; height: 34px; }
+body.sb-compact .item.active { box-shadow: inset 2px 0 0 var(--accent); }
+body.sb-compact .item .badge { position: absolute; right: 1px; bottom: 1px; font-size: .68em; line-height: 1; }
+body.sb-compact .item.open .badge { font-size: .5em; }
+body.sb-compact .item .snd { position: absolute; right: -3px; top: -2px; width: 16px; height: 16px; }
+body.sb-compact .item .snd .ico, body.sb-compact .item .snd svg { width: 11px; height: 11px; }
+body.sb-compact .sb-foot { display: flex; justify-content: center; }
+body.sb-compact #open-settings .label { display: none; }
+body.sb-compact #open-settings { padding: 6px; }
 .empty { color: var(--dim); padding: 4px 8px; font-size: .9em; }
 
 #workspace { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--bg); border-top: 1px solid var(--line); }

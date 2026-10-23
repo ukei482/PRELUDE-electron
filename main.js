@@ -138,6 +138,7 @@ function bindings() {
   return [
     ['newTab', config.get('shortcuts.newTab')],
     ['closeTab', config.get('shortcuts.closeTab')],
+    ['reopenTab', config.get('shortcuts.reopenTab')],
     ['fullscreen', config.get('shortcuts.fullscreen')],
     ['launcher', config.get('shortcuts.launcher')],
     ['focusAddress', 'Ctrl+L'],
@@ -477,9 +478,9 @@ function createWeb(paneId, input, key) {
 
   const push = () => sendPane(paneId, 'web:state', {
     paneId, url: wc.getURL(), title: wc.getTitle(), loading: wc.isLoading(),
-    canBack: navBack(wc), canFwd: navFwd(wc),
+    canBack: navBack(wc), canFwd: navFwd(wc), audible: wc.isCurrentlyAudible(), muted: wc.isAudioMuted(),
   });
-  ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'dom-ready']
+  ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'dom-ready', 'audio-state-changed']
     .forEach((ev) => wc.on(ev, () => push()));
   wc.on('page-favicon-updated', (_e, icons) => sendPane(paneId, 'web:favicon', { paneId, icon: icons[0] || '' }));
   wc.on('focus', () => { lastKey = owners.get(paneId) || 'main'; sendPane(paneId, 'web:focused', { paneId }); });
@@ -535,6 +536,7 @@ ipcMain.on('web:cmd', (_e, paneId, cmd, arg) => {
   else if (cmd === 'forward') { if (navFwd(wc)) (wc.navigationHistory ? wc.navigationHistory.goForward() : wc.goForward()); }
   else if (cmd === 'reload') wc.reload();
   else if (cmd === 'stop') wc.stop();
+  else if (cmd === 'mute') { wc.setAudioMuted(!!arg); wc.emit('audio-state-changed'); } // 状態を画面へ送り直す
   else if (cmd === 'focus') wc.focus();
   else if (cmd === 'pin') e.pin = arg ? siteOf(String(arg)) : ''; // ブックマークのタブなら、そのサイト
 });
