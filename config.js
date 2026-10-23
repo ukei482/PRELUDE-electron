@@ -20,9 +20,7 @@ const KINDS = [
 // 見た目のテーマ。classic 以外は src/themes/<id>.css を style.css の後に重ねる(色も形もテーマが決める)
 const THEMES = [
   ['classic', 'クラシック'],
-  ['terminal', 'ターミナル（黒地・ls の色）'],
-  ['crt', 'CRT（緑の蛍光画面）'],
-  ['amber', 'CRT（琥珀の蛍光画面）'],
+  ['cli', 'CLI（青地に白）'],
 ];
 
 const SCHEMA = [

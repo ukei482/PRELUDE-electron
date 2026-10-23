@@ -1,0 +1,122 @@
+/* CLI テーマ: 青地に白い字。部品は 1px の線の箱(ボタンの形 A)、選んだものは白地に青の字で反転する。
+   style.css の後に重ねる。変えるのは色・線・字・角だけで、部品の大きさ・余白・並びは style.css のまま
+   (枠の線は inset の影か outline で描いて、大きさを変えない) */
+@font-face { font-family: "DotGothic16"; src: url("../fonts/DotGothic16-Regular.ttf"); }
+:root {
+  --bg: #0000a8; --panel: #0000a8; --panel2: #0000ff; --line: #fff;
+  --text: #fff; --dim: #a8a8ff; --accent: #fff; --danger: #ffff54;
+  --soft: #5454c8; /* 弱い線・押せないもの */
+  --sel-bg: #fff; --sel-text: #0000a8; /* 反転 */
+  --hard: 8px 8px 0 #000; /* ぼかさない影 */
+  /* 種類の色は DOS の明るい色 */
+  --k-image: #54ff54; --k-video: #ff54ff; --k-audio: #54ffff; --k-archive: #ff5454; --k-code: #ffff54; --k-doc: #fff; --k-bookmark: #ffff54;
+  --round: 0;
+}
+body, input, button, select { font-family: "DotGothic16", "MS Gothic", "ＭＳ ゴシック", monospace; }
+::selection { background: var(--sel-bg); color: var(--sel-text); }
+
+/* ---- ボタン: 外に余白を残して 1px の箱。乗せると余白ごと明るい青、押すと反転 */
+.ibtn, .textbtn { border-radius: 0; outline: 1px solid currentColor; outline-offset: -4px; }
+.ibtn:hover:not(:disabled), .textbtn:hover:not(:disabled) { background: var(--panel2); }
+.ibtn:active:not(:disabled), .textbtn:active:not(:disabled) { background: var(--sel-bg); color: var(--sel-text); }
+.ibtn:disabled, .textbtn:disabled { opacity: 1; color: var(--soft); }
+.textbtn.primary { background: var(--sel-bg); color: var(--sel-text); }
+.textbtn.primary:hover { filter: none; background: var(--sel-bg); outline-offset: -3px; }
+.textbtn.danger { color: var(--danger); }
+.ibtn:focus-visible, .textbtn:focus-visible { outline-width: 2px; }
+/* 行の中の小さなボタン(閉じる・音)は箱にしない */
+.item .x, .item .snd, .nitem .nx { outline: 0; }
+.item .x:hover:not(:disabled), .nitem .nx:hover:not(:disabled) { background: var(--sel-bg); color: var(--sel-text); }
+
+/* ---- 入力欄: 1px の箱。打っている欄は線を二重に */
+input[type=text], input[type=number], select { border-radius: 0; background: var(--bg); caret-color: var(--text); }
+input:focus, select:focus { border-color: var(--line); box-shadow: inset 0 0 0 1px var(--line); }
+input::placeholder { color: var(--dim); }
+
+/* ---- サイドバー */
+#sidebar { box-shadow: inset -1px 0 0 var(--line); }
+.item, .item .seg { border-radius: 0; }
+.item:hover, .item .seg:hover { background: var(--panel2); }
+.item.active { background: var(--sel-bg); color: var(--sel-text); box-shadow: none; }
+.item.active .badge, .item.active .num, .item.active .chev, .item.active .snd, .item.active .x { color: var(--sel-text); }
+.item.active .seg:hover { background: transparent; }
+.item.active .seg.cur { background: transparent; box-shadow: inset 0 -2px 0 var(--sel-text); }
+.item .seg + .seg::before { background: currentColor; }
+.item.drop-in { background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line); }
+body.sb-compact #bm-list, body.sb-compact #tab-list { background: transparent; border-radius: 0; box-shadow: inset 0 0 0 1px var(--line); }
+body.sb-compact .item.active { box-shadow: none; }
+
+/* ---- ペイン */
+#workspace { border-top-color: var(--line); }
+.pane-head { box-shadow: inset 0 -1px 0 var(--soft); }
+.pane.active > .pane-head { box-shadow: inset 0 -2px 0 var(--line); }
+.divider { opacity: 1; background: var(--soft); }
+.divider:hover { background: var(--line); }
+.field-hint { border-radius: 0; background: var(--bg); box-shadow: inset 0 0 0 1px var(--soft); }
+.field-ren { border-radius: 0; }
+
+/* ---- フォルダ */
+.fh.sorted { color: var(--text); }
+.frow:hover { background: var(--panel2); }
+.frow.sel, .vlist:focus .frow.sel { background: var(--sel-bg); color: var(--sel-text); }
+.frow.sel .col, .frow.sel .ico { color: var(--sel-text); }
+.frow.cur::before { border-radius: 0; border: 1px dotted var(--line); }
+.vlist:focus .frow.cur::before { border: 1px solid var(--line); }
+.frow.sel.cur::before { border-color: var(--sel-text); }
+.band { background: transparent; border: 1px dotted var(--line); }
+.fstatus { border-top-color: var(--line); }
+.fstatus .r.busy { color: var(--text); }
+.savebar { border-top-color: var(--line); }
+.fdialog .cmds code { border-radius: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--soft); }
+
+/* ---- 設定 */
+.settings h3 { color: var(--text); }
+.frm input[type=color] { border-radius: 0; }
+
+/* ---- メニュー・ダイアログ・クイック設定: 余白の内側に 1px の線、ぼかさない黒い影 */
+.menu, .modal, .qpanel {
+  border-radius: 0; border-color: var(--bg);
+  box-shadow: inset 0 0 0 3px var(--bg), inset 0 0 0 4px var(--line), var(--hard);
+}
+.launcher { border-radius: 0; border-color: var(--line); box-shadow: var(--hard); }
+.backdrop.modal-bg { background: rgba(0, 0, 0, .35); }
+.menu .mi { border-radius: 0; }
+.menu .mi.act { background: var(--sel-bg); color: var(--sel-text); }
+.menu .mi.act .mk { color: var(--sel-text); }
+.menu .mi.danger { color: var(--danger) !important; }
+.menu .mi.act.danger { background: var(--danger); color: var(--sel-text) !important; }
+.menu .sep { background: var(--soft); opacity: 1; }
+.launcher .lrow { border-radius: 0; }
+.launcher .lrow.sel { background: var(--sel-bg); color: var(--sel-text); }
+.launcher .lrow.sel .lkind { color: var(--sel-text); }
+#toast { border-radius: 0; background: var(--sel-bg); color: var(--sel-text); box-shadow: var(--hard); }
+
+/* ---- ステータスバー: 白い帯に青の字。項目は縦線で区切る */
+#statusbar { background: var(--sel-bg); color: var(--sel-text); border-top-color: var(--sel-bg); }
+#statusbar .baritem { color: var(--sel-text); box-shadow: inset 1px 0 0 var(--sel-text); }
+#statusbar .baritem.warn { color: #a80000; }
+#statusbar .barbtn, #statusbar .baritem.clickable, #statusbar .trayicon { border-radius: 0; }
+#statusbar .barbtn:hover, #statusbar .baritem.clickable:hover, #statusbar .trayicon:hover { background: var(--bg); color: var(--text); }
+#statusbar .trayicon.attn { box-shadow: inset 0 -2px 0 #a80000; }
+#statusbar .tfb { color: var(--sel-text); }
+
+/* ---- クイック設定・通知センター・ホーム・アプリ */
+.qitem, .nitem, .htile, .app-row, .trayicon { border-radius: 0; }
+.qitem:hover, .nitem:hover, .htile:hover, .app-row:hover { background: var(--panel2); color: var(--text); }
+.qitem.on { background: var(--sel-bg); color: var(--sel-text); box-shadow: none; }
+.qitem.on .qmeta { color: var(--sel-text); }
+.nitem.new { box-shadow: inset 2px 0 0 var(--line); }
+.hcard { border-radius: 0; border-color: var(--line); background: var(--bg); backdrop-filter: none; }
+.hchip { border: 0; }
+
+/* ---- スクロールバー */
+::-webkit-scrollbar-thumb { border-radius: 0; border: 0; background: var(--soft); }
+::-webkit-scrollbar-thumb:hover { background: var(--line); }
+
+/* ---- 通知・OSD(overlay.html。窓の外へ影を落とせないので影は付けない) */
+.toast, .osdcard { border-radius: 0; border-color: var(--line); box-shadow: inset 0 0 0 2px var(--bg), inset 0 0 0 3px var(--line); }
+.toast.critical { border-color: var(--danger); box-shadow: inset 0 0 0 2px var(--bg), inset 0 0 0 3px var(--danger); }
+.toast .acts button { border-radius: 0; background: transparent; }
+.toast .acts button:hover { background: var(--sel-bg); color: var(--sel-text); }
+.osdcard .track { border-radius: 0; background: var(--soft); }
+.osdcard .fill { border-radius: 0; background: var(--line); }
