@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.8.0] - 2026-10-24
+
 ### 変更
 - 見た目を、ビデオデッキの画面表示のような CLI 風にした
   - 既定の配色を明るい青(`#1926a3`)と白い文字にした。サイドバー・ペインの見出し・中身は同じ色にして、境目の線も無くした。今のタブは白地に青い文字で出す
@@ -357,7 +359,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.7.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.0...v0.6.1
