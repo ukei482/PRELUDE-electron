@@ -1,4 +1,4 @@
-// ロック画面と SDDM で共通の入力画面。白い画面の中央の小さな表示領域に、左上の PRELUDE と真ん中の password: を出す。
+// ロック画面と SDDM で共通の入力画面。白い画面の中央に青い CLI 領域を置き、左上に PRELUDE(白地に青)、真ん中に password: を出す。
 // 認証はしない。入力が確定したら submitted を出すので、使う側(LockScreenUi.qml / SDDM の Main.qml)が認証に渡す。
 // 書体は同じフォルダの VCR_OSD_MONO_1.001.ttf(theme/common から各パッケージへリンク・コピーする)。
 import QtQuick
@@ -25,20 +25,23 @@ Rectangle {
         onPressed: password.forceActiveFocus()
     }
 
-    Item {
+    Rectangle { // CLI 領域(青地に白)
         anchors.centerIn: parent
+        color: prompt.blue
         width: 26 * prompt.fs
         height: 9 * prompt.fs
 
-        Rectangle { // 青地に白の PRELUDE
-            color: prompt.blue
+        Rectangle { // 白地に青の PRELUDE(CLI 領域の色を反転)。角にくっつけると外側の白と続いて欠けて見えるので内側に寄せる
+            x: prompt.fs * 0.6
+            y: prompt.fs * 0.6
+            color: "white"
             width: logo.implicitWidth + prompt.fs
             height: logo.implicitHeight + prompt.fs * 0.3
             Text {
                 id: logo
                 anchors.centerIn: parent
                 text: "PRELUDE"
-                color: "white"
+                color: prompt.blue
                 font.family: vcr.name
                 font.pixelSize: prompt.fs
             }
@@ -48,7 +51,7 @@ Rectangle {
             anchors.centerIn: parent
             Text {
                 text: "password: "
-                color: prompt.blue
+                color: "white"
                 font.family: vcr.name
                 font.pixelSize: prompt.fs
             }
@@ -56,7 +59,7 @@ Rectangle {
                 id: password
                 objectName: "password"
                 width: 8 * prompt.fs // 「password: 」とこの幅を合わせた行を中央に置く。長いパスワードは中で横に流れる
-                color: prompt.blue
+                color: "white"
                 font.family: vcr.name
                 font.pixelSize: prompt.fs
                 echoMode: TextInput.Password
@@ -68,7 +71,7 @@ Rectangle {
                 enabled: !prompt.busy
                 cursorDelegate: Rectangle { // 点滅する四角のカーソル
                     width: prompt.fs * 0.55
-                    color: prompt.blue
+                    color: "white"
                     visible: password.activeFocus && !prompt.busy
                     SequentialAnimation on opacity {
                         loops: Animation.Infinite
@@ -91,7 +94,8 @@ Rectangle {
             id: message
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            color: prompt.blue
+            anchors.bottomMargin: prompt.fs * 0.6
+            color: "white"
             font.family: vcr.name
             font.pixelSize: prompt.fs
         }
