@@ -3,6 +3,7 @@
 // カードの中は ↑↓ で選び、→ で子フォルダのカードを右に開き、← で親のカードへ戻る(Shift+← で今のカードを閉じる)。
 // Ctrl+↑↓ で、今のカードを兄弟フォルダ(親のカードの次・前のフォルダ)の中身に切り替える。
 // 操作中のカードへカメラがなめらかに移動して、画面の中央に置く。開いたカードは残る。
+// 見出しのパス欄(Ctrl+L)にパスを打つと、そこまでカードを開いて移る(fieldGoto)。
 // カードごと(フォルダのパスごと)に表示の設定を持つ: リスト/アイコン、並べ替え、サイズ・更新日時の列。見出しの ︙(またはメニューキー)で切り替える。
 // 読み込みは開いたフォルダ1つずつ(fileops.js の fs:list = readdir だけ)。サイズ・日付は表示や並べ替えに要る時だけ fs:stats で読む。
 // 読んだ結果はパスごとに覚えておき、カーソルがフォルダに止まったら中身を先読みしておく。
@@ -259,7 +260,8 @@ function fieldCursor(leaf, i) {
   c.i = clamp(i, 0, Math.max(0, c.list.length - 1));
   fieldScrollTo(c);
   const en = c.list[c.i];
-  if (fv.ui?.path) fv.ui.path.textContent = en ? en.full : c.full;
+  const pin = fv.ui?.path;
+  if (pin && document.activeElement !== pin) pin.value = en ? en.full : c.full; // 打っている間は書き換えない
   clearTimeout(fv.prefetch);
   if (en?.isDir) fv.prefetch = setTimeout(() => fieldChildren(en.full), FIELD.PREFETCH);
   fieldKick(fv);
@@ -376,6 +378,52 @@ async function fieldNewTree(leaf, path) {
   fieldPlace(fv, root);
   Object.assign(fv.cam, { x: root.w / 2, y: root.h / 2 });
   fieldFocus(leaf, root);
+}
+
+// パスを打って移る(見出しのパス欄の Enter)。~ はホーム、/ で始まらなければ今のカードのフォルダから。
+// ファイルのパスなら、そのフォルダのカードを開いてファイルにカーソルを置く。
+// 行き先が今の木の根の下なら、根から1段ずつカードを開いてつなぐ。根より上なら、根の上にカードを足していく。どちらでもなければ木を作り直す
+async function fieldGoto(leaf, input) {
+  const fv = leaf.fv;
+  let p = String(input || '').trim();
+  if (!p || !fv?.root) return;
+  const home = await api.fs.home();
+  if (p === '~' || p.startsWith('~/')) p = home + p.slice(1);
+  else if (!p.startsWith('/')) p = (fv.cur?.full || home) + '/' + p;
+  let r = await api.fs.list(p, C.behavior.showHidden), pick = null;
+  if (!r.ok && /ENOTDIR/.test(r.error)) { // ファイル
+    p = p.replace(/\/+$/, '');
+    pick = baseName(p);
+    r = await api.fs.list(fieldParentPath(p), C.behavior.showHidden);
+  }
+  if (!r.ok) { toast('開けません: ' + r.error); return; }
+  const dir = r.path;
+  const under = (a, b) => b === a || b.startsWith(a === '/' ? '/' : a + '/'); // b が a の中(または a 自身)
+  freqRecord(dir, 'dir');
+  while (!under(fv.root.full, dir) && under(dir, fv.root.full)) if (!(await fieldReroot(fv))) break;
+  let c = fv.root;
+  if (under(c.full, dir)) {
+    const rest = dir.slice(c.full.length).split('/').filter(Boolean);
+    for (const name of rest) {
+      const full = (c.full === '/' ? '' : c.full) + '/' + name;
+      const row = c.list.findIndex((en) => en.isDir && en.full === full);
+      if (row < 0) { c = null; break; } // 隠しフォルダを出さない設定の時など
+      c.i = row;
+      fieldScrollTo(c);
+      let k = c.kids.find((x) => x.full === full);
+      if (!k) {
+        k = fieldCard(full, c, row);
+        c.kids.push(k);
+        fieldCollect(fv);
+        await fieldLoad(fv, k);
+        fieldPlace(fv, k);
+      }
+      c = k;
+    }
+  } else c = null;
+  if (!c) { await fieldNewTree(leaf, dir); c = fv.root; }
+  fieldFocus(leaf, c);
+  if (pick) fieldCursorTo(leaf, c, pick);
 }
 
 // カードの見出しの ︙ の位置(フィールドの座標)
@@ -823,7 +871,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
   ctx.shadowOffsetY = focus ? 5 : 3;
   ctx.fillStyle = a.panel;
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 10);
+  ctx.rect(x, y, w, h);
   ctx.fill();
   ctx.restore();
   ctx.strokeStyle = focus ? a.accent : a.line;
@@ -843,7 +891,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
   ctx.fillStyle = c.err ? a.danger : a.dim;
   ctx.fillText(count, x + w - 34 - cw, y + HD / 2);
   const mb = fieldMenuBtn(c);
-  if (fv.hoverMenu === c) { ctx.fillStyle = a.panel2; ctx.beginPath(); ctx.roundRect(mb.x, mb.y, mb.w, mb.h, 5); ctx.fill(); }
+  if (fv.hoverMenu === c) { ctx.fillStyle = a.panel2; ctx.beginPath(); ctx.rect(mb.x, mb.y, mb.w, mb.h); ctx.fill(); }
   ctx.fillStyle = fieldViewStore()[c.full] ? a.accent : a.dim; // 表示を変えたフォルダは ︙ に色を付ける
   for (let d = -1; d <= 1; d++) { ctx.beginPath(); ctx.arc(mb.x + mb.w / 2, mb.y + mb.h / 2 + d * 5, 1.6, 0, Math.PI * 2); ctx.fill(); }
   ctx.strokeStyle = a.line;
@@ -881,7 +929,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
     if (marked || (sel && (focus || onPath || open.has(idx)))) {
       ctx.fillStyle = a.panel2;
       ctx.beginPath();
-      ctx.roundRect(ix + 5, iy + 2, it.w - 10, it.h - 3, 6);
+      ctx.rect(ix + 5, iy + 2, it.w - 10, it.h - 3);
       ctx.fill();
       if (sel && focus) { ctx.strokeStyle = a.accent; ctx.lineWidth = 1.5; ctx.stroke(); }
     }
@@ -893,7 +941,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
         ctx.fillStyle = a.accent;
         ctx.globalAlpha = base * [1, 0.7, 0.45][rank];
         ctx.beginPath();
-        ctx.roundRect(ix + 4, iy + 7, 3, R - 14, 1.5);
+        ctx.rect(ix + 4, iy + 7, 3, R - 14);
         ctx.fill();
         ctx.globalAlpha = base;
       }
@@ -923,7 +971,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
         ctx.fillStyle = col;
         ctx.globalAlpha = base * 0.22;
         ctx.beginPath();
-        ctx.roundRect(bx + 8, by + 4, bw - 16, bh - 8, 8);
+        ctx.rect(bx + 8, by + 4, bw - 16, bh - 8);
         ctx.fill();
         ctx.globalAlpha = base;
         ctx.fillStyle = col;
@@ -952,7 +1000,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
     const ty = y + HD + 2 + (c.viewH - 4 - th) * (c.sy / (c.contentH - c.viewH));
     ctx.fillStyle = a.line;
     ctx.beginPath();
-    ctx.roundRect(x + w - 6, ty, 3, th, 1.5);
+    ctx.rect(x + w - 6, ty, 3, th);
     ctx.fill();
   }
 }
@@ -969,7 +1017,7 @@ function fieldDragImage(list) {
   const w = Math.min(320, Math.ceil(ctx.measureText(label).width) + 20), hgt = a.fontSize + 14;
   cv.width = w; cv.height = hgt;
   ctx.fillStyle = a.panel;
-  ctx.beginPath(); ctx.roundRect(0.5, 0.5, w - 1, hgt - 1, 6); ctx.fill();
+  ctx.beginPath(); ctx.rect(0.5, 0.5, w - 1, hgt - 1); ctx.fill();
   ctx.strokeStyle = a.line; ctx.stroke();
   ctx.font = font; ctx.fillStyle = a.text; ctx.textBaseline = 'middle';
   ctx.fillText(fieldFit(ctx, label, w - 20), 10, hgt / 2);
@@ -1002,11 +1050,24 @@ function fieldHit(fv, ev) {
 // ------------------------------------------------------------------ ペイン
 function buildField(tab, leaf, head, body) {
   const home = btn('home', 'ホーム', async () => { fieldNewTree(leaf, await api.fs.home()); canvas.focus(); });
-  const path = h('span', { class: 'ptitle field-path' });
+  // パス欄: ふだんはカーソルの項目のパスを出す。押すと今のカードのフォルダになり、打って Enter でそこへ移る(Ctrl+L でも入る)
+  const path = h('input', {
+    type: 'text', class: 'addr field-path', spellcheck: 'false', placeholder: 'パス（Enter で移動）',
+    onfocus: () => { if (leaf.fv?.cur) path.value = leaf.fv.cur.full; path.select(); },
+    onblur: () => { if (leaf.fv?.cur) fieldCursor(leaf, leaf.fv.cur.i); },
+    onkeydown: (e) => {
+      if (e.key === 'Enter') { const v = path.value; canvas.focus(); fieldGoto(leaf, v); }
+      else if (e.key === 'Escape') canvas.focus();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+  });
+  leaf.ui.addr = path;
   head.append(ico('field'), path, home, ...commonButtons(tab, leaf));
 
   const canvas = h('canvas', { class: 'field', tabindex: '0' });
-  const hint = h('div', { class: 'field-hint' }, '↑↓ 選ぶ　→ フォルダを開く　← 親へ（Shift で閉じる）　Ctrl+↑↓ 兄弟フォルダへ　Enter・ダブルクリック 開く　Ctrl・Shift+クリック 複数選択　ドラッグ 他のアプリへ　右クリック・メニューキー 操作　︙ 表示の設定　F2 名前の変更　Delete ゴミ箱へ');
+  const hint = h('div', { class: 'field-hint' }, '↑↓ 選ぶ　→ フォルダを開く　← 親へ（Shift で閉じる）　Ctrl+↑↓ 兄弟フォルダへ　Enter・ダブルクリック 開く　Ctrl・Shift+クリック 複数選択　ドラッグ 他のアプリへ　右クリック・メニューキー 操作　Ctrl+L パスを打って移る　︙ 表示の設定　F2 名前の変更　Delete ゴミ箱へ');
   body.append(canvas, hint);
 
   const fresh = !leaf.fv?.cards;

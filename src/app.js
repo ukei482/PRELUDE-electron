@@ -206,7 +206,7 @@ function renderSidebar() {
 
 // ブックマーク欄。フォルダは1段だけ(フォルダの中にフォルダは作れない)。▸ で開閉し、開閉は覚えておく。
 // 細い列ではフォルダはアイコン1つで、押すと中身をメニューで出す
-const bmIcon = (b) => (b.kind === 'folder' ? 'folder' : b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : b.kind === 'tab' ? 'split-h' : 'folder');
+const bmIcon = (b) => (b.kind === 'folder' ? 'folder' : b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : b.kind === 'tab' ? 'split-h' : b.kind === 'field' ? 'field' : 'folder');
 const bmChildren = (f) => S.bookmarks.filter((b) => b.folder === f.id);
 const bmOpen = (b) => S.tabs.some((t) => t.bookmarkId === b.id);
 function renderBookmarks() {
@@ -400,7 +400,7 @@ function tabMenu(tab, x, y) {
     web.length ? { label: muted ? '音を出す' : '音を消す', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
     { label: '複製', icon: 'plus', run: () => duplicateTab(tab) },
     { label: `番号を変える…(今は ${tab.num})`, icon: 'text', run: () => renumberTab(tab) },
-    ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'ブックマークに追加', icon: 'bookmark', run: () => addBookmark(l) } : null,
+    ['web', 'files', 'field', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'ブックマークに追加', icon: 'bookmark', run: () => addBookmark(l) } : null,
     ls.length > 1 ? { label: '分割ごとブックマーク', icon: 'split-h', run: () => addLayoutBookmark(tab) } : null,
     { label: '配置をファイルに保存', icon: 'file', run: () => saveTabToFile(tab) },
     tab.bmFile ? { label: `ファイル(${bmFileShort(tab.bmFile)})を今の配置で上書き`, icon: 'file', run: () => overwriteBmFile(tab) } : null,
@@ -547,7 +547,7 @@ function setActivePane(tab, leaf) {
 }
 
 // ------------------------------------------------------------------ bookmarks
-// 種類: web / files / app / tab(分割ごとの配置。root は serNode の形)/ folder(1段だけ)。folder はブックマークの入っているフォルダの id
+// 種類: web / files / field(フィールド表示で開くフォルダ)/ app / tab(分割ごとの配置。root は serNode の形)/ folder(1段だけ)。folder はブックマークの入っているフォルダの id
 const bmToJson = (b) => {
   if (b.kind === 'folder') return { id: b.id, kind: 'folder', title: b.title, open: !!b.open };
   const o = b.kind === 'app' ? { cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' }
@@ -564,7 +564,7 @@ function loadBookmarks() {
     const folder = folders.has(b.folder) ? b.folder : '';
     if (b.kind === 'folder') S.bookmarks.push({ id: b.id, kind: 'folder', title: b.title || 'フォルダ', open: !!b.open, folder: '' });
     else if (b.kind === 'app' && (b.cmd || b.webUrl)) S.bookmarks.push({ id: b.id, kind: 'app', folder, title: b.title || '', target: b.webUrl || b.cmd, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' });
-    else if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, folder, title: b.title || '', target: b.url || b.path || '' });
+    else if (b.kind === 'web' || b.kind === 'files' || b.kind === 'field') S.bookmarks.push({ id: b.id, kind: b.kind, folder, title: b.title || '', target: b.url || b.path || '' });
     else if (b.kind === 'tab' && b.root) S.bookmarks.push({ id: b.id, kind: 'tab', folder, title: b.title || '', root: b.root, target: layoutLabel(b.root) });
     else { S.foreignBm.push(b); continue; } // Rust版のアプリ取り込みブックマークなどは保持だけする
     if (b.kind !== 'folder') S.bookmarks[S.bookmarks.length - 1].num = Number(b.num) > 0 ? Number(b.num) : 0;
@@ -604,7 +604,7 @@ function addBookmark(leaf) {
     toast('ブックマークに追加しました');
     return;
   }
-  const kind = leaf.type === 'web' ? 'web' : 'files';
+  const kind = leaf.type === 'web' ? 'web' : leaf.type === 'field' ? 'field' : 'files'; // フィールドはフィールドのまま、そのパスから開く
   const target = kind === 'web' ? leaf.url : leaf.path;
   if (!target) return;
   if (S.bookmarks.some((b) => b.kind === kind && b.target === target)) { toast('登録済みです'); return; }
