@@ -3,7 +3,6 @@
 // カードの中は ↑↓ で選び、→ で子フォルダのカードを右に開き、← で親のカードへ戻る(Shift+← で今のカードを閉じる)。
 // Ctrl+↑↓ で、今のカードを兄弟フォルダ(親のカードの次・前のフォルダ)の中身に切り替える。
 // 操作中のカードへカメラがなめらかに移動して、画面の中央に置く。開いたカードは残る。
-// 見出しのパス欄(Ctrl+L)にパスを打つと、そこまでカードを開いて移る(fieldGoto)。
 // カードごと(フォルダのパスごと)に表示の設定を持つ: リスト/アイコン、並べ替え、サイズ・更新日時の列。見出しの ︙(またはメニューキー)で切り替える。
 // 読み込みは開いたフォルダ1つずつ(fileops.js の fs:list = readdir だけ)。サイズ・日付は表示や並べ替えに要る時だけ fs:stats で読む。
 // 読んだ結果はパスごとに覚えておき、カーソルがフォルダに止まったら中身を先読みしておく。
@@ -260,8 +259,7 @@ function fieldCursor(leaf, i) {
   c.i = clamp(i, 0, Math.max(0, c.list.length - 1));
   fieldScrollTo(c);
   const en = c.list[c.i];
-  const pin = fv.ui?.path;
-  if (pin && document.activeElement !== pin) pin.value = en ? en.full : c.full; // 打っている間は書き換えない
+  if (fv.ui?.path) fv.ui.path.textContent = en ? en.full : c.full;
   clearTimeout(fv.prefetch);
   if (en?.isDir) fv.prefetch = setTimeout(() => fieldChildren(en.full), FIELD.PREFETCH);
   fieldKick(fv);
@@ -378,52 +376,6 @@ async function fieldNewTree(leaf, path) {
   fieldPlace(fv, root);
   Object.assign(fv.cam, { x: root.w / 2, y: root.h / 2 });
   fieldFocus(leaf, root);
-}
-
-// パスを打って移る(見出しのパス欄の Enter)。~ はホーム、/ で始まらなければ今のカードのフォルダから。
-// ファイルのパスなら、そのフォルダのカードを開いてファイルにカーソルを置く。
-// 行き先が今の木の根の下なら、根から1段ずつカードを開いてつなぐ。根より上なら、根の上にカードを足していく。どちらでもなければ木を作り直す
-async function fieldGoto(leaf, input) {
-  const fv = leaf.fv;
-  let p = String(input || '').trim();
-  if (!p || !fv?.root) return;
-  const home = await api.fs.home();
-  if (p === '~' || p.startsWith('~/')) p = home + p.slice(1);
-  else if (!p.startsWith('/')) p = (fv.cur?.full || home) + '/' + p;
-  let r = await api.fs.list(p, C.behavior.showHidden), pick = null;
-  if (!r.ok && /ENOTDIR/.test(r.error)) { // ファイル
-    p = p.replace(/\/+$/, '');
-    pick = baseName(p);
-    r = await api.fs.list(fieldParentPath(p), C.behavior.showHidden);
-  }
-  if (!r.ok) { toast('開けません: ' + r.error); return; }
-  const dir = r.path;
-  const under = (a, b) => b === a || b.startsWith(a === '/' ? '/' : a + '/'); // b が a の中(または a 自身)
-  freqRecord(dir, 'dir');
-  while (!under(fv.root.full, dir) && under(dir, fv.root.full)) if (!(await fieldReroot(fv))) break;
-  let c = fv.root;
-  if (under(c.full, dir)) {
-    const rest = dir.slice(c.full.length).split('/').filter(Boolean);
-    for (const name of rest) {
-      const full = (c.full === '/' ? '' : c.full) + '/' + name;
-      const row = c.list.findIndex((en) => en.isDir && en.full === full);
-      if (row < 0) { c = null; break; } // 隠しフォルダを出さない設定の時など
-      c.i = row;
-      fieldScrollTo(c);
-      let k = c.kids.find((x) => x.full === full);
-      if (!k) {
-        k = fieldCard(full, c, row);
-        c.kids.push(k);
-        fieldCollect(fv);
-        await fieldLoad(fv, k);
-        fieldPlace(fv, k);
-      }
-      c = k;
-    }
-  } else c = null;
-  if (!c) { await fieldNewTree(leaf, dir); c = fv.root; }
-  fieldFocus(leaf, c);
-  if (pick) fieldCursorTo(leaf, c, pick);
 }
 
 // カードの見出しの ︙ の位置(フィールドの座標)
@@ -1050,24 +1002,11 @@ function fieldHit(fv, ev) {
 // ------------------------------------------------------------------ ペイン
 function buildField(tab, leaf, head, body) {
   const home = btn('home', 'ホーム', async () => { fieldNewTree(leaf, await api.fs.home()); canvas.focus(); });
-  // パス欄: ふだんはカーソルの項目のパスを出す。押すと今のカードのフォルダになり、打って Enter でそこへ移る(Ctrl+L でも入る)
-  const path = h('input', {
-    type: 'text', class: 'addr field-path', spellcheck: 'false', placeholder: 'パス（Enter で移動）',
-    onfocus: () => { if (leaf.fv?.cur) path.value = leaf.fv.cur.full; path.select(); },
-    onblur: () => { if (leaf.fv?.cur) fieldCursor(leaf, leaf.fv.cur.i); },
-    onkeydown: (e) => {
-      if (e.key === 'Enter') { const v = path.value; canvas.focus(); fieldGoto(leaf, v); }
-      else if (e.key === 'Escape') canvas.focus();
-      else return;
-      e.preventDefault();
-      e.stopPropagation();
-    },
-  });
-  leaf.ui.addr = path;
+  const path = h('span', { class: 'ptitle field-path' });
   head.append(ico('field'), path, home, ...commonButtons(tab, leaf));
 
   const canvas = h('canvas', { class: 'field', tabindex: '0' });
-  const hint = h('div', { class: 'field-hint' }, '↑↓ 選ぶ　→ フォルダを開く　← 親へ（Shift で閉じる）　Ctrl+↑↓ 兄弟フォルダへ　Enter・ダブルクリック 開く　Ctrl・Shift+クリック 複数選択　ドラッグ 他のアプリへ　右クリック・メニューキー 操作　Ctrl+L パスを打って移る　︙ 表示の設定　F2 名前の変更　Delete ゴミ箱へ');
+  const hint = h('div', { class: 'field-hint' }, '↑↓ 選ぶ　→ フォルダを開く　← 親へ（Shift で閉じる）　Ctrl+↑↓ 兄弟フォルダへ　Enter・ダブルクリック 開く　Ctrl・Shift+クリック 複数選択　ドラッグ 他のアプリへ　右クリック・メニューキー 操作　︙ 表示の設定　F2 名前の変更　Delete ゴミ箱へ');
   body.append(canvas, hint);
 
   const fresh = !leaf.fv?.cards;
