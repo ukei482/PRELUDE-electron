@@ -3,7 +3,7 @@
   --text: #3e2f2a; --dim: #6f5a52; --accent: #5d4037; --danger: #9c4a3a;
   --fs: 13px; --sbw: 220px;
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; border-radius: 0; } /* 角丸は使わない(部品の既定の角丸も消す) */
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
   display: flex; flex-direction: column;
@@ -13,7 +13,7 @@ body {
 }
 input, button, select { font: inherit; color: inherit; }
 input[type=text], input[type=number], select {
-  background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; outline: none; min-width: 0;
+  background: var(--bg); border: 1px solid var(--line); padding: 3px 8px; outline: none; min-width: 0;
 }
 input:focus, select:focus { border-color: var(--accent); }
 .grow { flex: 1; }
@@ -23,13 +23,13 @@ input:focus, select:focus { border-color: var(--accent); }
 .ico svg { width: 16px; height: 16px; }
 .ibtn {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
-  width: 28px; height: 28px; border: 0; border-radius: 5px; background: transparent; color: var(--text); cursor: pointer; padding: 0;
+  width: 28px; height: 28px; border: 0; background: transparent; color: var(--text); cursor: pointer; padding: 0;
 }
 .ibtn:hover:not(:disabled) { background: var(--panel2); }
 .ibtn:disabled { opacity: .35; cursor: default; }
 .textbtn {
   display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--text);
-  padding: 5px 8px; border-radius: 5px; cursor: pointer;
+  padding: 5px 8px; cursor: pointer;
 }
 .textbtn:hover:not(:disabled) { background: var(--panel2); }
 .textbtn:disabled { opacity: .4; cursor: default; }
@@ -55,7 +55,7 @@ body.no-sidebar #sidebar { display: none; }
 /* 2枚目以降の画面の窓(role=sub): 設定・全画面・最大化は主画面だけ */
 body.sub .sb-foot { display: none; }
 .item {
-  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px; cursor: pointer;
 }
 .item:hover { background: var(--panel2); }
 .item.active { background: var(--bg); box-shadow: inset 3px 0 0 var(--accent); }
@@ -63,7 +63,7 @@ body.sub .sb-foot { display: none; }
 .item .badge { font-size: .8em; color: var(--dim); }
 .item .x { opacity: 0; width: 22px; height: 22px; }
 .item:hover .x { opacity: 1; }
-.item img.fav, .pane-head img.fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
+.item img.fav, .pane-head img.fav { width: 16px; height: 16px; flex: none; }
 .item { position: relative; }
 .item img { -webkit-user-drag: none; }
 #tab-count { margin-left: 4px; opacity: .8; }
@@ -76,7 +76,7 @@ body.sub .sb-foot { display: none; }
 /* 分割したタブ: 1行をペインの数で分ける。狭くて名前が入らなければアイコンだけ。+N は 7 枚以上で隠れた分、細い列では cnt を出す */
 .item.multi { gap: 0; padding: 0 2px 0 4px; }
 .item .badge.cnt { display: none; }
-.item .seg { container-type: inline-size; flex: 1 1 0; min-width: 0; height: 24px; border-radius: 4px; }
+.item .seg { container-type: inline-size; flex: 1 1 0; min-width: 0; height: 24px; }
 .item .seg-in { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 4px; }
 .item .seg + .seg { margin-left: 3px; position: relative; }
 .item .seg + .seg::before { content: ''; position: absolute; left: -2px; top: 5px; bottom: 5px; width: 1px; background: var(--line); }
@@ -104,7 +104,7 @@ body.sb-compact .sb-title { justify-content: center; padding: 4px 0 2px; }
 body.sb-compact .sb-title .label { display: none; }
 body.sb-compact .sb-title:first-child { display: none; }
 /* 細い列は、ブックマークとタブを別々の枠に分けて、それぞれでスクロールする */
-body.sb-compact #bm-list, body.sb-compact #tab-list { background: color-mix(in srgb, var(--bg) 40%, transparent); border-radius: 8px; padding: 2px 0; scrollbar-width: none; }
+body.sb-compact #bm-list, body.sb-compact #tab-list { background: color-mix(in srgb, var(--bg) 40%, transparent); padding: 2px 0; scrollbar-width: none; }
 body.sb-compact #bm-list { max-height: 40%; flex: none; }
 body.sb-compact #bm-list:empty, body.sb-compact #bm-list:has(> .empty:only-child) { display: none; }
 body.sb-compact .item .num { position: absolute; left: 1px; top: 1px; font-size: .6em; line-height: 1; min-width: 0; text-align: left; margin: 0; }
@@ -158,7 +158,7 @@ body.sb-compact #open-settings { padding: 6px; }
 /* ---- field pane (フォルダの木をフィールドに描く) */
 canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; cursor: default; }
 .field-hint {
-  position: absolute; left: 8px; bottom: 6px; padding: 2px 8px; border-radius: 6px; color: var(--dim); font-size: .8em; pointer-events: none;
+  position: absolute; left: 8px; bottom: 6px; padding: 2px 8px; color: var(--dim); font-size: .8em; pointer-events: none;
   background: color-mix(in srgb, var(--bg) 85%, transparent);
 }
 
@@ -188,7 +188,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .frow { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; cursor: default; position: relative; }
 .frow:hover { background: color-mix(in srgb, var(--panel) 55%, transparent); }
 .frow.sel { background: var(--panel); }
-.frow.cur::before { content: ""; position: absolute; inset: 1px 2px; border: 1px dashed var(--line); border-radius: 4px; pointer-events: none; }
+.frow.cur::before { content: ""; position: absolute; inset: 1px 2px; border: 1px dashed var(--line); pointer-events: none; }
 .vlist:focus .frow.cur::before { border: 1.5px solid var(--accent); }
 .vlist:focus .frow.sel { background: color-mix(in srgb, var(--accent) 28%, var(--bg)); }
 .frow.cut, .frow.hid { opacity: .5; }
@@ -224,7 +224,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .modal.fdialog { width: min(620px, 92vw); top: 50%; transform: translate(-50%, -50%); max-height: 90vh; outline: none; }
 .fdialog .ftitle { white-space: pre-line; overflow-wrap: anywhere; font-weight: 600; }
 .fdialog .cmds { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; max-height: 40vh; overflow: auto; }
-.fdialog .cmds code { padding: 4px 8px; border-radius: 4px; background: var(--panel); overflow-wrap: anywhere; font-size: .9em; }
+.fdialog .cmds code { padding: 4px 8px; background: var(--panel); overflow-wrap: anywhere; font-size: .9em; }
 .props { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow: auto; user-select: text; }
 .props .kv { display: flex; gap: 12px; }
 .props .k { flex: 0 0 110px; color: var(--dim); }
@@ -238,7 +238,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .frm label { flex: 0 0 300px; }
 .frm input[type=text] { width: 320px; }
 .frm input[type=number] { width: 90px; }
-.frm input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; }
+.frm input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--line); background: none; }
 .frm .hex { width: 96px !important; font-family: monospace; }
 .frm .hint { color: var(--dim); font-size: .85em; }
 
@@ -248,10 +248,9 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .12); }
 .backdrop.modal-bg { background: rgba(0, 0, 0, .3); }
 .menu {
-  position: fixed; min-width: 180px; padding: 4px; background: var(--bg); border: 1px solid var(--line);
-  border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+  position: fixed; min-width: 180px; padding: 4px; background: var(--bg); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
 }
-.menu .mi { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 5px; cursor: pointer; }
+.menu .mi { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; cursor: pointer; }
 .menu { outline: none; }
 .menu .mi.act { background: var(--panel); }
 .menu .mi.dis { opacity: .4; cursor: default; }
@@ -262,19 +261,19 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .menu .sep { height: 1px; background: var(--line); opacity: .5; margin: 4px 0; }
 .modal {
   position: fixed; left: 50%; top: 30%; transform: translateX(-50%); width: 380px; padding: 16px;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  background: var(--bg); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
   display: flex; flex-direction: column; gap: 12px;
 }
 .modal .row { display: flex; justify-content: flex-end; gap: 8px; }
 .modal input { width: 100%; height: 32px; }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; max-width: 70%;
-  background: var(--accent); color: var(--bg); padding: 8px 16px; border-radius: 8px; display: none;
+  background: var(--accent); color: var(--bg); padding: 8px 16px; display: none;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb { background: var(--line); border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---- app pane */
@@ -284,7 +283,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .app-bar .addr { flex: 1; }
 .app-hint { color: var(--dim); font-size: 0.9em; }
 .app-list { flex: 1; min-height: 0; overflow: auto; }
-.app-row { padding: 6px 10px; cursor: default; border-radius: 4px; }
+.app-row { padding: 6px 10px; cursor: default; }
 .app-row:hover { background: var(--panel2); color: var(--bg); }
 
 /* ---- status bar (bottom, thin) */
@@ -293,25 +292,25 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
   background: var(--panel); border-top: 1px solid var(--line); font-size: .92em;
 }
 .barbtn {
-  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border: 0; border-radius: 4px;
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border: 0;
   background: transparent; cursor: pointer; white-space: nowrap;
 }
 .barbtn:hover { background: var(--panel2); }
 .barbtn .ico, .barbtn .ico svg { width: 14px; height: 14px; }
 .baritem { padding: 0 8px; white-space: nowrap; color: var(--dim); }
-.baritem.clickable { cursor: pointer; border-radius: 4px; height: 20px; display: inline-flex; align-items: center; }
+.baritem.clickable { cursor: pointer; height: 20px; display: inline-flex; align-items: center; }
 .baritem.clickable:hover { background: var(--panel2); color: var(--text); }
 .baritem.warn { color: var(--danger); }
 
 /* ---- launcher */
 .launcher {
   position: fixed; left: 50%; top: 18%; transform: translateX(-50%); width: min(560px, 90vw);
-  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  background: var(--bg); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.launcher input { height: 40px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 14px; font-size: 1.15em; }
+.launcher input { height: 40px; border: 0; border-bottom: 1px solid var(--line); padding: 0 14px; font-size: 1.15em; }
 .launcher .lres { max-height: 50vh; overflow-y: auto; padding: 4px; }
-.launcher .lrow { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 6px; cursor: pointer; }
+.launcher .lrow { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; cursor: pointer; }
 .launcher .lrow.sel { background: var(--panel); }
 .launcher .lrow .lname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .launcher .lrow .lkind { color: var(--dim); font-size: .8em; flex: none; }
@@ -320,7 +319,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 /* ---- quick settings */
 .qpanel {
   position: fixed; right: 8px; bottom: 30px; width: 340px; max-height: calc(100vh - 80px); overflow-y: auto;
-  padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; background: var(--bg); border: 1px solid var(--line);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .35); display: flex; flex-direction: column; gap: 12px;
 }
 .qsec { display: flex; flex-direction: column; gap: 4px; }
@@ -330,14 +329,14 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .qgrow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: center; }
 .qrow input[type=range] { flex: 1; accent-color: var(--accent); }
 .qsel { width: 100%; }
-.qitem { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: 6px; cursor: pointer; }
+.qitem { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; cursor: pointer; }
 .qitem:hover { background: var(--panel); }
 .qitem.on { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
 .qmeta { color: var(--dim); font-size: .85em; flex: none; }
 
 /* ---- notification center */
 .nhead { display: flex; align-items: center; gap: 6px; }
-.nitem { display: flex; gap: 8px; padding: 6px 8px; border-radius: 6px; position: relative; }
+.nitem { display: flex; gap: 8px; padding: 6px 8px; position: relative; }
 .nitem:hover { background: var(--panel); }
 .nitem .ntx { flex: 1; min-width: 0; }
 .nitem .nsum { font-weight: 600; overflow-wrap: anywhere; }
@@ -358,12 +357,12 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .home.has-wall .hhero { color: #fff; text-shadow: 0 2px 12px rgba(0, 0, 0, .65); }
 .home.has-wall .hdate { color: #fff; }
 .hcard {
-  width: min(760px, 100%); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
+  width: min(760px, 100%); padding: 12px 14px; border: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(6px);
 }
 .hh { color: var(--dim); font-size: .85em; margin-bottom: 8px; }
 .hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
-.htile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border-radius: 8px; cursor: pointer; text-align: center; }
+.htile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; cursor: pointer; text-align: center; }
 .htile:hover { background: var(--panel); }
 .hicowrap { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 .hicowrap .ico, .hicowrap .ico svg { width: 32px; height: 32px; }
@@ -379,7 +378,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 
 /* ---- tray */
 .traybox { display: inline-flex; align-items: center; gap: 2px; }
-.trayicon { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; }
+.trayicon { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .trayicon:hover { background: var(--panel2); }
 .trayicon img { width: 16px; height: 16px; object-fit: contain; }
 .trayicon.attn { box-shadow: inset 0 -2px 0 var(--danger); }
@@ -387,6 +386,6 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 
 /* フィールド表示の名前の変更(カードの項目の上に重ねる入力欄) */
 .field-ren {
-  position: fixed; z-index: 50; box-sizing: border-box; padding: 0 6px; border: 1.5px solid var(--accent); border-radius: 5px;
+  position: fixed; z-index: 50; box-sizing: border-box; padding: 0 6px; border: 1.5px solid var(--accent);
   background: var(--bg); color: var(--text); outline: none; font-family: inherit;
 }
