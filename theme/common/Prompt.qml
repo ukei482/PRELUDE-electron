@@ -48,54 +48,64 @@ Rectangle {
             }
         }
 
-        Row {
-            id: line
+        Column { // password: の次の行に * を出す。どの行も CLI 領域の中で中央にそろえる
+            id: lines
             anchors.centerIn: parent
+            width: parent.width - 2 * parent.pad
+            spacing: prompt.fs * 0.5
+
             Text {
-                text: "password: "
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "password:"
                 color: "white"
                 font.family: vcr.name
                 font.pixelSize: prompt.fs
             }
-            TextInput {
-                id: password
-                objectName: "password"
-                width: 8 * prompt.fs // 「password: 」とこの幅を合わせた行を中央に置く。長いパスワードは中で横に流れる
-                color: "white"
-                font.family: vcr.name
-                font.pixelSize: prompt.fs
-                echoMode: TextInput.Password
-                passwordCharacter: "*"
-                passwordMaskDelay: 0
-                maximumLength: 256
-                clip: true
-                focus: true
-                enabled: !prompt.busy
-                cursorDelegate: Rectangle { // 点滅する四角のカーソル
-                    width: prompt.fs * 0.55
+            Item {
+                width: parent.width
+                height: password.height
+                TextInput {
+                    id: password
+                    objectName: "password"
+                    readonly property real cursorWidth: prompt.fs * 0.55
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Math.min(contentWidth + cursorWidth, parent.width) // 打った分だけ広げて中央に保つ。領域より長いと中で横に流れる
                     color: "white"
-                    visible: password.activeFocus && !prompt.busy
-                    SequentialAnimation on opacity {
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 1; duration: 0 }
-                        PauseAnimation { duration: 500 }
-                        NumberAnimation { to: 0; duration: 0 }
-                        PauseAnimation { duration: 500 }
+                    font.family: vcr.name
+                    font.pixelSize: prompt.fs
+                    echoMode: TextInput.Password
+                    passwordCharacter: "*"
+                    passwordMaskDelay: 0
+                    maximumLength: 256
+                    clip: true
+                    focus: true
+                    enabled: !prompt.busy
+                    cursorDelegate: Rectangle { // 点滅する四角のカーソル
+                        width: password.cursorWidth
+                        color: "white"
+                        visible: password.activeFocus && !prompt.busy
+                        SequentialAnimation on opacity {
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 1; duration: 0 }
+                            PauseAnimation { duration: 500 }
+                            NumberAnimation { to: 0; duration: 0 }
+                            PauseAnimation { duration: 500 }
+                        }
                     }
-                }
-                Keys.onEscapePressed: event => { text = ""; event.accepted = false; } // Esc はロック画面では画面を消すのに使われる
-                onAccepted: {
-                    if (!text || prompt.busy) return;
-                    prompt.busy = true;
-                    prompt.submitted(text);
+                    Keys.onEscapePressed: event => { text = ""; event.accepted = false; } // Esc はロック画面では画面を消すのに使われる
+                    onAccepted: {
+                        if (!text || prompt.busy) return;
+                        prompt.busy = true;
+                        prompt.submitted(text);
+                    }
                 }
             }
         }
 
-        Text {
+        Text { // 出ても password: の位置が動かないよう、Column の外に置く
             id: message
-            anchors.left: line.left // password: と頭をそろえる
-            anchors.top: line.bottom
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: lines.bottom
             anchors.topMargin: prompt.fs
             color: "white"
             font.family: vcr.name

@@ -6,7 +6,7 @@
 ## [未リリース]
 
 ### 追加
-- PRELUDE のロック画面とログイン画面(`theme/`)。白い画面の中央に青地に白文字の正方形の CLI 領域を置き、左上に白地に青の「PRELUDE」、真ん中に `password:` を出す。パスワードは `*` で出し、間違えると `access denied`
+- PRELUDE のロック画面とログイン画面(`theme/`)。白い画面の中央に青地に白文字の正方形の CLI 領域を置き、左上に白地に青の「PRELUDE」、真ん中に `password:` を出す。パスワードは次の行に `*` で出し(どちらも中央揃え)、間違えると `access denied`
   - ロック画面は kscreenlocker のシェルのパッケージ(`theme/shell/org.prelude.desktop`)、ログイン画面は SDDM のテーマ(`theme/sddm/prelude`)。見た目は共通の `theme/common/Prompt.qml`
   - `scripts/theme.sh` で入れる/外す。`lock on|off`(sudo 不要)、`sddm on|off`、`boot on|off`(起動時に Kubuntu のロゴを出さず本物の起動ログを流す)。どれも次のログイン・起動から効く
   - `lock test` / `sddm test` でテストモードで開ける。`theme/preview.py` は画面に出さずに PNG に描く
