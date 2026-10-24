@@ -33,7 +33,6 @@ test('ホームの下のパスは ~ で書き、読む PC のホームへ戻す'
 test('サイドバーのブックマークをペイン1つの配置にする', () => {
   assert.deepEqual(bmFileRoot({ kind: 'web', target: 'https://a/' }), { k: 'leaf', type: 'web', url: 'https://a/' });
   assert.deepEqual(bmFileRoot({ kind: 'files', target: '/x' }), { k: 'leaf', type: 'files', path: '/x' });
-  assert.deepEqual(bmFileRoot({ kind: 'field', target: '/x' }), { k: 'leaf', type: 'field', path: '/x' });
   assert.equal(bmFileRoot({ kind: 'tab', root: layout }), layout);
   assert.equal(bmFileRoot({ kind: 'folder' }), null);
 });
@@ -65,7 +64,6 @@ test('起動されるコマンドを取り出す・外す', () => {
 test('配置をサイドバーのブックマークに戻す', () => {
   assert.deepEqual(bmFileToBookmark('A', { k: 'leaf', type: 'web', url: 'https://a/' }), { kind: 'web', title: 'A', target: 'https://a/' });
   assert.deepEqual(bmFileToBookmark('B', { k: 'leaf', type: 'files', path: '/x' }), { kind: 'files', title: 'B', target: '/x' });
-  assert.deepEqual(bmFileToBookmark('F', { k: 'leaf', type: 'field', path: '/x' }), { kind: 'field', title: 'F', target: '/x' });
   assert.equal(bmFileToBookmark('C', { k: 'leaf', type: 'app', cmd: 'kate', cls: 'kate' }).cmd, 'kate');
   assert.equal(bmFileToBookmark('D', layout).kind, 'tab');
   assert.equal(bmFileToBookmark('E', { k: 'leaf', type: 'home' }).kind, 'tab');

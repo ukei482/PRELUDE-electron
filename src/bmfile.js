@@ -20,7 +20,7 @@
   function bmFileRoot(b) {
     if (b.kind === 'tab') return b.root;
     if (b.kind === 'web') return { k: 'leaf', type: 'web', url: b.target };
-    if (b.kind === 'files' || b.kind === 'field') return { k: 'leaf', type: b.kind, path: b.target };
+    if (b.kind === 'files') return { k: 'leaf', type: 'files', path: b.target };
     if (b.kind === 'app') return { k: 'leaf', type: 'app', cmd: b.cmd || '', cls: b.cls || '', name: b.title || '', webUrl: b.webUrl || '' };
     return null;
   }
@@ -69,7 +69,7 @@
   // 配置 → サイドバーのブックマークの中身(id・番号・フォルダは呼ぶ側で付ける)。ペイン1つなら Web・フォルダ・アプリのブックマークにする
   function bmFileToBookmark(title, layout) {
     if (layout.k === 'leaf' && layout.type === 'web' && layout.url) return { kind: 'web', title, target: layout.url };
-    if (layout.k === 'leaf' && (layout.type === 'files' || layout.type === 'field') && layout.path) return { kind: layout.type, title, target: layout.path };
+    if (layout.k === 'leaf' && layout.type === 'files' && layout.path) return { kind: 'files', title, target: layout.path };
     if (layout.k === 'leaf' && layout.type === 'app' && (layout.cmd || layout.webUrl)) {
       return { kind: 'app', title, target: layout.webUrl || layout.cmd, cmd: layout.webUrl ? '' : layout.cmd, cls: layout.webUrl ? '' : layout.cls || '', webUrl: layout.webUrl || '' };
     }
