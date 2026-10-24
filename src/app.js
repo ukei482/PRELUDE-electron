@@ -109,6 +109,7 @@ const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'fold
 
 // アプリのペインのアイコン(.desktop の Icon。実ブラウザのペインは Chromium のアイコン)。まだ読めていなければ汎用のアイコンを出し、読めたら描き直す
 function appLeafIcon(l) {
+  if (isDevLeaf(l)) return ico('code');
   if (l.iconUrl) return h('img', { class: 'fav', src: l.iconUrl, onerror: (e) => e.target.replaceWith(ico('window')) });
   const list = S.appList || [];
   const name = l.icon || (l.webUrl ? list.find((a) => /chrom/i.test(a.exec))?.icon : list.find((a) => a.exec === l.cmd)?.icon) || '';
@@ -396,6 +397,7 @@ function tabMenu(tab, x, y) {
   const web = ls.filter((p) => p.type === 'web');
   const muted = web.length && web.every((p) => p.muted);
   popup([
+    isDevLeaf(l) ? { label: `${DEV_NAME}を再起動`, icon: 'reload', run: () => restartDevPrelude(l) } : null,
     ['web', 'files', 'field'].includes(l.type) ? { label: '再読込', icon: 'reload', run: () => (l.type === 'web' ? webCmd(l, 'reload') : l.type === 'files' ? reloadDir(l) : fieldReload(l)) } : null,
     web.length ? { label: muted ? '音を出す' : '音を消す', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
     { label: '複製', icon: 'plus', run: () => duplicateTab(tab) },
@@ -1019,10 +1021,11 @@ async function openFileAt(tab, leaf, full, where = C.behavior.fileOpen || 'tab')
 
 function buildApp(tab, leaf, head, body) {
   if (leaf.webUrl && !leaf.running) { head.append(ico('window'), h('span', { class: 'ptitle' }, '起動中…'), ...commonButtons(tab, leaf)); return; }
+  if (leaf.restarting) { head.append(ico('code'), h('span', { class: 'ptitle' }, `${DEV_NAME}を再起動中…`), ...commonButtons(tab, leaf)); return; }
   const icon = appLeafIcon(leaf);
   const title = h('span', { class: 'ptitle', title: leaf.name }, leaf.running ? leaf.title || leaf.name : 'アプリを取り込む');
   leaf.ui = { icon, title };
-  head.append(icon, title, ...commonButtons(tab, leaf));
+  head.append(icon, title, ...(isDevLeaf(leaf) ? [btn('reload', `${DEV_NAME}を再起動(main.js の変更を試す)`, () => restartDevPrelude(leaf))] : []), ...commonButtons(tab, leaf));
   if (leaf.running) {
     const slot = h('div', { class: 'web-slot app-slot' });
     body.append(slot);
@@ -1292,6 +1295,7 @@ async function boot() {
   loadBookmarks();
   initFiles();
   S.appSupported = await api.app.supported();
+  api.dev.info().then((d) => { S.devSelf = d.self; }); // 自分が開発版なら、開発版を開くコマンドは出さない
 
   $('#new-tab').append(ico('plus'));
   $('#open-settings').append(ico('settings'), h('span', { class: 'label' }, '設定'));
@@ -1304,6 +1308,7 @@ async function boot() {
     { label: 'フォルダ', icon: 'folder', run: () => openTab('files') },
     { label: 'フィールド', icon: 'field', run: () => openTab('field') },
     S.appSupported ? { label: 'アプリ', icon: 'window', run: () => openTab('app') } : null,
+    S.appSupported && !S.devSelf ? { label: DEV_NAME, icon: 'code', run: () => openDevPrelude() } : null,
     IS_SUB ? null : { label: '設定', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;

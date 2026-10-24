@@ -28,6 +28,52 @@ function launchApp(a) {
   startApp(t.root, a.exec, a.cls, a.name, a.icon);
 }
 
+// ------------------------------------------------------------------ 開発版
+// 作業フォルダの PRELUDE(開発版)を、新しいタブのアプリのペインに取り込んで動かす。起動コマンドは main.js の dev:info。
+// 開発版のペインは起動コマンドの印 PRELUDE_EMBEDDED=1 で見分ける(タブを復元した後も同じ)
+const DEV_NAME = 'PRELUDE 開発版';
+const isDevLeaf = (l) => l?.type === 'app' && /\bPRELUDE_EMBEDDED=1\b/.test(l.cmd || '');
+function findDevLeaf() {
+  for (const tab of S.tabs) {
+    const leaf = leaves(tab.root).find(isDevLeaf);
+    if (leaf) return { tab, leaf };
+  }
+  return null;
+}
+
+// 開発版のタブを開く。もうあればそのタブへ
+async function openDevPrelude() {
+  const f = findDevLeaf();
+  if (f) { f.tab.activePane = f.leaf.id; showTab(f.tab); return; }
+  if (!S.appSupported) { toast('開発版の取り込みは KDE Plasma(Wayland)だけで使えます'); return; }
+  const d = await api.dev.info();
+  if (d.err) { toast(d.err); return; }
+  if (d.pid) { toast(`開発版は別に動いています(pid ${d.pid})。終了してから開いてください`); return; }
+  const t = openTab('app', { cmd: d.cmd, name: DEV_NAME });
+  startApp(t.root, d.cmd, '', DEV_NAME);
+}
+
+// 開発版を起動し直す(main.js などメインプロセスの変更は、レンダラの再読込では届かない)。
+// 同じプロファイルは同時に1つしか動かないので、前の開発版が終わるのを待ってから起動する
+async function restartDevPrelude(leaf = findDevLeaf()?.leaf) {
+  if (!leaf || leaf.restarting) return;
+  const d = await api.dev.info();
+  if (d.err) { toast(d.err); return; }
+  leaf.restarting = true;
+  if (leaf.running) api.app.close(leaf.id);
+  Object.assign(leaf, { running: false, dormant: false, title: '' });
+  render();
+  try {
+    for (let i = 0; i < 60 && (await api.dev.info()).pid; i++) await new Promise((r) => setTimeout(r, 250));
+    const pid = (await api.dev.info()).pid;
+    if (pid) { toast(`前の開発版が終わりません(pid ${pid})`); return; }
+    await startApp(leaf, d.cmd, '', DEV_NAME);
+  } finally {
+    leaf.restarting = false;
+    render();
+  }
+}
+
 const LAUNCHER_COMMANDS = [
   { name: '設定', keys: 'settings せってい', when: () => !IS_SUB, run: () => openSettings() },
   { name: 'ホーム画面', keys: 'home ほーむ', run: () => openTab('home') },
@@ -40,6 +86,8 @@ const LAUNCHER_COMMANDS = [
   { name: 'スクリーンショット(範囲を選ぶ)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい', run: () => api.quick.do('screenshot', 'region') },
   { name: 'スクリーンショット(今の画面)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい', run: () => api.quick.do('screenshot', 'screen') },
   { name: 'スクリーンショット(前面の窓)', keys: 'screenshot capture print window すくりーんしょっと まど', run: () => api.quick.do('screenshot', 'window') },
+  { name: 'PRELUDE 開発版を開く', keys: 'prelude dev debug test develop かいはつばん でばっぐ てすと', when: () => !S.devSelf, run: () => openDevPrelude() },
+  { name: 'PRELUDE 開発版を再起動', keys: 'prelude dev debug test restart reload かいはつばん でばっぐ てすと さいきどう', when: () => !!findDevLeaf(), run: () => restartDevPrelude() },
   { name: 'PRELUDE を更新', keys: 'update upgrade prelude こうしん あっぷでーと', when: () => sessionShell && !IS_SUB, run: () => runUpdate() },
   { name: 'Kubuntuに戻る', keys: 'kubuntu plasma desktop return もどる', when: () => sessionShell && !IS_SUB, run: () => returnToKde() },
 ];

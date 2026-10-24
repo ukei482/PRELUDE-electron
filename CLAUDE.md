@@ -25,6 +25,7 @@ PRELUDE_DEBUG=1 setsid nohup node_modules/electron/dist/electron . --no-sandbox 
   --user-data-dir=$HOME/.local/state/prelude/debug-profile --remote-debugging-port=9333 >/tmp/prelude-debug.log 2>&1 &
 ```
 
+- ユーザーは PRELUDE の中からも開発版を開ける(ランチャー「PRELUDE 開発版を開く」。同じ debug-profile・ポート 9333 で、ペインに取り込まれる)。9333 が既に動いていれば、それを CDP で使えばよい
 - デバッグ用の PRELUDE は全画面にしない(debug-profile は `startFullscreen=false`)。全画面だとユーザーの作業を覆う
 - 操作の確認は CDP(`http://127.0.0.1:9333/json`)。`main.js` を変えたらレンダラの再読込では足りず、起動し直す
 
