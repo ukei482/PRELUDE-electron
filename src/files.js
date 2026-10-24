@@ -25,8 +25,8 @@ const TF = new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit'
 let dayStart = 0;
 function fmtDate(ms) {
   if (!ms) return '';
-  if (ms >= dayStart) return '今日 ' + TF.format(ms);
-  if (ms >= dayStart - 86400000) return '昨日 ' + TF.format(ms);
+  if (ms >= dayStart) return 'Today ' + TF.format(ms);
+  if (ms >= dayStart - 86400000) return 'Yesterday ' + TF.format(ms);
   return DF.format(ms);
 }
 const refreshDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); dayStart = d.getTime(); };
@@ -86,7 +86,7 @@ async function loadDir(leaf, p, opt = {}) {
   if (seq !== leaf.loadSeq) return;
   const same = r.ok && r.path === leaf.path && leaf.entries.length > 0;
   if (!r.ok) {
-    if (leaf.entries.length && r.path !== leaf.path) { toast('開けません: ' + r.error); if (leaf.ui?.addr) leaf.ui.addr.value = leaf.path; return; }
+    if (leaf.entries.length && r.path !== leaf.path) { toast('Cannot open: ' + r.error); if (leaf.ui?.addr) leaf.ui.addr.value = leaf.path; return; }
     Object.assign(leaf, { err: r.error, entries: [], view: [], cur: -1, sel: new Set() });
     updateFilesUI(leaf);
     schedulePaint(leaf);
@@ -169,7 +169,7 @@ function initFiles() {
   api.fs.onProgress((p) => {
     for (const t of S.tabs) for (const l of leaves(t.root)) {
       if (l.type !== 'files' || l.path !== p.destDir) continue;
-      l.busy = p.finished ? '' : `${p.mode === 'move' ? '移動' : 'コピー'}中 ${p.done + 1}/${p.total}: ${p.name}`;
+      l.busy = p.finished ? '' : `${p.mode === 'move' ? 'Moving' : 'Copying'} ${p.done + 1}/${p.total}: ${p.name}`;
       updateStatus(l);
     }
   });
@@ -219,7 +219,7 @@ function paintRows(leaf) {
     if (row.ico.dataset.k !== en.kind) { row.ico.innerHTML = ICONS[icon] || ''; row.ico.dataset.k = en.kind; row.ico.className = 'ico k-' + en.kind; }
     if (row.nm.textContent !== en.name) { row.nm.textContent = en.name; row.nm.title = en.name; }
     row.nm.classList.toggle('link', !!en.link);
-    row.ty.textContent = en.isDir ? 'フォルダ' : en.ext ? en.ext.toUpperCase() : 'ファイル';
+    row.ty.textContent = en.isDir ? 'DIR' : en.ext ? en.ext.toUpperCase() : 'FILE';
     row.sz.textContent = en.isDir || en.size == null ? '' : fmtSize(en.size);
     row.dt.textContent = en.dateStr;
     const renaming = leaf.renaming === en.name;
@@ -244,14 +244,14 @@ function updateStatus(leaf) {
   if (!st) return;
   const n = leaf.view.length;
   const dirs = leaf.view.reduce((a, e) => a + e.isDir, 0);
-  let left = `${n} 項目` + (dirs ? `（フォルダ ${dirs}）` : '');
+  let left = `${n} items` + (dirs ? ` (${dirs} folders)` : '');
   if (leaf.sel.size) {
     let size = 0;
     for (const e of leaf.view) if (leaf.sel.has(e.name) && !e.isDir) size += e.size || 0;
-    left = `${leaf.sel.size} 個を選択` + (size ? `（${fmtSize(size)}）` : '') + ` / ${n} 項目`;
+    left = `${leaf.sel.size} selected` + (size ? ` (${fmtSize(size)})` : '') + ` / ${n} items`;
   }
   st.left.textContent = left;
-  st.right.textContent = leaf.busy || 'F1: 操作の一覧';
+  st.right.textContent = leaf.busy || 'F1: Keys';
   st.right.classList.toggle('busy', !!leaf.busy);
 }
 
@@ -342,7 +342,7 @@ async function openEntries(tab, leaf, list, inNewPane) {
   if (list.length === 1 && dir) { freqRecord(dir.full, 'dir'); navTo(leaf, dir.full); return; }
   if (leaf.mode === 'save') return;
   const files = list.filter((e) => !e.isDir);
-  if (files.length > 10 && !(await fileConfirm(`${files.length} 個のファイルを開きますか？`, '開く'))) return;
+  if (files.length > 10 && !(await fileConfirm(`Open ${files.length} files?`, 'Open'))) return;
   for (const f of files) freqRecord(f.full, 'file');
   // 既定のアプリをタブか分割に取り込んで開く(Ctrl+Enter は右に分割。複数のファイルはタブで)
   const where = typeof inNewPane === 'string' ? inNewPane : inNewPane ? 'split' : undefined;
@@ -369,44 +369,44 @@ async function doCopy(leaf, cut) {
   await api.fs.clipWrite(t.map((e) => e.full), cut);
   S.fileClip = cut ? { paths: new Set(t.map((e) => e.full)), cut } : null;
   reloadAllPaint();
-  toast(`${t.length} 個を${cut ? '切り取りました' : 'コピーしました'}`);
+  toast(`${cut ? 'Cut' : 'Copied'} ${t.length} items`);
 }
 function reloadAllPaint() { for (const t of S.tabs) for (const l of leaves(t.root)) if (l.type === 'files') schedulePaint(l); }
 
 async function doPaste(leaf) {
   const r = await api.fs.clipRead();
-  if (!r.paths.length) { toast('貼り付けるファイルがありません'); return; }
+  if (!r.paths.length) { toast('Nothing to paste'); return; }
   await runTransfer(leaf, r.cut ? 'move' : 'copy', r.paths, leaf.path);
   if (r.cut) { S.fileClip = null; reloadAllPaint(); }
 }
 
 async function runTransfer(leaf, mode, paths, destDir) {
-  leaf.busy = `${mode === 'move' ? '移動' : 'コピー'}中…`;
+  leaf.busy = `${mode === 'move' ? 'Moving' : 'Copying'}…`;
   updateStatus(leaf);
   const res = await api.fs.transfer(mode, paths, destDir);
   leaf.busy = '';
   if (leaf.path === destDir) await loadDir(leaf, destDir, { keep: true, selectNames: res.names });
   else updateStatus(leaf);
-  if (res.errors.length) toast(`${res.errors.length} 件失敗: ${res.errors[0]}`);
-  else toast(`${res.names.length} 個を${mode === 'move' ? '移動' : 'コピー'}しました`);
+  if (res.errors.length) toast(`${res.errors.length} failed: ${res.errors[0]}`);
+  else toast(`${mode === 'move' ? 'Moved' : 'Copied'} ${res.names.length} items`);
 }
 
 async function doDelete(leaf, permanent) {
   const t = targets(leaf);
   if (!t.length) return;
   if (permanent) {
-    const names = t.slice(0, 5).map((e) => e.name).join('、') + (t.length > 5 ? ` ほか ${t.length - 5} 個` : '');
-    if (!(await fileConfirm(`完全に削除します（元に戻せません）\n${names}`, '削除', true))) return;
+    const names = t.slice(0, 5).map((e) => e.name).join(', ') + (t.length > 5 ? ` and ${t.length - 5} more` : '');
+    if (!(await fileConfirm(`Delete permanently (cannot be undone)\n${names}`, 'Delete', true))) return;
   }
   const r = await api.fs.remove(t.map((e) => e.full), permanent);
   leaf.sel = new Set();
   await reloadDir(leaf);
-  if (!r.ok) toast(`${r.errors.length} 件失敗: ${r.errors[0]}${permanent ? '' : '（Shift+Delete で完全に削除）'}`);
-  else toast(`${t.length} 個を${permanent ? '削除しました' : 'ゴミ箱へ移動しました'}`);
+  if (!r.ok) toast(`${r.errors.length} failed: ${r.errors[0]}${permanent ? '' : ' (Shift+Delete to delete permanently)'}`);
+  else toast(`${permanent ? 'Deleted' : 'Moved to trash:'} ${t.length} items`);
 }
 
 async function newFolder(leaf) {
-  const r = await api.fs.mkdir(leaf.path, '新しいフォルダ');
+  const r = await api.fs.mkdir(leaf.path, 'New folder');
   if (!r.ok) { toast(r.error); return; }
   await loadDir(leaf, leaf.path, { keep: true, focusName: r.name });
   startRename(leaf, leaf.cur);
@@ -451,19 +451,19 @@ async function openTerminalAt(tab, leaf, dir) {
     const app = (S.appList || []).find((a) => a.exec.split(/\s+/)[0].split('/').pop() === bin);
     const nl = splitLeaf(tab, leaf, 'col', 'app');
     startApp(nl, cmd, app?.cls || '', app?.name || bin, app?.icon || '');
-  } else if (!(await api.fs.terminal(dir))) toast('端末を起動できませんでした（設定「端末のコマンド」）');
+  } else if (!(await api.fs.terminal(dir))) toast('Failed to launch terminal (see Settings > Terminal command)');
 }
 
 async function copyPaths(leaf) {
   const t = targets(leaf);
   const s = t.length ? t.map((e) => e.full).join('\n') : leaf.path;
   await api.fs.copyText(s);
-  toast('パスをコピーしました');
+  toast('Path copied');
 }
 
 function toggleHidden() {
   api.config.set('behavior.showHidden', !C.behavior.showHidden);
-  toast(C.behavior.showHidden ? '隠しファイルを隠します' : '隠しファイルを表示します');
+  toast(C.behavior.showHidden ? 'Hiding hidden files' : 'Showing hidden files');
 }
 
 // ------------------------------------------------------------------ ダイアログ
@@ -493,7 +493,7 @@ function fileDialog(title, content, buttons) {
   });
 }
 const fileConfirm = (msg, ok, danger) => fileDialog(msg, null, [
-  { label: 'キャンセル', value: false },
+  { label: 'Cancel', value: false },
   { label: ok, value: true, primary: true, danger },
 ]).then((v) => !!v);
 
@@ -511,55 +511,55 @@ async function showPropsFor(paths, where) {
   if (items.length === 1) {
     const it = items[0];
     body = h('div', { class: 'props' },
-      kv('名前', it.name), kv('場所', it.full), it.error ? kv('エラー', it.error) : null,
-      kv('種類', it.isDir ? `フォルダ（中身 ${it.count} 項目）` : 'ファイル'), it.link != null ? kv('リンク先', it.link) : null,
-      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'サイズ'), sizeEl),
-      kv('更新日時', it.mtime ? DF.format(it.mtime) : ''), kv('作成日時', it.btime ? DF.format(it.btime) : ''),
-      kv('権限', it.mode), kv('所有者(uid)', it.uid));
-    sizeEl.textContent = it.isDir ? '計算中…' : `${fmtSize(it.size)}（${it.size.toLocaleString()} バイト）`;
+      kv('Name', it.name), kv('Location', it.full), it.error ? kv('Error', it.error) : null,
+      kv('Type', it.isDir ? `Folder (${it.count} items)` : 'File'), it.link != null ? kv('Link target', it.link) : null,
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'Size'), sizeEl),
+      kv('Modified', it.mtime ? DF.format(it.mtime) : ''), kv('Created', it.btime ? DF.format(it.btime) : ''),
+      kv('Mode', it.mode), kv('Owner (uid)', it.uid));
+    sizeEl.textContent = it.isDir ? 'Calculating…' : `${fmtSize(it.size)} (${it.size.toLocaleString()} bytes)`;
   } else {
     const dirs = items.filter((x) => x.isDir).length;
-    body = h('div', { class: 'props' }, kv('場所', where), kv('項目', `${items.length} 個（フォルダ ${dirs}、ファイル ${items.length - dirs}）`),
-      h('div', { class: 'kv' }, h('span', { class: 'k' }, '合計サイズ'), sizeEl));
-    sizeEl.textContent = '計算中…';
+    body = h('div', { class: 'props' }, kv('Location', where), kv('Items', `${items.length} (${dirs} folders, ${items.length - dirs} files)`),
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'Total size'), sizeEl));
+    sizeEl.textContent = 'Calculating…';
     if (!needSize) sizeEl.textContent = fmtSize(items.reduce((a, x) => a + (x.size || 0), 0));
   }
   if (needSize) {
     api.fs.dirSize(paths).then((r) => {
-      sizeEl.textContent = `${fmtSize(r.size)}（ファイル ${r.files.toLocaleString()} 個）${r.partial ? ' ※時間切れのため途中まで' : ''}`;
+      sizeEl.textContent = `${fmtSize(r.size)} (${r.files.toLocaleString()} files)${r.partial ? ' *partial (timed out)' : ''}`;
     });
   }
-  await fileDialog('プロパティ', body, [{ label: '閉じる', value: true, primary: true }]);
+  await fileDialog('Properties', body, [{ label: 'Close', value: true, primary: true }]);
 }
 
 const FILE_KEYS = [
-  ['↑ ↓ / PageUp PageDown / Home End', '移動'],
-  ['Shift + 移動', '範囲を選択'],
-  ['Ctrl + 移動', '選択を変えずにカーソルだけ移動'],
-  ['Space / Insert', 'カーソルの項目の選択を切り替え（Insert は次へ進む）'],
-  ['Ctrl+A / Esc', 'すべて選択 / 選択を解除'],
-  ['文字を打つ', 'その名前へ飛ぶ'],
-  ['Enter', '開く（フォルダなら入る）'],
-  ['Ctrl+Enter', '右に分割して開く（フォルダはフォルダ表示、ファイルは既定のアプリ）'],
-  ['Backspace / Alt+↑', '上のフォルダへ'],
-  ['Alt+← / Alt+→', '戻る / 進む'],
-  ['Alt+Home', 'ホームフォルダ'],
-  ['Ctrl+L', 'パスを入力（Esc で一覧へ戻る）'],
-  ['F5 / Ctrl+R', '再読込'],
-  ['Ctrl+C / Ctrl+X / Ctrl+V', 'コピー / 切り取り / 貼り付け'],
-  ['F2', '名前を変更'],
-  ['Delete / Shift+Delete', 'ゴミ箱へ / 完全に削除'],
-  ['Ctrl+Shift+N', '新しいフォルダ'],
-  ['Ctrl+Shift+C', 'パスをコピー'],
-  ['Ctrl+H', '隠しファイルの表示を切り替え'],
-  ['Shift+F4', 'ここで端末を開く'],
-  ['Alt+Enter', 'プロパティ'],
-  ['Menu / Shift+F10', '右クリックメニュー（↑↓ と Enter で選ぶ）'],
-  ['Tab / Shift+Tab', '隣のペインへ'],
+  ['↑ ↓ / PageUp PageDown / Home End', 'Move'],
+  ['Shift + move', 'Select range'],
+  ['Ctrl + move', 'Move cursor without changing selection'],
+  ['Space / Insert', 'Toggle selection at cursor (Insert also moves down)'],
+  ['Ctrl+A / Esc', 'Select all / Clear selection'],
+  ['Type letters', 'Jump to that name'],
+  ['Enter', 'Open (enter folder)'],
+  ['Ctrl+Enter', 'Open in a split on the right (folder view for folders, default app for files)'],
+  ['Backspace / Alt+↑', 'Parent folder'],
+  ['Alt+← / Alt+→', 'Back / Forward'],
+  ['Alt+Home', 'Home folder'],
+  ['Ctrl+L', 'Type a path (Esc returns to the list)'],
+  ['F5 / Ctrl+R', 'Reload'],
+  ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / Cut / Paste'],
+  ['F2', 'Rename'],
+  ['Delete / Shift+Delete', 'Trash / Delete permanently'],
+  ['Ctrl+Shift+N', 'New folder'],
+  ['Ctrl+Shift+C', 'Copy path'],
+  ['Ctrl+H', 'Toggle hidden files'],
+  ['Shift+F4', 'Open terminal here'],
+  ['Alt+Enter', 'Properties'],
+  ['Menu / Shift+F10', 'Context menu (choose with ↑↓ and Enter)'],
+  ['Tab / Shift+Tab', 'Next pane'],
 ];
 function showFileHelp() {
   const body = h('div', { class: 'props keys' }, FILE_KEYS.map(([k, v]) => h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v))));
-  fileDialog('フォルダの操作', body, [{ label: '閉じる', value: true, primary: true }]);
+  fileDialog('Folder keys', body, [{ label: 'Close', value: true, primary: true }]);
 }
 
 // ------------------------------------------------------------------ メニュー
@@ -568,34 +568,34 @@ function fileMenu(tab, leaf, x, y, kb = false) {
   const one = t.length === 1 ? t[0] : null;
   const has = t.length > 0;
   const items = has ? [
-    { label: '開く', icon: one?.isDir ? 'folder' : 'file', key: 'Enter', run: () => openEntries(tab, leaf, t) },
-    one?.isDir ? { label: '右のペインで開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, true) } : null,
-    has && !t.some((e) => e.isDir) ? { label: '新しいタブで開く', icon: 'plus', run: () => openEntries(tab, leaf, t, 'tab') } : null,
-    one && !one.isDir ? { label: '右に分割して開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, 'split') } : null,
-    has && !t.some((e) => e.isDir) ? { label: '別のウィンドウで開く', icon: 'window', run: () => openEntries(tab, leaf, t, 'window') } : null,
-    one?.ext === BMFILE_EXT ? { label: 'サイドバーのブックマークに入れる', icon: 'bookmark', run: () => importBmFile(one.full) } : null,
+    { label: 'Open', icon: one?.isDir ? 'folder' : 'file', key: 'Enter', run: () => openEntries(tab, leaf, t) },
+    one?.isDir ? { label: 'Open in right pane', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, true) } : null,
+    has && !t.some((e) => e.isDir) ? { label: 'Open in new tab', icon: 'plus', run: () => openEntries(tab, leaf, t, 'tab') } : null,
+    one && !one.isDir ? { label: 'Open in split right', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, 'split') } : null,
+    has && !t.some((e) => e.isDir) ? { label: 'Open in separate window', icon: 'window', run: () => openEntries(tab, leaf, t, 'window') } : null,
+    one?.ext === BMFILE_EXT ? { label: 'Add to sidebar bookmarks', icon: 'bookmark', run: () => importBmFile(one.full) } : null,
     { sep: true },
-    { label: '切り取り', key: 'Ctrl+X', run: () => doCopy(leaf, true) },
-    { label: 'コピー', key: 'Ctrl+C', run: () => doCopy(leaf, false) },
-    { label: '貼り付け', key: 'Ctrl+V', run: () => doPaste(leaf) },
-    { label: '名前を変更', icon: 'text', key: 'F2', disabled: !one, run: () => startRename(leaf, leaf.view.indexOf(one)) },
+    { label: 'Cut', key: 'Ctrl+X', run: () => doCopy(leaf, true) },
+    { label: 'Copy', key: 'Ctrl+C', run: () => doCopy(leaf, false) },
+    { label: 'Paste', key: 'Ctrl+V', run: () => doPaste(leaf) },
+    { label: 'Rename', icon: 'text', key: 'F2', disabled: !one, run: () => startRename(leaf, leaf.view.indexOf(one)) },
     { sep: true },
-    { label: 'ゴミ箱へ移動', icon: 'close', key: 'Delete', run: () => doDelete(leaf, false) },
-    { label: '完全に削除', danger: true, key: 'Shift+Del', run: () => doDelete(leaf, true) },
+    { label: 'Move to trash', icon: 'close', key: 'Delete', run: () => doDelete(leaf, false) },
+    { label: 'Delete permanently', danger: true, key: 'Shift+Del', run: () => doDelete(leaf, true) },
     { sep: true },
-    { label: 'パスをコピー', key: 'Ctrl+Shift+C', run: () => copyPaths(leaf) },
-    { label: '端末で開く', key: 'Shift+F4', run: () => openTerminalHere(tab, leaf) },
-    { label: 'プロパティ', key: 'Alt+Enter', run: () => showProps(leaf) },
+    { label: 'Copy path', key: 'Ctrl+Shift+C', run: () => copyPaths(leaf) },
+    { label: 'Open in terminal', key: 'Shift+F4', run: () => openTerminalHere(tab, leaf) },
+    { label: 'Properties', key: 'Alt+Enter', run: () => showProps(leaf) },
   ] : [
-    { label: '新しいフォルダ', icon: 'folder', key: 'Ctrl+Shift+N', run: () => newFolder(leaf) },
-    { label: '貼り付け', key: 'Ctrl+V', run: () => doPaste(leaf) },
+    { label: 'New folder', icon: 'folder', key: 'Ctrl+Shift+N', run: () => newFolder(leaf) },
+    { label: 'Paste', key: 'Ctrl+V', run: () => doPaste(leaf) },
     { sep: true },
-    { label: '隠しファイルを表示', checked: !!C.behavior.showHidden, key: 'Ctrl+H', run: toggleHidden },
-    { label: '再読込', icon: 'reload', key: 'F5', run: () => reloadDir(leaf) },
+    { label: 'Show hidden files', checked: !!C.behavior.showHidden, key: 'Ctrl+H', run: toggleHidden },
+    { label: 'Reload', icon: 'reload', key: 'F5', run: () => reloadDir(leaf) },
     { sep: true },
-    { label: 'パスをコピー', key: 'Ctrl+Shift+C', run: () => copyPaths(leaf) },
-    { label: '端末で開く', key: 'Shift+F4', run: () => openTerminalHere(tab, leaf) },
-    { label: 'プロパティ', key: 'Alt+Enter', run: () => showProps(leaf) },
+    { label: 'Copy path', key: 'Ctrl+Shift+C', run: () => copyPaths(leaf) },
+    { label: 'Open in terminal', key: 'Shift+F4', run: () => openTerminalHere(tab, leaf) },
+    { label: 'Properties', key: 'Alt+Enter', run: () => showProps(leaf) },
   ];
   popup(items.filter(Boolean), x, y, { keyboard: kb });
 }
@@ -745,16 +745,16 @@ function dragCol(e, key) {
 
 // ------------------------------------------------------------------ ペインの組み立て
 function buildFiles(tab, leaf, head, body) {
-  const back = btn('back', '戻る (Alt+←)', () => histGo(leaf, -1));
-  const fwd = btn('forward', '進む (Alt+→)', () => histGo(leaf, 1));
-  const up = btn('up', '上へ (Backspace)', () => goUp(leaf));
-  const home = btn('home', 'ホーム (Alt+Home)', async () => navTo(leaf, await api.fs.home()));
-  const drv = btn('drive', 'ドライブ・場所', async () => {
+  const back = btn('back', 'Back (Alt+←)', () => histGo(leaf, -1));
+  const fwd = btn('forward', 'Forward (Alt+→)', () => histGo(leaf, 1));
+  const up = btn('up', 'Up (Backspace)', () => goUp(leaf));
+  const home = btn('home', 'Home (Alt+Home)', async () => navTo(leaf, await api.fs.home()));
+  const drv = btn('drive', 'Drives & places', async () => {
     const list = await api.fs.drives();
     popupAt(drv, list.map((d) => ({ label: d.label, icon: 'drive', run: () => { navTo(leaf, d.path); focusList(leaf); } })));
   });
   const addr = h('input', {
-    type: 'text', class: 'addr', spellcheck: 'false', value: leaf.path, placeholder: 'パス',
+    type: 'text', class: 'addr', spellcheck: 'false', value: leaf.path, placeholder: 'Path',
     onfocus: (e) => e.target.select(),
     onkeydown: (e) => {
       if (e.key === 'Enter') { loadDir(leaf, addr.value); focusList(leaf); }
@@ -779,13 +779,13 @@ function buildFiles(tab, leaf, head, body) {
     heads[key] = el;
     return el;
   };
-  const fhead = h('div', { class: 'fhead' }, h('span', { class: 'ico' }), headCell('name', '名前'), headCell('type', '種類'), headCell('size', 'サイズ'), headCell('date', '更新日時'));
+  const fhead = h('div', { class: 'fhead' }, h('span', { class: 'ico' }), headCell('name', 'NAME'), headCell('type', 'TYPE'), headCell('size', 'SIZE'), headCell('date', 'MODIFIED'));
 
   const list = h('div', { class: 'vlist', tabindex: '0' });
   const spacer = h('div', { class: 'vspacer' });
   const rows = h('div', { class: 'vrows' });
   const err = h('div', { class: 'ferr', style: { display: 'none' } });
-  const empty = h('div', { class: 'fempty', style: { display: 'none' } }, '空のフォルダ');
+  const empty = h('div', { class: 'fempty', style: { display: 'none' } }, 'Empty folder');
   const renIn = h('input', { type: 'text', class: 'ren', spellcheck: 'false' });
   renIn.addEventListener('keydown', (e) => {
     e.stopPropagation();
@@ -820,8 +820,8 @@ function buildFiles(tab, leaf, head, body) {
   if (leaf.mode === 'save') {
     const msg = h('span', { class: 'msg' });
     const bar = h('div', { class: 'savebar' }, msg,
-      h('button', { class: 'textbtn primary', title: 'Ctrl+S', onclick: () => chooseSave(tab, leaf) }, 'ここに保存'),
-      h('button', { class: 'textbtn', onclick: () => closeLeaf(tab, leaf) }, 'キャンセル'));
+      h('button', { class: 'textbtn primary', title: 'Ctrl+S', onclick: () => chooseSave(tab, leaf) }, 'Save here'),
+      h('button', { class: 'textbtn', onclick: () => closeLeaf(tab, leaf) }, 'Cancel'));
     leaf.ui.saveMsg = msg;
     body.append(bar);
   }
@@ -852,10 +852,10 @@ function updateSaveBar(leaf) {
   const d = S.dl?.[leaf.dlId];
   let st = '';
   if (d) {
-    if (d.state === 'completed') st = '（ダウンロード完了）';
-    else if (d.state) st = '（ダウンロード失敗）';
+    if (d.state === 'completed') st = ' (download finished)';
+    else if (d.state) st = ' (download failed)';
     else if (d.total > 0) st = `（${Math.floor((d.received / d.total) * 100)}%）`;
     else if (d.received) st = `（${fmtSize(d.received)}）`;
   }
-  leaf.ui.saveMsg.textContent = `「${leaf.filename}」の保存先を選んでください${st}（Ctrl+S でここに保存）`;
+  leaf.ui.saveMsg.textContent = `Choose where to save "${leaf.filename}"${st} (Ctrl+S saves here)`;
 }

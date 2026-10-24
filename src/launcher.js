@@ -21,7 +21,7 @@ function launchApp(a) {
   api.config.set('appUsage', usage.slice(0, 50));
   // スクリーンショットのアプリはペインに取り込まない(範囲選びの画面や「画面全体」が取り込みと噛み合わない)
   if (!S.appSupported || C.behavior.appOpen === 'window' || NO_EMBED.test(a.exec)) {
-    api.app.spawn(a.exec).then((ok) => { if (!ok) toast('起動できませんでした'); });
+    api.app.spawn(a.exec).then((ok) => { if (!ok) toast('Failed to launch'); });
     return;
   }
   const t = openTab('app', { cmd: a.exec, cls: a.cls, name: a.name, icon: a.icon });
@@ -31,7 +31,7 @@ function launchApp(a) {
 // ------------------------------------------------------------------ 開発版
 // 作業フォルダの PRELUDE(開発版)を、新しいタブのアプリのペインに取り込んで動かす。起動コマンドは main.js の dev:info。
 // 開発版のペインは起動コマンドの印 PRELUDE_EMBEDDED=1 で見分ける(タブを復元した後も同じ)
-const DEV_NAME = 'PRELUDE 開発版';
+const DEV_NAME = 'PRELUDE dev build';
 const isDevLeaf = (l) => l?.type === 'app' && /\bPRELUDE_EMBEDDED=1\b/.test(l.cmd || '');
 function findDevLeaf() {
   for (const tab of S.tabs) {
@@ -45,10 +45,10 @@ function findDevLeaf() {
 async function openDevPrelude() {
   const f = findDevLeaf();
   if (f) { f.tab.activePane = f.leaf.id; showTab(f.tab); return; }
-  if (!S.appSupported) { toast('開発版の取り込みは KDE Plasma(Wayland)だけで使えます'); return; }
+  if (!S.appSupported) { toast('Embedding the dev build only works on KDE Plasma (Wayland)'); return; }
   const d = await api.dev.info();
   if (d.err) { toast(d.err); return; }
-  if (d.pid) { toast(`開発版は別に動いています(pid ${d.pid})。終了してから開いてください`); return; }
+  if (d.pid) { toast(`The dev build is already running (pid ${d.pid}). Quit it first`); return; }
   const t = openTab('app', { cmd: d.cmd, name: DEV_NAME });
   startApp(t.root, d.cmd, '', DEV_NAME);
 }
@@ -66,7 +66,7 @@ async function restartDevPrelude(leaf = findDevLeaf()?.leaf) {
   try {
     for (let i = 0; i < 60 && (await api.dev.info()).pid; i++) await new Promise((r) => setTimeout(r, 250));
     const pid = (await api.dev.info()).pid;
-    if (pid) { toast(`前の開発版が終わりません(pid ${pid})`); return; }
+    if (pid) { toast(`The previous dev build did not exit (pid ${pid})`); return; }
     await startApp(leaf, d.cmd, '', DEV_NAME);
   } finally {
     leaf.restarting = false;
@@ -75,21 +75,21 @@ async function restartDevPrelude(leaf = findDevLeaf()?.leaf) {
 }
 
 const LAUNCHER_COMMANDS = [
-  { name: '設定', keys: 'settings せってい', when: () => !IS_SUB, run: () => openSettings() },
-  { name: 'ホーム画面', keys: 'home ほーむ', run: () => openTab('home') },
-  { name: '新しいタブ(Web)', keys: 'new tab web あたらしい', run: () => openTab('web') },
-  { name: '新しいタブ(フォルダ)', keys: 'new tab folder files あたらしい', run: () => openTab('files') },
-  { name: '新しいタブ(フィールド)', keys: 'new tab field tree folder files ふぃーるど あたらしい', run: () => openTab('field') },
-  { name: '全画面の切り替え', keys: 'fullscreen ぜんがめん', when: () => !IS_SUB, run: () => api.win.cmd('toggleFullscreen') },
-  { name: '最大化の切り替え', keys: 'maximize window さいだいか', when: () => !IS_SUB, run: () => api.win.cmd('toggleMaximize') },
-  { name: 'サイドバーの切り替え', keys: 'sidebar tabs さいどばー たぶ', run: () => cycleSidebar() },
-  { name: 'スクリーンショット(範囲を選ぶ)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい', run: () => api.quick.do('screenshot', 'region') },
-  { name: 'スクリーンショット(今の画面)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい', run: () => api.quick.do('screenshot', 'screen') },
-  { name: 'スクリーンショット(前面の窓)', keys: 'screenshot capture print window すくりーんしょっと まど', run: () => api.quick.do('screenshot', 'window') },
-  { name: 'PRELUDE 開発版を開く', keys: 'prelude dev debug test develop かいはつばん でばっぐ てすと', when: () => !S.devSelf, run: () => openDevPrelude() },
-  { name: 'PRELUDE 開発版を再起動', keys: 'prelude dev debug test restart reload かいはつばん でばっぐ てすと さいきどう', when: () => !!findDevLeaf(), run: () => restartDevPrelude() },
-  { name: 'PRELUDE を更新', keys: 'update upgrade prelude こうしん あっぷでーと', when: () => sessionShell && !IS_SUB, run: () => runUpdate() },
-  { name: 'Kubuntuに戻る', keys: 'kubuntu plasma desktop return もどる', when: () => sessionShell && !IS_SUB, run: () => returnToKde() },
+  { name: 'Settings', keys: 'settings せってい 設定', when: () => !IS_SUB, run: () => openSettings() },
+  { name: 'Home screen', keys: 'home ほーむ ホーム画面', run: () => openTab('home') },
+  { name: 'New tab (Web)', keys: 'new tab web あたらしい 新しいタブ', run: () => openTab('web') },
+  { name: 'New tab (Folder)', keys: 'new tab folder files あたらしい 新しいタブ フォルダ', run: () => openTab('files') },
+  { name: 'New tab (Field)', keys: 'new tab field tree folder files ふぃーるど あたらしい 新しいタブ フィールド', run: () => openTab('field') },
+  { name: 'Toggle fullscreen', keys: 'fullscreen ぜんがめん 全画面', when: () => !IS_SUB, run: () => api.win.cmd('toggleFullscreen') },
+  { name: 'Toggle maximize', keys: 'maximize window さいだいか 最大化', when: () => !IS_SUB, run: () => api.win.cmd('toggleMaximize') },
+  { name: 'Cycle sidebar', keys: 'sidebar tabs さいどばー たぶ サイドバー', run: () => cycleSidebar() },
+  { name: 'Screenshot (region)', keys: 'screenshot capture print すくりーんしょっと さつえい はんい スクリーンショット 範囲', run: () => api.quick.do('screenshot', 'region') },
+  { name: 'Screenshot (screen)', keys: 'screenshot capture print screen full すくりーんしょっと がめん ぜんたい スクリーンショット 画面', run: () => api.quick.do('screenshot', 'screen') },
+  { name: 'Screenshot (active window)', keys: 'screenshot capture print window すくりーんしょっと まど スクリーンショット 窓', run: () => api.quick.do('screenshot', 'window') },
+  { name: 'Open PRELUDE dev build', keys: 'prelude dev debug test develop build かいはつばん でばっぐ てすと 開発版', when: () => !S.devSelf, run: () => openDevPrelude() },
+  { name: 'Restart PRELUDE dev build', keys: 'prelude dev debug test restart reload build かいはつばん でばっぐ てすと さいきどう 開発版 再起動', when: () => !!findDevLeaf(), run: () => restartDevPrelude() },
+  { name: 'Update PRELUDE', keys: 'update upgrade prelude こうしん あっぷでーと 更新', when: () => sessionShell && !IS_SUB, run: () => runUpdate() },
+  { name: 'Return to Kubuntu', keys: 'kubuntu plasma desktop return もどる 戻る', when: () => sessionShell && !IS_SUB, run: () => returnToKde() },
 ];
 
 // 前方一致を先に、部分一致を後に
@@ -108,7 +108,7 @@ function launcherEntries(q) {
 
   if (!q) {
     for (const a of (S.appList || []).filter((x) => used.has(x.exec)).sort((x, y) => usedRank(x) - usedRank(y)).slice(0, 8)) {
-      out.push({ kind: 'アプリ', name: a.name, run: () => launchApp(a) });
+      out.push({ kind: 'App', name: a.name, run: () => launchApp(a) });
     }
     return out;
   }
@@ -123,17 +123,17 @@ function launcherEntries(q) {
     const n = Number(num[2]);
     const tab = S.tabs.find((t) => t.num === n);
     const where = tab ? null : api.tab.where(n);
-    if (tab) out.push({ kind: `タブ ${n}`, name: tabTitle(tab), run: () => showTab(tab) });
-    else if (where) out.push({ kind: `タブ ${n}`, name: `${where.label}のタブ`, run: () => api.tab.goto(String(n)) });
+    if (tab) out.push({ kind: `Tab ${n}`, name: tabTitle(tab), run: () => showTab(tab) });
+    else if (where) out.push({ kind: `Tab ${n}`, name: `Tab on ${where.label}`, run: () => api.tab.goto(String(n)) });
   } else if (num) {
     const b = S.bookmarks.find((x) => x.num === Number(num[2]) && x.kind !== 'folder');
-    if (b) out.push({ kind: `ブックマーク b${b.num}`, name: b.title || b.target, run: () => openBookmark(b) });
+    if (b) out.push({ kind: `Bookmark b${b.num}`, name: b.title || b.target, run: () => openBookmark(b) });
   }
-  for (const { x: tab } of pick(S.tabs, tabTitle)) out.push({ kind: `タブ ${tab.num}`, name: tabTitle(tab), run: () => showTab(tab) });
-  for (const { x: b } of pick(S.bookmarks.filter((b) => b.kind !== 'folder'), (b) => b.title || b.target)) out.push({ kind: `ブックマーク b${b.num}`, name: b.title || b.target, run: () => openBookmark(b) });
-  for (const { x: a } of pick(S.appList || [], (a) => a.name, usedRank).slice(0, 8)) out.push({ kind: 'アプリ', name: a.name, run: () => launchApp(a) });
-  for (const { x: c } of pick(LAUNCHER_COMMANDS.filter((c) => !c.when || c.when()), (c) => c.name + ' ' + c.keys)) out.push({ kind: 'コマンド', name: c.name, run: c.run });
-  out.push({ kind: 'Web', name: `Webで開く／検索: ${q}`, run: () => openTab('web', { url: q }) });
+  for (const { x: tab } of pick(S.tabs, tabTitle)) out.push({ kind: `Tab ${tab.num}`, name: tabTitle(tab), run: () => showTab(tab) });
+  for (const { x: b } of pick(S.bookmarks.filter((b) => b.kind !== 'folder'), (b) => b.title || b.target)) out.push({ kind: `Bookmark b${b.num}`, name: b.title || b.target, run: () => openBookmark(b) });
+  for (const { x: a } of pick(S.appList || [], (a) => a.name, usedRank).slice(0, 8)) out.push({ kind: 'App', name: a.name, run: () => launchApp(a) });
+  for (const { x: c } of pick(LAUNCHER_COMMANDS.filter((c) => !c.when || c.when()), (c) => c.name + ' ' + c.keys)) out.push({ kind: 'Command', name: c.name, run: c.run });
+  out.push({ kind: 'Web', name: `Open / search the web: ${q}`, run: () => openTab('web', { url: q }) });
   return out.slice(0, 14);
 }
 
@@ -144,7 +144,7 @@ async function openLauncher() {
 
   let sel = 0, entries = [];
   const bd = h('div', { class: 'backdrop modal-bg', onpointerdown: closeLauncher });
-  const input = h('input', { type: 'text', spellcheck: 'false', placeholder: 'アプリ・タブ・ブックマーク・URL・検索' });
+  const input = h('input', { type: 'text', spellcheck: 'false', placeholder: 'Apps, tabs, bookmarks, URL, search' });
   const list = h('div', { class: 'lres' });
   const box = h('div', { class: 'launcher' }, input, list);
   const run = (i) => { const e = entries[i]; if (!e) return; closeLauncher(); e.run(); };
@@ -156,7 +156,7 @@ async function openLauncher() {
       onpointermove: () => { if (sel !== i) { sel = i; list.querySelectorAll('.lrow').forEach((r, j) => r.classList.toggle('sel', j === i)); } },
       onclick: () => run(i),
     }, h('span', { class: 'lname' }, e.name), h('span', { class: 'lkind' }, e.kind)))
-      : [h('div', { class: 'lnone' }, '入力して検索')]));
+      : [h('div', { class: 'lnone' }, 'Type to search')]));
     list.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
   };
   input.addEventListener('input', () => { sel = 0; paint(); });

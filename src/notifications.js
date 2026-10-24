@@ -25,18 +25,18 @@ function paintNotifications() {
   const n = bar.notify;
   const kids = [
     h('div', { class: 'nhead' },
-      h('span', { class: 'qgrow', style: { fontWeight: 600, textAlign: 'left', justifyContent: 'flex-start' } }, '通知'),
-      h('button', { class: 'textbtn' + (n.dnd ? ' primary' : ''), title: '緊急以外のポップアップを出さない(履歴には残る)', onclick: () => api.notify.dnd(!n.dnd) }, 'おやすみ'),
-      h('button', { class: 'textbtn', onclick: () => api.notify.clear() }, '全て消去')),
+      h('span', { class: 'qgrow', style: { fontWeight: 600, textAlign: 'left', justifyContent: 'flex-start' } }, 'NOTIFICATIONS'),
+      h('button', { class: 'textbtn' + (n.dnd ? ' primary' : ''), title: 'Hide non-critical popups (still kept in history)', onclick: () => api.notify.dnd(!n.dnd) }, 'DND'),
+      h('button', { class: 'textbtn', onclick: () => api.notify.clear() }, 'Clear all')),
   ];
-  if (!n.serving) kids.push(h('div', { class: 'qh' }, '通知はまだ別のサーバ(plasmashell)が受け取っています。plasmashell を止めると PRELUDE が引き継ぎます。'));
-  if (!n.history.length) kids.push(h('div', { class: 'empty' }, '通知はありません'));
+  if (!n.serving) kids.push(h('div', { class: 'qh' }, 'Notifications are still handled by another server (plasmashell). PRELUDE takes over once plasmashell stops.'));
+  if (!n.history.length) kids.push(h('div', { class: 'empty' }, 'No notifications'));
   n.history.forEach((x, i) => kids.push(h('div', { class: 'nitem' + (i < notifSeenAtOpen ? ' new' : '') },
     h('div', { class: 'ntx' },
-      h('div', { class: 'nmeta' }, `${x.app || '通知'} ・ ${fmtTime(x.time)}`),
+      h('div', { class: 'nmeta' }, `${x.app || 'Notification'} · ${fmtTime(x.time)}`),
       h('div', { class: 'nsum' }, x.summary),
       x.body ? h('div', { class: 'nbody' }, x.body) : null),
-    h('button', { class: 'ibtn nx', title: '消去', onclick: () => api.notify.remove(x.id) }, ico('close')))));
+    h('button', { class: 'ibtn nx', title: 'Dismiss', onclick: () => api.notify.remove(x.id) }, ico('close')))));
   const top = notifUI.box.scrollTop;
   notifUI.box.replaceChildren(...kids);
   notifUI.box.scrollTop = top;

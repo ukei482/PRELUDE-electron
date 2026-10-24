@@ -8,16 +8,16 @@ function paintBar() {
   const { battery, volume, net } = bar.sys;
   const { vol, netEl, bat } = bar.el;
   vol.style.display = volume ? '' : 'none';
-  if (volume) vol.textContent = volume.muted ? '音量 ミュート' : `音量 ${volume.percent}%`;
+  if (volume) vol.textContent = volume.muted ? 'VOL MUTE' : `VOL ${volume.percent}%`;
   netEl.style.display = net ? '' : 'none';
   if (net) {
-    netEl.textContent = net.kind === 'wifi' ? `Wi-Fi ${net.name}` : net.kind === 'ethernet' ? '有線接続' : 'オフライン';
+    netEl.textContent = net.kind === 'wifi' ? `Wi-Fi ${net.name}` : net.kind === 'ethernet' ? 'Ethernet' : 'Offline';
     netEl.classList.toggle('warn', net.kind === 'none');
   }
   bat.style.display = battery ? '' : 'none';
   if (battery) {
-    const chg = battery.status === 'Charging' ? ' 充電中' : battery.status === 'Full' ? ' 満充電' : '';
-    bat.textContent = `電池 ${battery.percent}%${chg}`;
+    const chg = battery.status === 'Charging' ? ' CHG' : battery.status === 'Full' ? ' FULL' : '';
+    bat.textContent = `BAT ${battery.percent}%${chg}`;
     bat.classList.toggle('warn', battery.status === 'Discharging' && battery.percent <= 15);
   }
 }
@@ -27,45 +27,45 @@ function paintMedia() {
   const el = bar.el.media;
   el.style.display = m ? '' : 'none';
   if (m) {
-    el.textContent = `${m.status === 'Playing' ? '再生中' : '一時停止'}: ${[m.title, m.artist].filter(Boolean).join(' - ') || m.name.replace('org.mpris.MediaPlayer2.', '')}`;
-    el.title = 'クリック: 再生/一時停止 / 右クリック: 前後の曲';
+    el.textContent = `${m.status === 'Playing' ? 'Playing' : 'Paused'}: ${[m.title, m.artist].filter(Boolean).join(' - ') || m.name.replace('org.mpris.MediaPlayer2.', '')}`;
+    el.title = 'Click: play/pause / Right-click: prev/next';
   }
 }
 
 function paintNotify() {
   const n = bar.notify;
   const el = bar.el.notify;
-  el.textContent = `通知${n.unread ? ' ' + n.unread : ''}${n.dnd ? ' (おやすみ)' : ''}`;
+  el.textContent = `NOTIF${n.unread ? ' ' + n.unread : ''}${n.dnd ? ' (DND)' : ''}`;
   el.classList.toggle('warn', n.unread > 0);
 }
 
-const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+const WEEK = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 function paintClock() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  bar.el.clock.textContent = `${d.getMonth() + 1}/${d.getDate()}(${WEEK[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
+  bar.el.clock.textContent = `${WEEK[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function initBar() {
   const root = document.getElementById('statusbar');
-  const launch = h('button', { class: 'barbtn', title: 'ランチャー', onclick: () => openLauncher() }, ico('window'), 'アプリ・検索');
+  const launch = h('button', { class: 'barbtn', title: 'Launcher', onclick: () => openLauncher() }, ico('window'), 'Apps / Search');
   // 音量: クリックでクイック設定、ホイールで±5%、中クリックでミュート
   const vol = h('span', {
-    class: 'baritem clickable', title: 'クリック: クイック設定 / ホイール: 音量 / 中クリック: ミュート',
+    class: 'baritem clickable', title: 'Click: quick settings / Wheel: volume / Middle click: mute',
     onclick: () => openQuick(),
     onauxclick: (e) => { if (e.button === 1) api.sys.audio('mute'); },
     onwheel: (e) => { e.preventDefault(); api.sys.audio(e.deltaY < 0 ? 'up' : 'down'); },
   });
-  const netEl = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
-  const bat = h('span', { class: 'baritem clickable', title: 'クイック設定', onclick: () => openQuick() });
+  const netEl = h('span', { class: 'baritem clickable', title: 'Quick settings', onclick: () => openQuick() });
+  const bat = h('span', { class: 'baritem clickable', title: 'Quick settings', onclick: () => openQuick() });
   const trayEl = h('span', { class: 'traybox', style: { display: 'none' } });
-  const notifyEl = h('span', { class: 'baritem clickable', title: '通知センター', onclick: () => openNotifications() });
+  const notifyEl = h('span', { class: 'baritem clickable', title: 'Notifications', onclick: () => openNotifications() });
   const media = h('span', {
     class: 'baritem clickable', style: { display: 'none' },
     onclick: () => api.sys.mediaCmd('playpause'),
     oncontextmenu: (e) => {
       e.preventDefault();
-      popup([{ label: '前の曲', run: () => api.sys.mediaCmd('prev') }, { label: '次の曲', run: () => api.sys.mediaCmd('next') }], e.clientX, e.clientY - 70);
+      popup([{ label: 'Previous track', run: () => api.sys.mediaCmd('prev') }, { label: 'Next track', run: () => api.sys.mediaCmd('next') }], e.clientX, e.clientY - 70);
     },
   });
   const clock = h('span', { class: 'baritem', title: '' });

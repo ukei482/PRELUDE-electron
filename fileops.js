@@ -109,7 +109,7 @@ function watch(id, dir, wc) {
 // ---------------------------------------------------------------- 操作
 async function mkdir(dir, name) {
   const n = validName(name);
-  if (!n) return { ok: false, error: '使えない名前です' };
+  if (!n) return { ok: false, error: 'Invalid name' };
   try {
     const p = await freePath(dir, n, true);
     await fsp.mkdir(p);
@@ -119,11 +119,11 @@ async function mkdir(dir, name) {
 
 async function rename(full, name) {
   const n = validName(name);
-  if (!n) return { ok: false, error: '使えない名前です' };
+  if (!n) return { ok: false, error: 'Invalid name' };
   const dest = path.join(path.dirname(full), n);
   if (dest === full) return { ok: true, name: n };
   // 大文字小文字だけの変更(Windows)は同じファイルを指すので、存在チェックをしない
-  if (dest.toLowerCase() !== full.toLowerCase() && await exists(dest)) return { ok: false, error: `「${n}」はすでにあります` };
+  if (dest.toLowerCase() !== full.toLowerCase() && await exists(dest)) return { ok: false, error: `"${n}" already exists` };
   try { await fsp.rename(full, dest); return { ok: true, name: n }; } catch (e) { return { ok: false, error: e.message }; }
 }
 
@@ -153,7 +153,7 @@ async function transfer(mode, paths, destDir, wc) {
     try {
       const st = await fsp.lstat(src);
       const isDir = st.isDirectory();
-      if (isDir && inside(src, destDir)) throw new Error('フォルダをその中へは' + (mode === 'move' ? '移動' : 'コピー') + 'できません');
+      if (isDir && inside(src, destDir)) throw new Error('Cannot ' + (mode === 'move' ? 'move' : 'copy') + ' a folder into itself');
       if (mode === 'move' && path.dirname(src) === path.resolve(destDir)) { names.push(name); continue; } // 同じ場所への移動は何もしない
       const dest = await freePath(destDir, name, isDir);
       if (mode === 'move') {
@@ -266,7 +266,7 @@ const isBm = (p) => path.isAbsolute(p) && p.toLowerCase().endsWith(BM_EXT);
 // dir の中に新しく作る(同じ名前があれば「名前 (1).prelude」)。dir が無ければ作る
 async function bmSave(dir, name, text) {
   const n = validName(name);
-  if (!path.isAbsolute(dir) || !n || !n.toLowerCase().endsWith(BM_EXT)) return { error: '保存先が正しくありません' };
+  if (!path.isAbsolute(dir) || !n || !n.toLowerCase().endsWith(BM_EXT)) return { error: 'Invalid save location' };
   try {
     await fsp.mkdir(dir, { recursive: true });
     const p = await freePath(dir, n, false);
@@ -275,17 +275,17 @@ async function bmSave(dir, name, text) {
   } catch (e) { return { error: e.message }; }
 }
 async function bmMkdir(dir) {
-  if (!path.isAbsolute(dir)) return { error: '保存先が正しくありません' };
+  if (!path.isAbsolute(dir)) return { error: 'Invalid save location' };
   try { await fsp.mkdir(dir, { recursive: true }); return { path: dir }; } catch (e) { return { error: e.message }; }
 }
 async function bmWrite(full, text) {
-  if (!isBm(full)) return { error: 'ブックマークのファイルではありません' };
+  if (!isBm(full)) return { error: 'Not a bookmark file' };
   try { await fsp.writeFile(full, String(text)); return { path: full }; } catch (e) { return { error: e.message }; }
 }
 async function bmRead(full) {
-  if (!isBm(full)) return { error: 'ブックマークのファイルではありません' };
+  if (!isBm(full)) return { error: 'Not a bookmark file' };
   try {
-    if ((await fsp.stat(full)).size > BM_MAX) return { error: 'ファイルが大きすぎます' };
+    if ((await fsp.stat(full)).size > BM_MAX) return { error: 'File is too large' };
     return { text: await fsp.readFile(full, 'utf8') };
   } catch (e) { return { error: e.message }; }
 }
@@ -331,7 +331,7 @@ function init(o) {
     e.sender.startDrag({ file: files[0], files, icon: img });
   });
   ipcMain.handle('fs:drives', async () => {
-    const out = [{ label: 'ホーム', path: os.homedir() }];
+    const out = [{ label: 'Home', path: os.homedir() }];
     if (isWin) {
       for (let c = 65; c <= 90; c++) {
         const p = String.fromCharCode(c) + ':\\';

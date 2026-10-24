@@ -16,7 +16,7 @@ const FIELD = {
   HOT: 3, HOTMIN: 0.3, // 印を付けるのは、点数が HOTMIN 以上の上位 HOT 件
 };
 // 種類ごとの色はフォルダペインのアイコン(style.css の .ico.k-*)と同じ
-const FIELD_COLORS = { bookmark: '#b08a2e', image: '#4f8a5b', video: '#8a4f7d', audio: '#4f6f8a', archive: '#a0712c', code: '#3f7f86', doc: '#a04a3c' };
+const FIELD_COLORS = { bookmark: '#ffd75f', image: '#7ddc8a', video: '#e08ad0', audio: '#9ff0ff', archive: '#f0b35a', code: '#5fe0d0', doc: '#ff8a75' };
 const fieldSortName = (a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
 // ------------------------------------------------------------------ 読み込み(キャッシュ・先読み)
@@ -387,20 +387,20 @@ function fieldMenu(leaf, c, x, y) {
   const set = (p) => () => fieldSetView(leaf, c, p);
   const list = v.mode === 'list';
   popup([
-    { header: `表示（${c.name}）` },
-    { label: 'リスト', checked: list, run: set({ mode: 'list' }) },
-    { label: 'アイコン', checked: !list, run: set({ mode: 'icon' }) },
+    { header: `View (${c.name})` },
+    { label: 'List', checked: list, run: set({ mode: 'list' }) },
+    { label: 'Icons', checked: !list, run: set({ mode: 'icon' }) },
     { sep: true },
-    { header: '並べ替え' },
-    ...[['name', '名前'], ['date', '更新日時'], ['size', 'サイズ'], ['type', '種類']].map(([k, l]) => ({ label: l, checked: v.sort === k, run: set({ sort: k }) })),
-    { label: '逆順', checked: v.desc, run: set({ desc: !v.desc }) },
+    { header: 'Sort' },
+    ...[['name', 'Name'], ['date', 'Modified'], ['size', 'Size'], ['type', 'Type']].map(([k, l]) => ({ label: l, checked: v.sort === k, run: set({ sort: k }) })),
+    { label: 'Reverse', checked: v.desc, run: set({ desc: !v.desc }) },
     { sep: true },
-    { header: '列（リストのとき）' },
-    { label: 'サイズ', checked: v.size, disabled: !list, run: set({ size: !v.size }) },
-    { label: '更新日時', checked: v.date, disabled: !list, run: set({ date: !v.date }) },
+    { header: 'Columns (list view)' },
+    { label: 'Size', checked: v.size, disabled: !list, run: set({ size: !v.size }) },
+    { label: 'Modified', checked: v.date, disabled: !list, run: set({ date: !v.date }) },
     { sep: true },
-    { label: 'このフォルダの表示を元に戻す', disabled: !fieldViewStore()[c.full], run: set(null) },
-    { label: '開いた履歴を消す（すべてのフォルダ）', run: () => { freqClear(); fieldSetView(leaf, c, fieldViewStore()[c.full] ? {} : null); toast('開いた履歴を消しました'); } },
+    { label: 'Reset view for this folder', disabled: !fieldViewStore()[c.full], run: set(null) },
+    { label: 'Clear open history (all folders)', run: () => { freqClear(); fieldSetView(leaf, c, fieldViewStore()[c.full] ? {} : null); toast('Open history cleared'); } },
   ], x, y);
 }
 
@@ -495,7 +495,7 @@ function fieldTargets(leaf) {
   const en = fieldEn(leaf);
   return en ? [en] : [];
 }
-const fieldNames = (list) => (list.length === 1 ? `「${list[0].name}」` : `${list.length} 個の項目`);
+const fieldNames = (list) => (list.length === 1 ? `"${list[0].name}"` : `${list.length} items`);
 const fieldTabOf = (leaf) => findLeaf(leaf.id)?.tab;
 
 function fieldEachLeaf(fn) {
@@ -538,38 +538,38 @@ async function fieldCopy(leaf, cut) {
   S.fileClip = cut ? { paths: new Set(paths), cut } : null;
   reloadAllPaint();
   fieldKickAll();
-  toast(`${fieldNames(list)}を${cut ? '切り取りました' : 'コピーしました'}`);
+  toast(`${cut ? 'Cut' : 'Copied'} ${fieldNames(list)}`);
 }
 
 async function fieldPaste(leaf, into) {
   const c = leaf.fv.cur;
   const r = await api.fs.clipRead();
-  if (!r.paths.length) { toast('貼り付けるファイルがありません'); return; }
+  if (!r.paths.length) { toast('Nothing to paste'); return; }
   const mode = r.cut ? 'move' : 'copy';
-  toast(`${mode === 'move' ? '移動' : 'コピー'}中…`, 60000);
+  toast(`${mode === 'move' ? 'Moving' : 'Copying'}…`, 60000);
   const res = await api.fs.transfer(mode, r.paths, into);
   if (r.cut) { S.fileClip = null; reloadAllPaint(); }
   await fieldRefresh([into, ...(r.cut ? r.paths.map(fieldParentPath) : [])]);
   if (res.names.length && c.full === into) fieldCursorTo(leaf, c, res.names[0]);
-  if (res.errors.length) toast(`${res.errors.length} 件失敗: ${res.errors[0]}`);
-  else toast(`${res.names.length} 個を${mode === 'move' ? '移動' : 'コピー'}しました`);
+  if (res.errors.length) toast(`${res.errors.length} failed: ${res.errors[0]}`);
+  else toast(`${mode === 'move' ? 'Moved' : 'Copied'} ${res.names.length} items`);
 }
 
 async function fieldDelete(leaf, permanent) {
   const c = leaf.fv.cur, list = fieldTargets(leaf);
   if (!list.length) return;
-  const shown = list.slice(0, 10).map((e) => e.name).join('\n') + (list.length > 10 ? `\nほか ${list.length - 10} 個` : '');
-  if (permanent && !(await fileConfirm(`完全に削除します（元に戻せません）\n${shown}`, '削除', true))) return;
+  const shown = list.slice(0, 10).map((e) => e.name).join('\n') + (list.length > 10 ? `\nand ${list.length - 10} more` : '');
+  if (permanent && !(await fileConfirm(`Delete permanently (cannot be undone)\n${shown}`, 'Delete', true))) return;
   const r = await api.fs.remove(list.map((e) => e.full), permanent);
   fieldClearSel(c);
   await fieldRefresh([c.full]);
-  if (!r.ok) toast(`削除できませんでした: ${r.errors[0]}${permanent ? '' : '（Shift+Delete で完全に削除）'}`);
-  else toast(`${fieldNames(list)}を${permanent ? '削除しました' : 'ゴミ箱へ移動しました'}`);
+  if (!r.ok) toast(`Could not delete: ${r.errors[0]}${permanent ? '' : ' (Shift+Delete to delete permanently)'}`);
+  else toast(`${permanent ? 'Deleted' : 'Moved to trash:'} ${fieldNames(list)}`);
 }
 
 async function fieldNewFolder(leaf) {
   const c = leaf.fv.cur;
-  const r = await api.fs.mkdir(c.full, '新しいフォルダ');
+  const r = await api.fs.mkdir(c.full, 'New folder');
   if (!r.ok) { toast(r.error); return; }
   await fieldRefresh([c.full]);
   fieldCursorTo(leaf, c, r.name);
@@ -620,7 +620,7 @@ function fieldStartRename(leaf) {
 function fieldCopyPath(leaf) {
   const list = fieldTargets(leaf);
   const p = list.length ? list.map((e) => e.full).join('\n') : leaf.fv.cur.full; // 複数なら1行に1つ
-  api.fs.copyText(p).then(() => toast(list.length > 1 ? `${list.length} 個のパスをコピーしました` : 'パスをコピーしました'));
+  api.fs.copyText(p).then(() => toast(list.length > 1 ? `Copied ${list.length} paths` : 'Path copied'));
 }
 const fieldTerminal = (leaf) => { const en = fieldEn(leaf); openTerminalAt(fieldTabOf(leaf), leaf, en?.isDir ? en.full : leaf.fv.cur.full); };
 const fieldProps = (leaf, ofCard) => { const c = leaf.fv.cur, list = ofCard ? [] : fieldTargets(leaf); showPropsFor(list.length ? list.map((e) => e.full) : [c.full], c.full); };
@@ -640,27 +640,27 @@ function fieldItemMenu(leaf, x, y) {
   if (!en) { fieldCardMenu(leaf, c, x, y); return; }
   const tab = fieldTabOf(leaf), n = fieldTargets(leaf).length;
   popup([
-    n > 1 ? { header: `${n} 個を選択中(切り取り・コピー・削除・パスのコピー・プロパティは全部が対象)` } : null,
-    { label: en.isDir ? 'カードを開く' : '開く', icon: en.isDir ? 'folder' : 'file', key: 'Enter', run: () => fieldEnter(leaf) },
-    en.isDir ? null : { label: '新しいタブで開く', icon: 'plus', run: () => fieldEnter(leaf, 'tab') },
-    en.isDir || !tab ? null : { label: '右に分割して開く', icon: 'split-h', key: 'Ctrl+Enter', run: () => fieldEnter(leaf, 'split') },
-    en.isDir ? null : { label: '別のウィンドウで開く', icon: 'window', run: () => fieldEnter(leaf, 'window') },
-    en.ext === BMFILE_EXT ? { label: 'サイドバーのブックマークに入れる', icon: 'bookmark', run: () => importBmFile(en.full) } : null,
-    en.isDir ? { label: '新しいタブで開く', icon: 'field', key: '中クリック', run: () => openTab('field', { path: en.full }) } : null,
-    en.isDir && tab ? { label: 'フォルダ表示で右に開く', icon: 'split-h', run: () => splitLeaf(tab, leaf, 'row', 'files', { path: en.full }) } : null,
+    n > 1 ? { header: `${n} selected (cut, copy, delete, copy path and properties apply to all)` } : null,
+    { label: en.isDir ? 'Open card' : 'Open', icon: en.isDir ? 'folder' : 'file', key: 'Enter', run: () => fieldEnter(leaf) },
+    en.isDir ? null : { label: 'Open in new tab', icon: 'plus', run: () => fieldEnter(leaf, 'tab') },
+    en.isDir || !tab ? null : { label: 'Open in split right', icon: 'split-h', key: 'Ctrl+Enter', run: () => fieldEnter(leaf, 'split') },
+    en.isDir ? null : { label: 'Open in separate window', icon: 'window', run: () => fieldEnter(leaf, 'window') },
+    en.ext === BMFILE_EXT ? { label: 'Add to sidebar bookmarks', icon: 'bookmark', run: () => importBmFile(en.full) } : null,
+    en.isDir ? { label: 'Open in new tab', icon: 'field', key: 'Middle click', run: () => openTab('field', { path: en.full }) } : null,
+    en.isDir && tab ? { label: 'Open as folder view on the right', icon: 'split-h', run: () => splitLeaf(tab, leaf, 'row', 'files', { path: en.full }) } : null,
     { sep: true },
-    { label: '切り取り', key: 'Ctrl+X', run: () => fieldCopy(leaf, true) },
-    { label: 'コピー', key: 'Ctrl+C', run: () => fieldCopy(leaf, false) },
-    { label: '貼り付け', key: 'Ctrl+V', run: () => fieldPaste(leaf, c.full) },
-    en.isDir ? { label: 'このフォルダの中に貼り付け', run: () => fieldPaste(leaf, en.full) } : null,
-    { label: '名前を変更', icon: 'text', key: 'F2', run: () => fieldStartRename(leaf) },
+    { label: 'Cut', key: 'Ctrl+X', run: () => fieldCopy(leaf, true) },
+    { label: 'Copy', key: 'Ctrl+C', run: () => fieldCopy(leaf, false) },
+    { label: 'Paste', key: 'Ctrl+V', run: () => fieldPaste(leaf, c.full) },
+    en.isDir ? { label: 'Paste into this folder', run: () => fieldPaste(leaf, en.full) } : null,
+    { label: 'Rename', icon: 'text', key: 'F2', run: () => fieldStartRename(leaf) },
     { sep: true },
-    { label: 'ゴミ箱へ移動', icon: 'close', key: 'Delete', run: () => fieldDelete(leaf, false) },
-    { label: '完全に削除', danger: true, key: 'Shift+Del', run: () => fieldDelete(leaf, true) },
+    { label: 'Move to trash', icon: 'close', key: 'Delete', run: () => fieldDelete(leaf, false) },
+    { label: 'Delete permanently', danger: true, key: 'Shift+Del', run: () => fieldDelete(leaf, true) },
     { sep: true },
-    { label: 'パスをコピー', key: 'Ctrl+Shift+C', run: () => fieldCopyPath(leaf) },
-    { label: '端末で開く', key: 'Shift+F4', run: () => fieldTerminal(leaf) },
-    { label: 'プロパティ', key: 'Alt+Enter', run: () => fieldProps(leaf) },
+    { label: 'Copy path', key: 'Ctrl+Shift+C', run: () => fieldCopyPath(leaf) },
+    { label: 'Open in terminal', key: 'Shift+F4', run: () => fieldTerminal(leaf) },
+    { label: 'Properties', key: 'Alt+Enter', run: () => fieldProps(leaf) },
   ].filter(Boolean), x, y);
 }
 
@@ -668,18 +668,18 @@ function fieldItemMenu(leaf, x, y) {
 function fieldCardMenu(leaf, c, x, y) {
   popup([
     { header: c.name },
-    { label: '新しいフォルダ', icon: 'folder', key: 'Ctrl+Shift+N', run: () => fieldNewFolder(leaf) },
-    { label: '貼り付け', key: 'Ctrl+V', run: () => fieldPaste(leaf, c.full) },
+    { label: 'New folder', icon: 'folder', key: 'Ctrl+Shift+N', run: () => fieldNewFolder(leaf) },
+    { label: 'Paste', key: 'Ctrl+V', run: () => fieldPaste(leaf, c.full) },
     { sep: true },
-    { label: '表示の設定…', key: '︙', run: () => fieldMenu(leaf, c, x, y) },
-    { label: '隠しファイルを表示', checked: !!C.behavior.showHidden, key: 'Ctrl+H', run: toggleHidden },
-    { label: '再読込', icon: 'reload', key: 'F5', run: () => fieldReload(leaf) },
+    { label: 'View settings…', key: '︙', run: () => fieldMenu(leaf, c, x, y) },
+    { label: 'Show hidden files', checked: !!C.behavior.showHidden, key: 'Ctrl+H', run: toggleHidden },
+    { label: 'Reload', icon: 'reload', key: 'F5', run: () => fieldReload(leaf) },
     { sep: true },
-    { label: 'パスをコピー', run: () => api.fs.copyText(c.full).then(() => toast('パスをコピーしました')) },
-    { label: '端末で開く', run: () => openTerminalAt(fieldTabOf(leaf), leaf, c.full) },
-    { label: 'プロパティ', run: () => fieldProps(leaf, true) },
+    { label: 'Copy path', run: () => api.fs.copyText(c.full).then(() => toast('Path copied')) },
+    { label: 'Open in terminal', run: () => openTerminalAt(fieldTabOf(leaf), leaf, c.full) },
+    { label: 'Properties', run: () => fieldProps(leaf, true) },
     c.parent ? { sep: true } : null,
-    c.parent ? { label: 'このカードを閉じる', icon: 'close', key: 'Shift+←', run: () => fieldCloseCard(leaf, c) } : null,
+    c.parent ? { label: 'Close this card', icon: 'close', key: 'Shift+←', run: () => fieldCloseCard(leaf, c) } : null,
   ].filter(Boolean), x, y);
 }
 
@@ -687,11 +687,11 @@ function fieldCardMenu(leaf, c, x, y) {
 function fieldSpaceMenu(leaf, x, y) {
   const fv = leaf.fv;
   popup([
-    { label: '操作中のカードへ戻る', run: () => { fv.follow = true; fieldKick(fv); fv.canvas.focus(); } },
-    { label: '拡大を元に戻す', key: '0', run: () => { fv.cam.tz = 1; fieldKick(fv); } },
+    { label: 'Back to current card', run: () => { fv.follow = true; fieldKick(fv); fv.canvas.focus(); } },
+    { label: 'Reset zoom', key: '0', run: () => { fv.cam.tz = 1; fieldKick(fv); } },
     { sep: true },
-    { label: 'ホームから始め直す', icon: 'home', run: async () => fieldNewTree(leaf, await api.fs.home()) },
-    { label: '隠しファイルを表示', checked: !!C.behavior.showHidden, key: 'Ctrl+H', run: toggleHidden },
+    { label: 'Restart from home', icon: 'home', run: async () => fieldNewTree(leaf, await api.fs.home()) },
+    { label: 'Show hidden files', checked: !!C.behavior.showHidden, key: 'Ctrl+H', run: toggleHidden },
   ], x, y);
 }
 
@@ -821,7 +821,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
   ctx.shadowColor = 'rgba(0,0,0,.16)';
   ctx.shadowBlur = focus ? 22 : 12;
   ctx.shadowOffsetY = focus ? 5 : 3;
-  ctx.fillStyle = a.panel;
+  ctx.fillStyle = a.bg;
   ctx.beginPath();
   ctx.rect(x, y, w, h);
   ctx.fill();
@@ -832,7 +832,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
 
   // 見出し: フォルダ名・件数・︙(表示の設定)
   const n = c.list.length;
-  const count = c.loading ? '…' : c.err ? '開けません' : String(n);
+  const count = c.loading ? '…' : c.err ? 'ERR' : String(n);
   const cw = ctx.measureText(count).width;
   ctx.fillStyle = a.accent;
   ctx.beginPath();
@@ -855,7 +855,7 @@ function fieldDrawCard(fv, ctx, a, c, font, onPath) {
 
   if (!n) {
     ctx.fillStyle = c.err ? a.danger : a.dim;
-    ctx.fillText(c.loading ? '読み込み中…' : c.err ? fieldFit(ctx, c.err, w - 28) : '空', x + 14, y + HD + R / 2);
+    ctx.fillText(c.loading ? 'Loading…' : c.err ? fieldFit(ctx, c.err, w - 28) : 'Empty', x + 14, y + HD + R / 2);
     return;
   }
   const open = new Set(c.kids.map((k) => k.row));
@@ -965,10 +965,10 @@ function fieldDragImage(list) {
   const font = `${a.fontSize}px ${getComputedStyle(document.body).fontFamily}`;
   const cv = document.createElement('canvas'), ctx = cv.getContext('2d');
   ctx.font = font;
-  const label = list.length > 1 ? `📄 ${en.name} ほか ${list.length - 1} 個` : (en.isDir ? '📁 ' : '📄 ') + en.name;
+  const label = list.length > 1 ? `📄 ${en.name} and ${list.length - 1} more` : (en.isDir ? '📁 ' : '📄 ') + en.name;
   const w = Math.min(320, Math.ceil(ctx.measureText(label).width) + 20), hgt = a.fontSize + 14;
   cv.width = w; cv.height = hgt;
-  ctx.fillStyle = a.panel;
+  ctx.fillStyle = a.bg;
   ctx.beginPath(); ctx.rect(0.5, 0.5, w - 1, hgt - 1); ctx.fill();
   ctx.strokeStyle = a.line; ctx.stroke();
   ctx.font = font; ctx.fillStyle = a.text; ctx.textBaseline = 'middle';
@@ -1001,12 +1001,12 @@ function fieldHit(fv, ev) {
 
 // ------------------------------------------------------------------ ペイン
 function buildField(tab, leaf, head, body) {
-  const home = btn('home', 'ホーム', async () => { fieldNewTree(leaf, await api.fs.home()); canvas.focus(); });
+  const home = btn('home', 'Home', async () => { fieldNewTree(leaf, await api.fs.home()); canvas.focus(); });
   const path = h('span', { class: 'ptitle field-path' });
   head.append(ico('field'), path, home, ...commonButtons(tab, leaf));
 
   const canvas = h('canvas', { class: 'field', tabindex: '0' });
-  const hint = h('div', { class: 'field-hint' }, '↑↓ 選ぶ　→ フォルダを開く　← 親へ（Shift で閉じる）　Ctrl+↑↓ 兄弟フォルダへ　Enter・ダブルクリック 開く　Ctrl・Shift+クリック 複数選択　ドラッグ 他のアプリへ　右クリック・メニューキー 操作　︙ 表示の設定　F2 名前の変更　Delete ゴミ箱へ');
+  const hint = h('div', { class: 'field-hint' }, '↑↓ select  → open folder  ← parent (Shift: close)  Ctrl+↑↓ sibling folder  Enter/double-click open  Ctrl/Shift+click multi-select  drag to other apps  right-click/menu key actions  ︙ view  F2 rename  Delete trash');
   body.append(canvas, hint);
 
   const fresh = !leaf.fv?.cards;
@@ -1091,7 +1091,7 @@ function buildField(tab, leaf, head, body) {
   canvas.addEventListener('auxclick', (e) => {
     if (e.button !== 1) return;
     const hit = fieldHit(fv, e), en = hit && hit.row >= 0 ? hit.c.list[hit.row] : null;
-    if (en?.isDir) { e.preventDefault(); openTab('field', { path: en.full, background: true }); toast(`「${en.name}」を新しいタブで開きました`); }
+    if (en?.isDir) { e.preventDefault(); openTab('field', { path: en.full, background: true }); toast(`Opened "${en.name}" in a new tab`); }
   });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -1109,6 +1109,7 @@ function buildField(tab, leaf, head, body) {
     fieldKick(fv);
   }, { passive: false });
   new ResizeObserver(() => fieldKick(fv)).observe(canvas);
+  document.fonts.ready.then(() => fieldKick(fv)); // 書体の読み込みが済んだら描き直す
 
   if (fresh) {
     const start = leaf.path ? Promise.resolve(leaf.path) : api.fs.home();

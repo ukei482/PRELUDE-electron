@@ -88,7 +88,7 @@ function applyTheme() {
   document.body.classList.toggle('sb-compact', mode === 'compact');
   document.querySelectorAll('.sb-toggle').forEach((b) => { b.title = sidebarTip(); });
 }
-const sidebarTip = () => `サイドバー(次は${{ full: '細い列', compact: '非表示', hidden: '全部表示' }[C.behavior.sidebarMode] || '細い列'})`;
+const sidebarTip = () => `Sidebar (next: ${{ full: 'compact', compact: 'hidden', hidden: 'full' }[C.behavior.sidebarMode] || 'compact'})`;
 // タイトルバーの ☰: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す
 const SB_MODES = ['full', 'compact', 'hidden'];
 const cycleSidebar = () => api.config.set('behavior.sidebarMode', SB_MODES[(SB_MODES.indexOf(C.behavior.sidebarMode) + 1) % SB_MODES.length]);
@@ -98,12 +98,12 @@ const topLeftLeaf = (n) => (n.k === 'leaf' ? n : topLeftLeaf(n.a));
 const tabTitle = (tab) => leafTitle(activeLeaf(tab));
 function leafTitle(l) {
   if (!l) return '';
-  if (l.type === 'web') return l.title || hostOf(l.url) || '新しいタブ';
-  if (l.type === 'files') return l.mode === 'save' ? '保存先を選択' : baseName(l.path) || 'フォルダ';
-  if (l.type === 'app') return l.title || l.name || l.cmd || 'アプリ'; // 取り込んだ窓の題名(Chromium なら今のページ名)を優先
-  if (l.type === 'home') return 'ホーム';
-  if (l.type === 'field') return baseName(l.path) || 'フィールド';
-  return '設定';
+  if (l.type === 'web') return l.title || hostOf(l.url) || 'New tab';
+  if (l.type === 'files') return l.mode === 'save' ? 'Choose save location' : baseName(l.path) || 'Folder';
+  if (l.type === 'app') return l.title || l.name || l.cmd || 'App'; // 取り込んだ窓の題名(Chromium なら今のページ名)を優先
+  if (l.type === 'home') return 'Home';
+  if (l.type === 'field') return baseName(l.path) || 'Field';
+  return 'Settings';
 }
 const leafIcon = (l) => (l.type === 'web' ? 'globe' : l.type === 'files' ? 'folder' : l.type === 'app' ? 'window' : l.type === 'home' ? 'home' : l.type === 'field' ? 'field' : 'settings');
 
@@ -130,7 +130,7 @@ function soundBtn(ls) {
   if (!web.length) return null;
   const muted = web.every((l) => l.muted);
   return h('button', {
-    class: 'ibtn snd' + (muted ? ' muted' : ''), title: muted ? '音を出す' : '音を消す',
+    class: 'ibtn snd' + (muted ? ' muted' : ''), title: muted ? 'Unmute' : 'Mute',
     onclick: (e) => { e.stopPropagation(); setMuted(ls, !muted); },
   }, ico(muted ? 'volume-off' : 'volume'));
 }
@@ -172,8 +172,8 @@ function renderSidebar() {
     if (e.target !== tl) return;
     e.preventDefault();
     popup([
-      { label: '新しいタブ', icon: 'plus', run: () => openTab(C.behavior.startKind) },
-      { label: '閉じたタブを開き直す', icon: 'back', key: C.shortcuts.reopenTab, disabled: !S.closed.length, run: reopenClosedTab },
+      { label: 'New tab', icon: 'plus', run: () => openTab(C.behavior.startKind) },
+      { label: 'Reopen closed tab', icon: 'back', key: C.shortcuts.reopenTab, disabled: !S.closed.length, run: reopenClosedTab },
     ], e.clientX, e.clientY);
   };
   for (const tab of S.tabs) {
@@ -196,10 +196,10 @@ function renderSidebar() {
       onclick: () => showTab(tab),
       onauxclick: (e) => { if (e.button === 1) closeTab(tab); },
       oncontextmenu: (e) => { e.preventDefault(); tabMenu(tab, e.clientX, e.clientY); },
-    }, h('span', { class: 'num', title: `タブ ${tab.num}(ランチャーで ${tab.num}${tab.num <= 9 ? `、Ctrl+${tab.num}` : ''})` }, String(tab.num ?? '')),
-    ...body, ls.length > shown.length ? h('span', { class: 'badge hidden-n', title: `ほかに ${ls.length - shown.length} 枚` }, '+' + (ls.length - shown.length)) : null,
+    }, h('span', { class: 'num', title: `Tab ${tab.num} (launcher: ${tab.num}${tab.num <= 9 ? `, Ctrl+${tab.num}` : ''})` }, String(tab.num ?? '')),
+    ...body, ls.length > shown.length ? h('span', { class: 'badge hidden-n', title: `${ls.length - shown.length} more` }, '+' + (ls.length - shown.length)) : null,
     multi ? h('span', { class: 'badge cnt' }, '+' + (ls.length - 1)) : null,
-    h('button', { class: 'ibtn x', title: '閉じる', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close')));
+    h('button', { class: 'ibtn x', title: 'Close', onclick: (e) => { e.stopPropagation(); closeTab(tab); } }, ico('close')));
     sortable(el, S.tabs, tab, render);
     tl.append(el);
   }
@@ -217,11 +217,11 @@ function renderBookmarks() {
     if (e.target !== bl && !e.target.classList.contains('empty')) return;
     e.preventDefault();
     popup([
-      { label: '新しいフォルダ', icon: 'folder', run: () => newBmFolder() },
-      { label: 'ブックマークのファイルのフォルダを開く', icon: 'file', run: openBmDir },
+      { label: 'New folder', icon: 'folder', run: () => newBmFolder() },
+      { label: 'Open bookmark file folder', icon: 'file', run: openBmDir },
     ], e.clientX, e.clientY);
   };
-  if (!S.bookmarks.length) bl.append(h('div', { class: 'empty' }, 'ペインの ☆ で追加'));
+  if (!S.bookmarks.length) bl.append(h('div', { class: 'empty' }, 'Add with ☆ on a pane'));
   const cur = activeTab()?.bookmarkId;
   for (const b of S.bookmarks) {
     if (b.folder) continue;
@@ -229,11 +229,11 @@ function renderBookmarks() {
     const kids = bmChildren(b);
     const el = h('div', {
       class: 'item bm-folder' + (!b.open && kids.some((k) => k.id === cur) ? ' active' : '') + (kids.some(bmOpen) ? ' open' : ''),
-      title: `${b.title}(${kids.length} 件)`,
+      title: `${b.title} (${kids.length})`,
       onclick: (e) => {
         if (document.body.classList.contains('sb-compact')) {
           const r = e.currentTarget.getBoundingClientRect();
-          popup([{ header: b.title }, ...(kids.length ? kids.map((k) => ({ label: k.title || k.target, icon: bmIcon(k), run: () => openBookmark(k) })) : [{ label: '(空です)', disabled: true, run: () => {} }])], r.right + 4, r.top);
+          popup([{ header: b.title }, ...(kids.length ? kids.map((k) => ({ label: k.title || k.target, icon: bmIcon(k), run: () => openBookmark(k) })) : [{ label: '(empty)', disabled: true, run: () => {} }])], r.right + 4, r.top);
           return;
         }
         b.open = !b.open;
@@ -254,47 +254,47 @@ function bmRow(b, cur, inFolder = false) {
     title: `${b.title || b.target}\n${b.target}`,
     onclick: () => openBookmark(b),
     oncontextmenu: (e) => { e.preventDefault(); bmMenu(b, e.clientX, e.clientY); },
-  }, h('span', { class: 'num', title: `ブックマーク b${b.num}(ランチャーで b${b.num})` }, b.num ? 'b' + b.num : ''), ico(bmIcon(b)), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
+  }, h('span', { class: 'num', title: `Bookmark b${b.num} (launcher: b${b.num})` }, b.num ? 'b' + b.num : ''), ico(bmIcon(b)), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
   bmDraggable(el, b);
   return el;
 }
 function bmMenu(b, x, y) {
   const tab = b.kind === 'tab' ? S.tabs.find((t) => t.bookmarkId === b.id) : null;
   popup([
-    { label: '名前を変更', icon: 'text', run: () => renameBookmark(b) },
-    { label: 'フォルダへ移す…', icon: 'folder', run: () => moveToFolderMenu(b, x, y) },
-    { label: `番号を変える…(今は b${b.num})`, icon: 'text', run: () => renumberBookmark(b) },
-    tab ? { label: '今の配置で上書き', icon: 'split-h', run: () => { b.root = serNode(tab.root); b.target = layoutLabel(b.root); saveBookmarks(); toast('今の配置で上書きしました'); } } : null,
+    { label: 'Rename', icon: 'text', run: () => renameBookmark(b) },
+    { label: 'Move to folder…', icon: 'folder', run: () => moveToFolderMenu(b, x, y) },
+    { label: `Change number… (now b${b.num})`, icon: 'text', run: () => renumberBookmark(b) },
+    tab ? { label: 'Overwrite with current layout', icon: 'split-h', run: () => { b.root = serNode(tab.root); b.target = layoutLabel(b.root); saveBookmarks(); toast('Overwritten with current layout'); } } : null,
     { sep: true },
-    { label: 'ファイルに書き出す', icon: 'file', run: () => exportBookmark(b, false) },
-    { label: 'ファイルにしまう(サイドバーから外す)', icon: 'file', run: () => exportBookmark(b, true) },
+    { label: 'Export to file', icon: 'file', run: () => exportBookmark(b, false) },
+    { label: 'Move to file (remove from sidebar)', icon: 'file', run: () => exportBookmark(b, true) },
     { sep: true },
-    { label: '削除', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((z) => z !== b); saveBookmarks(); renderSidebar(); } },
+    { label: 'Delete', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((z) => z !== b); saveBookmarks(); renderSidebar(); } },
   ].filter(Boolean), x, y);
 }
 function moveToFolderMenu(b, x, y) {
   const folders = S.bookmarks.filter((f) => f.kind === 'folder');
   popup([
-    { header: 'フォルダへ移す' },
+    { header: 'Move to folder' },
     ...folders.map((f) => ({ label: f.title, icon: 'folder', disabled: b.folder === f.id, run: () => moveBm(b, f, 'into') })),
     folders.length ? { sep: true } : null,
-    { label: '新しいフォルダに入れる', icon: 'plus', run: async () => { const f = await newBmFolder(); if (f) moveBm(b, f, 'into'); } },
-    b.folder ? { label: 'フォルダから出す', icon: 'up', run: () => moveBm(b, S.bookmarks.find((f) => f.id === b.folder), 'after') } : null,
+    { label: 'Move into new folder', icon: 'plus', run: async () => { const f = await newBmFolder(); if (f) moveBm(b, f, 'into'); } },
+    b.folder ? { label: 'Remove from folder', icon: 'up', run: () => moveBm(b, S.bookmarks.find((f) => f.id === b.folder), 'after') } : null,
   ].filter(Boolean), x, y);
 }
 function bmFolderMenu(f, x, y) {
   const kids = bmChildren(f);
   popup([
-    { label: f.open ? '閉じる' : '開く', icon: 'folder', run: () => { f.open = !f.open; saveBookmarks(); renderSidebar(); } },
-    { label: `中を全部開く(${kids.length} 件)`, icon: 'plus', disabled: !kids.length, run: () => kids.forEach((k) => openBookmark(k)) },
-    { label: '名前を変更', icon: 'text', run: () => renameBookmark(f) },
+    { label: f.open ? 'Collapse' : 'Expand', icon: 'folder', run: () => { f.open = !f.open; saveBookmarks(); renderSidebar(); } },
+    { label: `Open all (${kids.length})`, icon: 'plus', disabled: !kids.length, run: () => kids.forEach((k) => openBookmark(k)) },
+    { label: 'Rename', icon: 'text', run: () => renameBookmark(f) },
     { sep: true },
     // 中のブックマークは消さずに、フォルダのあった場所へ出す
-    { label: 'フォルダを削除(中身は残す)', icon: 'close', danger: true, run: () => { for (const k of kids) k.folder = ''; S.bookmarks = S.bookmarks.filter((z) => z !== f); saveBookmarks(); renderSidebar(); } },
+    { label: 'Delete folder (keep contents)', icon: 'close', danger: true, run: () => { for (const k of kids) k.folder = ''; S.bookmarks = S.bookmarks.filter((z) => z !== f); saveBookmarks(); renderSidebar(); } },
   ], x, y);
 }
 async function newBmFolder() {
-  const name = await askText('フォルダ名', '新しいフォルダ');
+  const name = await askText('Folder name', 'New folder');
   if (name == null || !name.trim()) return null;
   const f = { id: 'b' + Date.now().toString(36), kind: 'folder', title: name.trim(), open: true };
   S.bookmarks.push(f);
@@ -352,12 +352,12 @@ function bmDraggable(el, b) {
 // ブックマークは b1, b2… で、どちらも並べ替えても変わらない。ランチャーで「3」「b3」、Ctrl+1〜9、prelude.sh tab 3 で呼ぶ
 const reportNums = () => api.tab.nums(S.tabs.map((t) => t.num).filter(Boolean));
 async function renumberTab(tab) {
-  const v = await askText('タブの番号', String(tab.num));
+  const v = await askText('Tab number', String(tab.num));
   const n = parseInt(v, 10);
   if (!(n > 0) || n === tab.num) return;
   const other = S.tabs.find((t) => t.num === n);
   if (other) other.num = tab.num; // この窓のタブが使っていれば入れ替える
-  else if (api.tab.where(n)) { toast(`番号 ${n} は${api.tab.where(n).label}のタブが使っています`); return; }
+  else if (api.tab.where(n)) { toast(`Number ${n} is used by a tab on ${api.tab.where(n).label}`); return; }
   else api.tab.allocNum(n);
   tab.num = n;
   render();
@@ -368,7 +368,7 @@ function gotoTabNum(n) {
 }
 const nextBmNum = () => { const used = new Set(S.bookmarks.map((b) => b.num)); let n = 1; while (used.has(n)) n++; return n; };
 async function renumberBookmark(b) {
-  const v = await askText('ブックマークの番号(b の後の数字)', String(b.num));
+  const v = await askText('Bookmark number (the digits after b)', String(b.num));
   const n = parseInt(String(v).replace(/^b/i, ''), 10);
   if (!(n > 0) || n === b.num) return;
   const other = S.bookmarks.find((x) => x.num === n);
@@ -378,10 +378,10 @@ async function renumberBookmark(b) {
   renderSidebar();
 }
 api.tab.onGoto(({ bookmark, num, missing }) => {
-  if (missing) { toast(`タブ ${num} はありません`); return; }
+  if (missing) { toast(`No tab ${num}`); return; }
   if (bookmark) {
     const b = S.bookmarks.find((x) => x.num === num && x.kind !== 'folder');
-    if (b) openBookmark(b); else toast(`ブックマーク b${num} はありません`);
+    if (b) openBookmark(b); else toast(`No bookmark b${num}`);
     return;
   }
   const tab = S.tabs.find((t) => t.num === num);
@@ -397,22 +397,22 @@ function tabMenu(tab, x, y) {
   const web = ls.filter((p) => p.type === 'web');
   const muted = web.length && web.every((p) => p.muted);
   popup([
-    isDevLeaf(l) ? { label: `${DEV_NAME}を再起動`, icon: 'reload', run: () => restartDevPrelude(l) } : null,
-    ['web', 'files', 'field'].includes(l.type) ? { label: '再読込', icon: 'reload', run: () => (l.type === 'web' ? webCmd(l, 'reload') : l.type === 'files' ? reloadDir(l) : fieldReload(l)) } : null,
-    web.length ? { label: muted ? '音を出す' : '音を消す', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
-    { label: '複製', icon: 'plus', run: () => duplicateTab(tab) },
-    { label: `番号を変える…(今は ${tab.num})`, icon: 'text', run: () => renumberTab(tab) },
-    ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'ブックマークに追加', icon: 'bookmark', run: () => addBookmark(l) } : null,
-    ls.length > 1 ? { label: '分割ごとブックマーク', icon: 'split-h', run: () => addLayoutBookmark(tab) } : null,
-    { label: '配置をファイルに保存', icon: 'file', run: () => saveTabToFile(tab) },
-    tab.bmFile ? { label: `ファイル(${bmFileShort(tab.bmFile)})を今の配置で上書き`, icon: 'file', run: () => overwriteBmFile(tab) } : null,
+    isDevLeaf(l) ? { label: `Restart ${DEV_NAME}`, icon: 'reload', run: () => restartDevPrelude(l) } : null,
+    ['web', 'files', 'field'].includes(l.type) ? { label: 'Reload', icon: 'reload', run: () => (l.type === 'web' ? webCmd(l, 'reload') : l.type === 'files' ? reloadDir(l) : fieldReload(l)) } : null,
+    web.length ? { label: muted ? 'Unmute' : 'Mute', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
+    { label: 'Duplicate', icon: 'plus', run: () => duplicateTab(tab) },
+    { label: `Change number… (now ${tab.num})`, icon: 'text', run: () => renumberTab(tab) },
+    ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'Add bookmark', icon: 'bookmark', run: () => addBookmark(l) } : null,
+    ls.length > 1 ? { label: 'Bookmark whole layout', icon: 'split-h', run: () => addLayoutBookmark(tab) } : null,
+    { label: 'Save layout to file', icon: 'file', run: () => saveTabToFile(tab) },
+    tab.bmFile ? { label: `Overwrite file (${bmFileShort(tab.bmFile)}) with current layout`, icon: 'file', run: () => overwriteBmFile(tab) } : null,
     others.length ? { sep: true } : null,
-    ...others.map((s) => ({ label: `${s.label}へ移す`, icon: 'window', run: () => moveTab(tab, s.key) })),
+    ...others.map((s) => ({ label: `Move to ${s.label}`, icon: 'window', run: () => moveTab(tab, s.key) })),
     { sep: true },
-    { label: '閉じたタブを開き直す', icon: 'back', key: C.shortcuts.reopenTab, disabled: !S.closed.length, run: reopenClosedTab },
-    { label: '下のタブを閉じる', disabled: i === S.tabs.length - 1, run: () => closeTabs(S.tabs.slice(i + 1)) },
-    { label: 'ほかのタブを閉じる', disabled: S.tabs.length < 2, run: () => closeTabs(S.tabs.filter((t) => t !== tab)) },
-    { label: '閉じる', icon: 'close', danger: true, key: C.shortcuts.closeTab, run: () => closeTab(tab) },
+    { label: 'Reopen closed tab', icon: 'back', key: C.shortcuts.reopenTab, disabled: !S.closed.length, run: reopenClosedTab },
+    { label: 'Close tabs below', disabled: i === S.tabs.length - 1, run: () => closeTabs(S.tabs.slice(i + 1)) },
+    { label: 'Close other tabs', disabled: S.tabs.length < 2, run: () => closeTabs(S.tabs.filter((t) => t !== tab)) },
+    { label: 'Close', icon: 'close', danger: true, key: C.shortcuts.closeTab, run: () => closeTab(tab) },
   ].filter(Boolean), x, y);
 }
 
@@ -480,7 +480,7 @@ function rememberClosed(tab) {
 }
 function reopenClosedTab() {
   const c = S.closed.shift();
-  if (!c) { toast('開き直せるタブはありません'); return; }
+  if (!c) { toast('No tab to reopen'); return; }
   // ブックマークのタブがもう開いていれば、ブックマークとのつながりは外す(1ブックマーク = 最大1タブ)
   const bookmarkId = c.bookmarkId && !S.tabs.some((t) => t.bookmarkId === c.bookmarkId) && S.bookmarks.some((b) => b.id === c.bookmarkId) ? c.bookmarkId : null;
   insertTab(c.root, { bookmarkId, num: c.num, activeIndex: c.activeIndex, index: c.index }); // 番号が空いていれば元の番号
@@ -564,7 +564,7 @@ function loadBookmarks() {
   const folders = new Set(src.filter((b) => b.kind === 'folder').map((b) => b.id));
   for (const b of src) {
     const folder = folders.has(b.folder) ? b.folder : '';
-    if (b.kind === 'folder') S.bookmarks.push({ id: b.id, kind: 'folder', title: b.title || 'フォルダ', open: !!b.open, folder: '' });
+    if (b.kind === 'folder') S.bookmarks.push({ id: b.id, kind: 'folder', title: b.title || 'Folder', open: !!b.open, folder: '' });
     else if (b.kind === 'app' && (b.cmd || b.webUrl)) S.bookmarks.push({ id: b.id, kind: 'app', folder, title: b.title || '', target: b.webUrl || b.cmd, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' });
     else if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, folder, title: b.title || '', target: b.url || b.path || '' });
     else if (b.kind === 'tab' && b.root) S.bookmarks.push({ id: b.id, kind: 'tab', folder, title: b.title || '', root: b.root, target: layoutLabel(b.root) });
@@ -582,7 +582,7 @@ function loadBookmarks() {
   if (changed && !IS_SUB) saveBookmarks();
 }
 // 分割ごとのブックマークの説明(中のペインの名前を | でつなぐ)
-const layoutLabel = (root) => leaves(root).map((l) => (l.type === 'web' ? hostOf(l.url || '') : l.type === 'app' ? l.name : l.type === 'files' || l.type === 'field' ? baseName(l.path || '') : l.type === 'home' ? 'ホーム' : '設定') || l.type).join(' | ');
+const layoutLabel = (root) => leaves(root).map((l) => (l.type === 'web' ? hostOf(l.url || '') : l.type === 'app' ? l.name : l.type === 'files' || l.type === 'field' ? baseName(l.path || '') : l.type === 'home' ? 'Home' : 'Settings') || l.type).join(' | ');
 // 今のタブの配置(分割・各ペインの中身)をそのままブックマークにする。開くと同じ配置で開く
 function addLayoutBookmark(tab) {
   const root = serNode(tab.root);
@@ -591,7 +591,7 @@ function addLayoutBookmark(tab) {
   if (!tab.bookmarkId) tab.bookmarkId = b.id;
   saveBookmarks();
   renderSidebar();
-  toast('分割ごとブックマークに追加しました');
+  toast('Bookmarked whole layout');
 }
 const saveBookmarks = () => api.config.set('bookmarks', [...S.bookmarks.map(bmToJson), ...S.foreignBm]);
 
@@ -599,21 +599,21 @@ function addBookmark(leaf) {
   if (leaf.type === 'app') {
     const target = leaf.webUrl || leaf.cmd;
     if (!target) return;
-    if (S.bookmarks.some((b) => b.kind === 'app' && b.target === target)) { toast('登録済みです'); return; }
+    if (S.bookmarks.some((b) => b.kind === 'app' && b.target === target)) { toast('Already bookmarked'); return; }
     S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind: 'app', num: nextBmNum(), title: leaf.name || target, target, cmd: leaf.webUrl ? '' : leaf.cmd, cls: leaf.webUrl ? '' : leaf.cls, webUrl: leaf.webUrl || '' });
     saveBookmarks();
     renderSidebar();
-    toast('ブックマークに追加しました');
+    toast('Bookmark added');
     return;
   }
   const kind = leaf.type === 'web' ? 'web' : 'files';
   const target = kind === 'web' ? leaf.url : leaf.path;
   if (!target) return;
-  if (S.bookmarks.some((b) => b.kind === kind && b.target === target)) { toast('登録済みです'); return; }
+  if (S.bookmarks.some((b) => b.kind === kind && b.target === target)) { toast('Already bookmarked'); return; }
   S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind, num: nextBmNum(), title: (kind === 'web' ? leaf.title || hostOf(target) : baseName(target)) || target, target });
   saveBookmarks();
   renderSidebar();
-  toast('ブックマークに追加しました');
+  toast('Bookmark added');
 }
 
 function openBookmark(b) {
@@ -641,7 +641,7 @@ async function bmFileDir() {
 const bmFileShort = (p) => baseName(p).replace(/\.prelude$/i, '');
 async function saveBmFile(title, root) {
   const r = await api.fs.bmSave(await bmFileDir(), bmFileName(title), bmFileText(title, root, await api.fs.home()));
-  if (r.error) toast(`保存できません（${r.error}）`);
+  if (r.error) toast(`Cannot save (${r.error})`);
   return r.path || null;
 }
 // サイドバーのブックマークをファイルにする。remove: サイドバーから外す(開いているタブはファイルのタブになる)
@@ -657,7 +657,7 @@ async function exportBookmark(b, remove) {
     renderSidebar();
     scheduleSave();
   }
-  toast(`${remove ? 'ファイルにしまいました' : 'ファイルに書き出しました'}: ${bmFileShort(p)}`);
+  toast(`${remove ? 'Moved to file' : 'Exported to file'}: ${bmFileShort(p)}`);
 }
 // タブの配置をファイルにする
 async function saveTabToFile(tab) {
@@ -665,7 +665,7 @@ async function saveTabToFile(tab) {
   if (!p) return;
   tab.bmFile = p;
   scheduleSave();
-  toast(`ファイルに保存しました: ${bmFileShort(p)}`);
+  toast(`Saved to file: ${bmFileShort(p)}`);
 }
 // ファイルから開いたタブの今の配置で、そのファイルを書き直す(タイトルはファイルのものを残す)
 async function overwriteBmFile(tab) {
@@ -674,7 +674,7 @@ async function overwriteBmFile(tab) {
   let title = bmFileShort(tab.bmFile);
   try { title = bmFileParse(r.text, home).title || title; } catch {}
   const w = await api.fs.bmWrite(tab.bmFile, bmFileText(title, serNode(tab.root), home));
-  toast(w.error ? `保存できません（${w.error}）` : '今の配置で上書きしました');
+  toast(w.error ? `Cannot save (${w.error})` : 'Overwritten with current layout');
 }
 // ファイルを読んで、起動コマンドを確かめた配置 { title, root } にする。開かない時は null
 async function readBmFile(full) {
@@ -683,7 +683,7 @@ async function readBmFile(full) {
   try {
     if (r.error) throw new Error(r.error);
     d = bmFileParse(r.text, await api.fs.home());
-  } catch (e) { toast(`開けません: ${baseName(full)}（${e.message}）`); return null; }
+  } catch (e) { toast(`Cannot open: ${baseName(full)} (${e.message})`); return null; }
   const root = await checkBmCommands(d.root, baseName(full));
   return root && { title: d.title || bmFileShort(full), root };
 }
@@ -696,12 +696,12 @@ async function checkBmCommands(root, name) {
   const unknown = cmds.filter((c) => !known.has(c));
   if (!unknown.length) return root;
   const body = h('div', {},
-    h('div', {}, `「${name}」は、インストールされているアプリと一致しないコマンドを起動します。自分で作ったファイルでなければ、起動しないで開いてください。`),
+    h('div', {}, `"${name}" runs a command that does not match any installed app. Unless you made this file yourself, open it without running.`),
     h('div', { class: 'cmds' }, unknown.map((c) => h('code', {}, c))));
-  const v = await fileDialog('知らないコマンドがあります', body, [
-    { label: 'キャンセル', value: null },
-    { label: '起動する', value: 'run', danger: true },
-    { label: '起動しないで開く', value: 'strip', primary: true },
+  const v = await fileDialog('Unknown command', body, [
+    { label: 'Cancel', value: null },
+    { label: 'Run', value: 'run', danger: true },
+    { label: 'Open without running', value: 'strip', primary: true },
   ]);
   return v === 'run' ? root : v === 'strip' ? bmFileStripCommands(root, unknown) : null;
 }
@@ -717,21 +717,21 @@ async function importBmFile(full) {
   if (!d) return;
   const b = { id: 'b' + Date.now().toString(36), num: nextBmNum(), folder: '', ...bmFileToBookmark(d.title, d.root) };
   if (b.kind === 'tab') b.target = layoutLabel(b.root);
-  else if (S.bookmarks.some((z) => z.kind === b.kind && z.target === b.target)) { toast('登録済みです'); return; }
+  else if (S.bookmarks.some((z) => z.kind === b.kind && z.target === b.target)) { toast('Already bookmarked'); return; }
   S.bookmarks.push(b);
   saveBookmarks();
   renderSidebar();
-  toast('ブックマークに追加しました');
+  toast('Bookmark added');
 }
 async function openBmDir() {
   const dir = await bmFileDir();
   const r = await api.fs.bmMkdir(dir);
-  if (r.error) { toast(`開けません（${r.error}）`); return; }
+  if (r.error) { toast(`Cannot open (${r.error})`); return; }
   openTab('files', { path: dir });
 }
 
 async function renameBookmark(b) {
-  const name = await askText(b.kind === 'folder' ? 'フォルダ名' : 'ブックマーク名', b.title);
+  const name = await askText(b.kind === 'folder' ? 'Folder name' : 'Bookmark name', b.title);
   if (name != null && name.trim()) { b.title = name.trim(); saveBookmarks(); renderSidebar(); }
 }
 
@@ -799,7 +799,7 @@ function askText(title, init = '') {
     const input = h('input', { type: 'text', value: init, spellcheck: 'false' });
     const done = (v) => { bd.remove(); box.remove(); suspend(-1); resolve(v); };
     const box = h('div', { class: 'modal' }, h('div', {}, title), input,
-      h('div', { class: 'row' }, h('button', { class: 'textbtn', onclick: () => done(null) }, 'キャンセル'), h('button', { class: 'textbtn primary', onclick: () => done(input.value) }, 'OK')));
+      h('div', { class: 'row' }, h('button', { class: 'textbtn', onclick: () => done(null) }, 'Cancel'), h('button', { class: 'textbtn primary', onclick: () => done(input.value) }, 'OK')));
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(input.value); if (e.key === 'Escape') done(null); });
     overlay.append(bd, box);
     suspend(+1);
@@ -916,21 +916,21 @@ function commonButtons(tab, leaf) {
     const b = btn(icon, title, () => popupAt(b, [
       { header: title },
       { label: 'Web', icon: 'globe', run: () => splitLeaf(tab, leaf, dir, 'web') },
-      { label: 'フォルダ', icon: 'folder', run: () => splitLeaf(tab, leaf, dir, 'files') },
-      { label: 'フィールド', icon: 'field', run: () => splitLeaf(tab, leaf, dir, 'field') },
-      S.appSupported ? { label: 'アプリ', icon: 'window', run: () => splitLeaf(tab, leaf, dir, 'app') } : null,
-      IS_SUB ? null : { label: '設定', icon: 'settings', run: () => splitLeaf(tab, leaf, dir, 'settings') },
+      { label: 'Folder', icon: 'folder', run: () => splitLeaf(tab, leaf, dir, 'files') },
+      { label: 'Field', icon: 'field', run: () => splitLeaf(tab, leaf, dir, 'field') },
+      S.appSupported ? { label: 'App', icon: 'window', run: () => splitLeaf(tab, leaf, dir, 'app') } : null,
+      IS_SUB ? null : { label: 'Settings', icon: 'settings', run: () => splitLeaf(tab, leaf, dir, 'settings') },
     ].filter(Boolean)));
     return b;
   };
   const realBrowser = leaf.type === 'web' && S.appSupported
-    ? btn('window', '本物のChromiumで開く（Googleなどログインできないサイト用）', () => toRealBrowser(tab, leaf)) : null;
+    ? btn('window', 'Open in real Chromium (for sites like Google that block sign-in here)', () => toRealBrowser(tab, leaf)) : null;
   return [
     realBrowser,
-    splitBtn('split-h', '左右に分割', 'row'),
-    splitBtn('split-v', '上下に分割', 'col'),
-    leaf.type !== 'settings' && leaf.type !== 'home' && (leaf.type !== 'app' || leaf.running) && leaf.mode !== 'save' ? btn('bookmark', 'ブックマークに追加', () => addBookmark(leaf)) : null,
-    btn('close', '閉じる', () => closeLeaf(tab, leaf)),
+    splitBtn('split-h', 'Split left/right', 'row'),
+    splitBtn('split-v', 'Split top/bottom', 'col'),
+    leaf.type !== 'settings' && leaf.type !== 'home' && (leaf.type !== 'app' || leaf.running) && leaf.mode !== 'save' ? btn('bookmark', 'Add bookmark', () => addBookmark(leaf)) : null,
+    btn('close', 'Close', () => closeLeaf(tab, leaf)),
   ].filter(Boolean);
 }
 
@@ -950,11 +950,11 @@ function toRealBrowser(tab, leaf, url = leaf.url || C.behavior.homepage) {
 const webCmd = (leaf, cmd, arg) => api.web.cmd(leaf.id, cmd, arg);
 
 function buildWeb(tab, leaf, head, body) {
-  const back = btn('back', '戻る (Alt+←)', () => webCmd(leaf, 'back'));
-  const fwd = btn('forward', '進む (Alt+→)', () => webCmd(leaf, 'forward'));
-  const rel = btn('reload', '再読込 (F5)', () => webCmd(leaf, leaf.loading ? 'stop' : 'reload'));
+  const back = btn('back', 'Back (Alt+←)', () => webCmd(leaf, 'back'));
+  const fwd = btn('forward', 'Forward (Alt+→)', () => webCmd(leaf, 'forward'));
+  const rel = btn('reload', 'Reload (F5)', () => webCmd(leaf, leaf.loading ? 'stop' : 'reload'));
   const addr = h('input', {
-    type: 'text', class: 'addr', spellcheck: 'false', placeholder: 'URL または検索ワード', value: leaf.url,
+    type: 'text', class: 'addr', spellcheck: 'false', placeholder: 'URL or search', value: leaf.url,
     onfocus: (e) => e.target.select(),
     onkeydown: (e) => { if (e.key === 'Enter') { webCmd(leaf, 'navigate', addr.value); webCmd(leaf, 'focus'); } },
   });
@@ -992,7 +992,7 @@ async function startApp(leaf, cmd, cls = '', name = '', icon = '') {
     if (icon && icon !== leaf.icon) Object.assign(leaf, { icon, iconUrl: '', iconTried: false });
     if (!leaf.webUrl) { try { localStorage.setItem('lastApp', JSON.stringify({ cmd, cls, name: leaf.name, icon: leaf.icon })); } catch {} }
     render();
-  } else toast('起動できませんでした');
+  } else toast('Failed to launch');
 }
 
 // ファイルを開く。新しいタブか、leaf の右の分割に出す(設定「ファイルを開く場所」)。
@@ -1011,7 +1011,7 @@ async function openFileAt(tab, leaf, full, where = C.behavior.fileOpen || 'tab')
   const a = where !== 'window' && S.appSupported ? await api.fs.openWith(full) : null;
   if (!a || NO_EMBED.test(a.cmd)) {
     const err = await api.fs.open(full);
-    if (err) toast(`開けません: ${baseName(full)}（${err}）`);
+    if (err) toast(`Cannot open: ${baseName(full)} (${err})`);
     return;
   }
   const nl = where === 'split' && tab && leaf ? splitLeaf(tab, leaf, 'row', 'app', { cmd: a.cmd, cls: a.cls, name: a.name, icon: a.icon })
@@ -1020,12 +1020,12 @@ async function openFileAt(tab, leaf, full, where = C.behavior.fileOpen || 'tab')
 }
 
 function buildApp(tab, leaf, head, body) {
-  if (leaf.webUrl && !leaf.running) { head.append(ico('window'), h('span', { class: 'ptitle' }, '起動中…'), ...commonButtons(tab, leaf)); return; }
-  if (leaf.restarting) { head.append(ico('code'), h('span', { class: 'ptitle' }, `${DEV_NAME}を再起動中…`), ...commonButtons(tab, leaf)); return; }
+  if (leaf.webUrl && !leaf.running) { head.append(ico('window'), h('span', { class: 'ptitle' }, 'Starting…'), ...commonButtons(tab, leaf)); return; }
+  if (leaf.restarting) { head.append(ico('code'), h('span', { class: 'ptitle' }, `Restarting ${DEV_NAME}…`), ...commonButtons(tab, leaf)); return; }
   const icon = appLeafIcon(leaf);
-  const title = h('span', { class: 'ptitle', title: leaf.name }, leaf.running ? leaf.title || leaf.name : 'アプリを取り込む');
+  const title = h('span', { class: 'ptitle', title: leaf.name }, leaf.running ? leaf.title || leaf.name : 'Embed an app');
   leaf.ui = { icon, title };
-  head.append(icon, title, ...(isDevLeaf(leaf) ? [btn('reload', `${DEV_NAME}を再起動(main.js の変更を試す)`, () => restartDevPrelude(leaf))] : []), ...commonButtons(tab, leaf));
+  head.append(icon, title, ...(isDevLeaf(leaf) ? [btn('reload', `Restart ${DEV_NAME} (to test main.js changes)`, () => restartDevPrelude(leaf))] : []), ...commonButtons(tab, leaf));
   if (leaf.running) {
     const slot = h('div', { class: 'web-slot app-slot' });
     body.append(slot);
@@ -1033,12 +1033,12 @@ function buildApp(tab, leaf, head, body) {
     return;
   }
   const cmdIn = h('input', {
-    type: 'text', class: 'addr', spellcheck: 'false', placeholder: '起動コマンド(例: kate, dolphin)',
+    type: 'text', class: 'addr', spellcheck: 'false', placeholder: 'Command (e.g. kate, dolphin)',
     value: leaf.cmd, style: { margin: '0', height: '28px' },
     onkeydown: (e) => { if (e.key === 'Enter') startApp(leaf, cmdIn.value, leaf.cls); },
   });
   const search = h('input', {
-    type: 'text', class: 'addr', spellcheck: 'false', placeholder: 'インストール済みアプリを検索', value: leaf.filter,
+    type: 'text', class: 'addr', spellcheck: 'false', placeholder: 'Search installed apps', value: leaf.filter,
     style: { margin: '0', height: '28px' }, oninput: () => { leaf.filter = search.value; paint(); },
   });
   const list = h('div', { class: 'app-list' });
@@ -1052,9 +1052,9 @@ function buildApp(tab, leaf, head, body) {
   let last = null;
   try { last = JSON.parse(localStorage.getItem('lastApp') || 'null'); } catch {}
   body.append(h('div', { class: 'app-launcher' },
-    last && last.cmd ? h('div', { class: 'app-bar' }, h('button', { class: 'textbtn', onclick: () => startApp(leaf, last.cmd, last.cls, last.name, last.icon) }, `前回のアプリ「${last.name}」を起動`)) : null,
-    h('div', { class: 'app-bar' }, cmdIn, h('button', { class: 'textbtn', onclick: () => startApp(leaf, cmdIn.value, leaf.cls) }, '起動')),
-    h('div', { class: 'app-hint' }, 'ダブルクリックで起動。起動したウィンドウはこのペインの位置に重ねて表示されます。'),
+    last && last.cmd ? h('div', { class: 'app-bar' }, h('button', { class: 'textbtn', onclick: () => startApp(leaf, last.cmd, last.cls, last.name, last.icon) }, `Launch last app "${last.name}"`)) : null,
+    h('div', { class: 'app-bar' }, cmdIn, h('button', { class: 'textbtn', onclick: () => startApp(leaf, cmdIn.value, leaf.cls) }, 'Launch')),
+    h('div', { class: 'app-hint' }, 'Double-click to launch. The window will be placed over this pane.'),
     search, list));
   if (leaf.apps) paint();
   else api.app.list().then((l) => { leaf.apps = l; paint(); });
@@ -1064,7 +1064,7 @@ function buildApp(tab, leaf, head, body) {
 
 // ------------------------------------------------------------------ settings pane
 function buildSettings(tab, leaf, head, body) {
-  head.append(ico('settings'), h('span', { class: 'ptitle' }, '設定'), ...commonButtons(tab, leaf));
+  head.append(ico('settings'), h('span', { class: 'ptitle' }, 'Settings'), ...commonButtons(tab, leaf));
   const wrap = h('div', { class: 'settings' });
   const set = (path, v) => api.config.set(path, v);
   for (const sec of SCHEMA) {
@@ -1095,38 +1095,38 @@ function buildSettings(tab, leaf, head, body) {
   // デスクトップ(セッション)。シェルとして動いていないとき(開発版を手で起動した時など)は押せないようにして理由を出す
   const back = returnButton('textbtn');
   back.disabled = true;
-  const note = h('span', { class: 'hint' }, '確認中…');
-  wrap.append(h('h3', {}, 'デスクトップ'), h('div', { class: 'frm' }, h('label', {}, 'Kubuntu(plasmashell)のデスクトップに戻る'), back, note));
+  const note = h('span', { class: 'hint' }, 'Checking…');
+  wrap.append(h('h3', {}, 'Desktop'), h('div', { class: 'frm' }, h('label', {}, 'Return to the Kubuntu (plasmashell) desktop'), back, note));
   api.session.state().then((s) => {
     sessionShell = !!s?.shell;
     back.disabled = !sessionShell;
-    note.textContent = sessionShell ? 'PRELUDE を終了します。次回ログインも Kubuntu になります' : 'PRELUDE がデスクトップシェルとして動いている時だけ使えます(shell-mode.sh on --now)';
+    note.textContent = sessionShell ? 'Quits PRELUDE. The next login will also use Kubuntu' : 'Only available while PRELUDE runs as the desktop shell (shell-mode.sh on --now)';
   });
   // アップデート(GitHub の一番新しい版へ)。更新できるのはシェルとして動いているときだけ
-  const upNote = h('span', { class: 'hint' }, '確認中…');
-  const upCheck = h('button', { class: 'textbtn' }, '確認');
-  const upRun = h('button', { class: 'textbtn primary', disabled: true, title: '新しい版を準備して、PRELUDE を再起動します(取り込んだアプリは閉じます)' }, '更新して再起動');
+  const upNote = h('span', { class: 'hint' }, 'Checking…');
+  const upCheck = h('button', { class: 'textbtn' }, 'Check');
+  const upRun = h('button', { class: 'textbtn primary', disabled: true, title: 'Prepares the new version and restarts PRELUDE (embedded apps will close)' }, 'Update and restart');
   const checkUpdate = async () => {
     upCheck.disabled = true;
-    upNote.textContent = '確認中…';
+    upNote.textContent = 'Checking…';
     const r = await api.update.check();
     upCheck.disabled = false;
     upRun.disabled = !(r.shell && r.available);
-    upNote.textContent = r.error ? `今の版 ${r.current}(${r.error})`
-      : r.available ? `今の版 ${r.current} → 新しい版 ${r.latest} があります` + (r.shell ? '' : '(シェルとして動いている時だけ更新できます)')
-        : `今の版 ${r.current}(最新です)`;
+    upNote.textContent = r.error ? `Current ${r.current} (${r.error})`
+      : r.available ? `Current ${r.current} → new version ${r.latest} available` + (r.shell ? '' : ' (can only update while running as the shell)')
+        : `Current ${r.current} (up to date)`;
   };
   upCheck.onclick = checkUpdate;
   upRun.onclick = async () => {
     upRun.disabled = upCheck.disabled = true;
-    upNote.textContent = '新しい版を準備しています…(終わると再起動します)';
+    upNote.textContent = 'Preparing the new version… (restarts when done)';
     const r = await runUpdate();
     if (!r?.updated) checkUpdate();
   };
-  wrap.append(h('h3', {}, 'アップデート'), h('div', { class: 'frm' }, h('label', {}, 'PRELUDE の版'), h('span', { style: { display: 'flex', gap: '8px' } }, upCheck, upRun), upNote));
+  wrap.append(h('h3', {}, 'Update'), h('div', { class: 'frm' }, h('label', {}, 'PRELUDE version'), h('span', { style: { display: 'flex', gap: '8px' } }, upCheck, upRun), upNote));
   checkUpdate();
   wrap.append(h('div', { style: { marginTop: '24px' } },
-    h('button', { class: 'textbtn danger', onclick: async () => { await api.config.reset(); render(); } }, '初期値に戻す')));
+    h('button', { class: 'textbtn danger', onclick: async () => { await api.config.reset(); render(); } }, 'Reset to defaults')));
   body.append(wrap);
 }
 
@@ -1196,9 +1196,9 @@ api.web.onToChromium(({ paneId, url, popup, site }) => {
   const f = findLeaf(paneId);
   if (!f || f.leaf.type !== 'web') return;
   toRealBrowser(f.tab, f.leaf, url);
-  toast(popup ? 'Google でのログインは Chromium で行います。このページを Chromium で開き直しました'
-    : site ? 'Chromium で開きました(ログインは Chromium と共有されます。対象のサイトは設定で変更できます)'
-    : 'Google のログインは Chromium で行います(このタブは以後 Chromium で表示されます)');
+  toast(popup ? 'Google sign-in happens in Chromium. Reopened this page in Chromium'
+    : site ? 'Opened in Chromium (sign-in is shared with Chromium; change the sites in Settings)'
+    : 'Google sign-in happens in Chromium (this tab will use Chromium from now on)');
 });
 
 // Web ペインから別のところで開く要求。disposition: alt(Alt+クリック)/ pinned(ブックマークのタブから別サイト)/
@@ -1230,8 +1230,8 @@ api.dl.onDone(({ id, state }) => {
   (S.dl[id] ||= {}).state = state;
   for (const t of S.tabs) for (const l of leaves(t.root)) if (l.dlId === id) updateSaveBar(l);
 });
-api.dl.onSaved(({ path }) => toast('保存しました: ' + path));
-api.dl.onError(({ message }) => toast('保存に失敗しました: ' + message));
+api.dl.onSaved(({ path }) => toast('Saved: ' + path));
+api.dl.onError(({ message }) => toast('Save failed: ' + message));
 
 // 取り込んだ窓の題名が変わった(appembed.js の report)
 api.app.onTitle(({ paneId, title }) => {
@@ -1250,7 +1250,7 @@ api.app.onExited(({ paneId, hadWindow }) => {
   f.leaf.title = '';
   // 次にこのタブを開いたとき、同じアプリを起動し直す。ウィンドウが一度も見つからなかったときは、起動し直しても同じなので知らせるだけ
   f.leaf.dormant = !!hadWindow && !!(f.leaf.cmd || f.leaf.webUrl);
-  if (!hadWindow) toast(`「${f.leaf.name || f.leaf.cmd}」のウィンドウが見つかりませんでした`);
+  if (!hadWindow) toast(`Window for "${f.leaf.name || f.leaf.cmd}" not found`);
   render();
 });
 
@@ -1298,18 +1298,18 @@ async function boot() {
   api.dev.info().then((d) => { S.devSelf = d.self; }); // 自分が開発版なら、開発版を開くコマンドは出さない
 
   $('#new-tab').append(ico('plus'));
-  $('#open-settings').append(ico('settings'), h('span', { class: 'label' }, '設定'));
+  $('#open-settings').append(ico('settings'), h('span', { class: 'label' }, 'Settings'));
   document.body.classList.toggle('sub', IS_SUB);
   api.win.screens().then((list) => { S.screens = list || []; });
   $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [
-    { header: '新しいタブ' },
-    { label: 'ホーム', icon: 'home', run: () => openTab('home') },
+    { header: 'New tab' },
+    { label: 'Home', icon: 'home', run: () => openTab('home') },
     { label: 'Web', icon: 'globe', run: () => openTab('web') },
-    { label: 'フォルダ', icon: 'folder', run: () => openTab('files') },
-    { label: 'フィールド', icon: 'field', run: () => openTab('field') },
-    S.appSupported ? { label: 'アプリ', icon: 'window', run: () => openTab('app') } : null,
+    { label: 'Folder', icon: 'folder', run: () => openTab('files') },
+    { label: 'Field', icon: 'field', run: () => openTab('field') },
+    S.appSupported ? { label: 'App', icon: 'window', run: () => openTab('app') } : null,
     S.appSupported && !S.devSelf ? { label: DEV_NAME, icon: 'code', run: () => openDevPrelude() } : null,
-    IS_SUB ? null : { label: '設定', icon: 'settings', run: () => openSettings() },
+    IS_SUB ? null : { label: 'Settings', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
   initBar();
@@ -1317,7 +1317,7 @@ async function boot() {
   // 起動して少ししてから、新しい版があるか確かめて知らせる(ネットワークの準備を待つ)
   if (!IS_SUB) setTimeout(async () => {
     const r = await api.update.check();
-    if (r.shell && r.available) toast(`新しい版 ${r.latest} があります(設定の「アップデート」か、ランチャーの「PRELUDE を更新」で更新できます)`, 8000);
+    if (r.shell && r.available) toast(`New version ${r.latest} available (update from Settings > Update, or "Update PRELUDE" in the launcher)`, 8000);
   }, 20000);
   // アプリのペインのアイコンを引くため、起動時にアプリの一覧を読んでおく(読めたらタブを描き直す)
   if (!S.appList) api.app.list().then((l) => { S.appList = l; renderSidebar(); });

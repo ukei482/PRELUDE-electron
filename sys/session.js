@@ -28,14 +28,14 @@ function returnScript() {
 }
 
 async function returnToKde() {
-  if (!(await isShell())) return { error: 'PRELUDE がデスクトップシェルとして動いていません(shell-mode.sh on --now で切り替えた時だけ使えます)' };
+  if (!(await isShell())) return { error: 'PRELUDE is not running as the desktop shell (only available after shell-mode.sh on --now)' };
   const script = returnScript();
-  if (!script) return { error: '戻るためのスクリプトが見つかりません(scripts/release.sh install-bin)' };
+  if (!script) return { error: 'Return script not found (scripts/release.sh install-bin)' };
   // スクリプトは systemd-run で別ユニットに移ってから、PRELUDE(自分)を止める。ここでは起動の成否だけを見る
   const pre = await exec(script, ['--check'], 10000);
-  if (!pre.ok) return { error: 'Kubuntuに戻れる状態ではありません: ' + (pre.out + pre.err).trim().split('\n').pop() };
+  if (!pre.ok) return { error: 'Cannot return to Kubuntu: ' + (pre.out + pre.err).trim().split('\n').pop() };
   const r = await exec(script, [], 10000);
-  return r.ok ? {} : { error: '切り替えを始められませんでした' };
+  return r.ok ? {} : { error: 'Could not start switching' };
 }
 
 function init({ ipcMain }) {

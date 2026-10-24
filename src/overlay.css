@@ -1,13 +1,17 @@
-:root { --bg: #faf3e0; --panel: #d7bfae; --line: #a1887f; --text: #3e2f2a; --dim: #6f5a52; --accent: #5d4037; --danger: #9c4a3a; --fs: 13px; }
+/* 書体: 英数字は VCR OSD Mono(ビデオデッキの画面表示の書体)、日本語は DotGothic16。出どころとライセンスは fonts/README.md */
+@font-face { font-family: "VCR OSD Mono"; src: url("fonts/VCR_OSD_MONO_1.001.ttf") format("truetype"); }
+@font-face { font-family: "DotGothic16"; src: url("fonts/DotGothic16-Regular.ttf") format("truetype"); }
+:root { --bg: #1926a3; --panel: #121c80; --line: #7d8ce0; --text: #f0f3ff; --dim: #aab4ee; --accent: #ffffff; --danger: #ff8080; --fs: 13px; }
 * { box-sizing: border-box; border-radius: 0; } /* 角丸は使わない(部品の既定の角丸も消す) */
 html, body { margin: 0; background: transparent; overflow: hidden; }
-body { font-size: var(--fs); color: var(--text); font-family: "Yu Gothic UI", "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif; user-select: none; }
+body { font-size: var(--fs); color: var(--text); font-synthesis: none; /* 太字は無い書体なので、にじむ太字を作らせない */
+  font-family: "VCR OSD Mono", "DotGothic16", "Yu Gothic UI", "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif; user-select: none; }
 #toasts { display: flex; flex-direction: column; gap: 8px; padding: 2px; }
 .toast {
   display: flex; gap: 10px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line);
   box-shadow: 0 4px 14px rgba(0, 0, 0, .3); cursor: default; position: relative;
 }
-.toast.critical { border-color: var(--danger); box-shadow: 0 4px 14px rgba(156, 74, 58, .45); }
+.toast.critical { border-color: var(--danger); box-shadow: 0 4px 14px rgba(255, 128, 128, .45); }
 .toast img { width: 36px; height: 36px; flex: none; object-fit: contain; }
 .toast .tx { flex: 1; min-width: 0; padding-right: 18px; }
 .toast .app { color: var(--dim); font-size: .85em; }

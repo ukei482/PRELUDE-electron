@@ -35,7 +35,7 @@ function render(list) {
       tx.append(row);
     }
     const x = el('button', 'x', '×');
-    x.title = '閉じる';
+    x.title = 'Close';
     x.addEventListener('click', (e) => { e.stopPropagation(); api.dismiss(n.id); });
     t.append(tx, x);
     return t;
@@ -46,7 +46,7 @@ function render(list) {
 // OSD(音量・明るさ)。null が来たら隠す
 function renderOsd(p) {
   if (!p) { osdRoot.style.display = 'none'; osdRoot.replaceChildren(); api.size(kind, 0); return; }
-  const label = p.kind === 'volume' ? (p.muted ? 'ミュート' : '音量') : '明るさ';
+  const label = p.kind === 'volume' ? (p.muted ? 'MUTE' : 'VOLUME') : 'BRIGHTNESS';
   const card = el('div', 'osdcard' + (p.muted ? ' muted' : ''));
   const row = el('div', 'row');
   row.append(el('span', 'lbl', label), el('span', 'val', p.muted ? '' : `${p.percent}%`));
