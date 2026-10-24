@@ -10,70 +10,70 @@ const path = require('path');
 const { app } = require('electron');
 
 const KINDS = [
-  ['home', 'ホーム'],
-  ['files', 'フォルダ'],
-  ['field', 'フィールド'],
+  ['home', 'Home'],
+  ['files', 'Folder'],
+  ['field', 'Field'],
   ['web', 'Web'],
-  ['app', 'アプリ'],
+  ['app', 'App'],
 ];
 
 const SCHEMA = [
   {
-    title: '外観',
+    title: 'Appearance',
     fields: [
-      { path: 'appearance.accent', label: 'アクセント色', type: 'color' },
-      { path: 'appearance.bg', label: '背景色', type: 'color' },
-      { path: 'appearance.panel', label: 'パネル色', type: 'color' },
-      { path: 'appearance.panel2', label: 'パネル色（ホバー）', type: 'color' },
-      { path: 'appearance.line', label: '罫線・スクロールバー色', type: 'color' },
-      { path: 'appearance.text', label: '文字色', type: 'color' },
-      { path: 'appearance.dim', label: '補助文字色', type: 'color' },
-      { path: 'appearance.danger', label: '警告色', type: 'color' },
-      { path: 'appearance.wallpaper', label: 'ホーム画面の壁紙（画像ファイルのパス。空=なし）', type: 'text' },
-      { path: 'appearance.fontSize', label: '文字サイズ (px)', type: 'number', min: 10, max: 22 },
-      { path: 'appearance.sidebarWidth', label: 'サイドバー幅 (px)', type: 'number', min: 140, max: 400 },
+      { path: 'appearance.accent', label: 'Accent color', type: 'color' },
+      { path: 'appearance.bg', label: 'Background color', type: 'color' },
+      { path: 'appearance.panel', label: 'Selection color', type: 'color' },
+      { path: 'appearance.panel2', label: 'Hover color', type: 'color' },
+      { path: 'appearance.line', label: 'Border / scrollbar color', type: 'color' },
+      { path: 'appearance.text', label: 'Text color', type: 'color' },
+      { path: 'appearance.dim', label: 'Dim text color', type: 'color' },
+      { path: 'appearance.danger', label: 'Warning color', type: 'color' },
+      { path: 'appearance.wallpaper', label: 'Home wallpaper (image file path, empty = none)', type: 'text' },
+      { path: 'appearance.fontSize', label: 'Font size (px)', type: 'number', min: 10, max: 22 },
+      { path: 'appearance.sidebarWidth', label: 'Sidebar width (px)', type: 'number', min: 140, max: 400 },
     ],
   },
   {
     // タブの開き方。既定は Arc に合わせる(別タブのリンクは新しいタブ、Alt+クリックは分割、ブックマーク(ピン留め)から別サイトは新しいタブ、新しいタブは一番上)
-    title: 'タブ',
+    title: 'Tabs',
     fields: [
-      { path: 'tabs.linkOpen', label: '別のタブで開くリンク（target=_blank・中クリック・Ctrl+クリック）', type: 'select', options: [['tab', '新しいタブ'], ['split', '分割']] },
-      { path: 'tabs.altClick', label: 'Alt+クリックしたリンク', type: 'select', options: [['split', '分割'], ['tab', '新しいタブ'], ['here', 'そのまま移動']] },
-      { path: 'tabs.pinnedOtherSite', label: 'ブックマークのタブから別のサイトへのリンク', type: 'select', options: [['tab', '新しいタブ'], ['split', '分割'], ['stay', 'そのまま移動']] },
-      { path: 'tabs.newTabPosition', label: '新しいタブの位置', type: 'select', options: [['top', '一番上'], ['next', '今のタブの次'], ['bottom', '一番下']] },
+      { path: 'tabs.linkOpen', label: 'Links that open in another tab (target=_blank, middle click, Ctrl+click)', type: 'select', options: [['tab', 'New tab'], ['split', 'Split']] },
+      { path: 'tabs.altClick', label: 'Alt+click on a link', type: 'select', options: [['split', 'Split'], ['tab', 'New tab'], ['here', 'Navigate in place']] },
+      { path: 'tabs.pinnedOtherSite', label: 'Links to another site from a bookmark tab', type: 'select', options: [['tab', 'New tab'], ['split', 'Split'], ['stay', 'Navigate in place']] },
+      { path: 'tabs.newTabPosition', label: 'New tab position', type: 'select', options: [['top', 'Top'], ['next', 'After current tab'], ['bottom', 'Bottom']] },
     ],
   },
   {
-    title: '動作',
+    title: 'Behavior',
     fields: [
-      { path: 'behavior.appOpen', label: 'アプリを開く方法（ランチャー）', type: 'select', options: [['embed', 'ペインに取り込む'], ['window', '別ウィンドウ']] },
-      { path: 'behavior.viewInside', label: 'PRELUDE の中（Web のペイン）で表示する拡張子（空白区切り）', type: 'text' },
-      { path: 'behavior.fileOpen', label: 'ファイルを開く場所（既定のアプリをペインに取り込む）', type: 'select', options: [['tab', '新しいタブ'], ['split', '右に分割'], ['window', '別ウィンドウ（取り込まない）']] },
-      { path: 'behavior.startKind', label: '新しいタブの種類', type: 'select', options: KINDS },
-      { path: 'behavior.homepage', label: 'Webのホームページ', type: 'text' },
-      { path: 'behavior.searchEngine', label: '検索エンジン（%s が検索語）', type: 'text' },
-      { path: 'behavior.chromiumSites', label: '最初から Chromium で開くサイト（空白区切り。サブドメインも含む。Google のログインを共有）', type: 'text' },
-      { path: 'behavior.startPath', label: 'フォルダの開始位置（空=ホーム）', type: 'text' },
-      { path: 'behavior.bookmarkDir', label: 'ブックマークのファイルの保存先（空=ホームの「ブックマーク」）', type: 'text' },
-      { path: 'behavior.downloadDir', label: 'ダウンロードの開始フォルダ（空=ダウンロードフォルダ）', type: 'text' },
-      { path: 'behavior.showHidden', label: '隠しファイル（.で始まる）を表示', type: 'bool' },
-      { path: 'behavior.terminal', label: '端末のコマンド（%d がフォルダ。空=Konsole / Windows Terminal）', type: 'text' },
-      { path: 'behavior.sidebarMode', label: 'サイドバー（左上の ☰ で 全部→細い列→非表示 の順に切り替え）', type: 'select', options: [['full', '全部表示'], ['compact', '細い列（アイコンだけ）'], ['hidden', '非表示']] },
-      { path: 'behavior.startFullscreen', label: '起動時に全画面で開く（次回起動から）', type: 'bool' },
-      { path: 'behavior.subDisplays', label: '2枚目以降の画面にも PRELUDE の窓を開く', type: 'bool' },
-      { path: 'behavior.devDir', label: '開発版のフォルダ（ランチャーの「PRELUDE 開発版」でペインに開く作業フォルダ。空=~/PRELUDE-electron）', type: 'text' },
+      { path: 'behavior.appOpen', label: 'Open apps from the launcher', type: 'select', options: [['embed', 'Embed in a pane'], ['window', 'Separate window']] },
+      { path: 'behavior.viewInside', label: 'Extensions to view inside PRELUDE (web pane, space separated)', type: 'text' },
+      { path: 'behavior.fileOpen', label: 'Where to open files (embeds the default app in a pane)', type: 'select', options: [['tab', 'New tab'], ['split', 'Split right'], ['window', 'Separate window (no embed)']] },
+      { path: 'behavior.startKind', label: 'New tab type', type: 'select', options: KINDS },
+      { path: 'behavior.homepage', label: 'Web home page', type: 'text' },
+      { path: 'behavior.searchEngine', label: 'Search engine (%s = query)', type: 'text' },
+      { path: 'behavior.chromiumSites', label: 'Sites to open in Chromium (space separated, includes subdomains, shares Google sign-in)', type: 'text' },
+      { path: 'behavior.startPath', label: 'Folder start path (empty = home)', type: 'text' },
+      { path: 'behavior.bookmarkDir', label: 'Bookmark file folder (empty = ~/ブックマーク)', type: 'text' },
+      { path: 'behavior.downloadDir', label: 'Download start folder (empty = Downloads)', type: 'text' },
+      { path: 'behavior.showHidden', label: 'Show hidden files (starting with .)', type: 'bool' },
+      { path: 'behavior.terminal', label: 'Terminal command (%d = folder, empty = Konsole / Windows Terminal)', type: 'text' },
+      { path: 'behavior.sidebarMode', label: 'Sidebar (☰ at top left cycles full → compact → hidden)', type: 'select', options: [['full', 'Full'], ['compact', 'Compact (icons only)'], ['hidden', 'Hidden']] },
+      { path: 'behavior.startFullscreen', label: 'Start in fullscreen (from next launch)', type: 'bool' },
+      { path: 'behavior.subDisplays', label: 'Open PRELUDE windows on secondary displays', type: 'bool' },
+      { path: 'behavior.devDir', label: 'Dev build folder (opened in a pane by "PRELUDE dev build" in the launcher, empty = ~/PRELUDE-electron)', type: 'text' },
     ],
   },
   {
-    title: 'ショートカット',
+    title: 'Shortcuts',
     fields: [
-      { path: 'shortcuts.newTab', label: '新しいタブ', type: 'text' },
-      { path: 'shortcuts.closeTab', label: 'タブを閉じる', type: 'text' },
-      { path: 'shortcuts.reopenTab', label: '閉じたタブを開き直す', type: 'text' },
-      { path: 'shortcuts.fullscreen', label: '全画面', type: 'text' },
-      { path: 'shortcuts.launcher', label: 'ランチャー（PRELUDEが前面のとき）', type: 'text' },
-      { path: 'shortcuts.globalLauncher', label: 'グローバルのランチャーキー（初回登録時の既定。以降の変更はKDEのショートカット設定で）', type: 'text' },
+      { path: 'shortcuts.newTab', label: 'New tab', type: 'text' },
+      { path: 'shortcuts.closeTab', label: 'Close tab', type: 'text' },
+      { path: 'shortcuts.reopenTab', label: 'Reopen closed tab', type: 'text' },
+      { path: 'shortcuts.fullscreen', label: 'Fullscreen', type: 'text' },
+      { path: 'shortcuts.launcher', label: 'Launcher (when PRELUDE is focused)', type: 'text' },
+      { path: 'shortcuts.globalLauncher', label: 'Global launcher key (initial default; change it later in KDE shortcut settings)', type: 'text' },
     ],
   },
 ];
@@ -81,8 +81,8 @@ const SCHEMA = [
 function defaults() {
   return {
     appearance: {
-      bg: '#faf3e0', panel: '#d7bfae', panel2: '#a1887f', line: '#a1887f',
-      text: '#3e2f2a', dim: '#6f5a52', accent: '#5d4037', danger: '#9c4a3a',
+      bg: '#1926a3', panel: '#2b3dc8', panel2: '#3a50e0', line: '#ffffff',
+      text: '#f0f3ff', dim: '#aab4ee', accent: '#ffffff', danger: '#ff8080',
       wallpaper: '', fontSize: 13, sidebarWidth: 220,
     },
     tabs: {
@@ -116,6 +116,12 @@ function defaults() {
     shortcuts: { newTab: 'Ctrl+T', closeTab: 'Ctrl+W', reopenTab: 'Ctrl+Shift+T', fullscreen: 'F11', launcher: 'Ctrl+Shift+P', globalLauncher: 'Meta+Space' },
   };
 }
+
+// 0.7.0 までの既定の配色
+const OLD_COLORS = {
+  bg: '#faf3e0', panel: '#d7bfae', panel2: '#a1887f', line: '#a1887f',
+  text: '#3e2f2a', dim: '#6f5a52', accent: '#5d4037', danger: '#9c4a3a',
+};
 
 // base に存在するキーだけ、同じ型の値で上書きする
 function merge(base, over) {
@@ -157,6 +163,11 @@ class Config {
         // 0.4.11 までの「サイドバーを表示」(on/off)は、サイドバーの3段階(全部・細い列・非表示)へ引き継ぐ
         const b = over?.behavior;
         if (b && b.sidebarMode == null && b.sidebarVisible === false) b.sidebarMode = 'hidden';
+        // 0.7.0 までの既定の配色(生成りと茶色)のままなら、新しい既定の配色(青)にする。自分で色を変えた人はそのまま
+        const ap = over?.appearance;
+        if (ap && Object.keys(OLD_COLORS).every((k) => String(ap[k]).toLowerCase() === OLD_COLORS[k])) {
+          for (const k of Object.keys(OLD_COLORS)) delete ap[k];
+        }
         merge(this.data, over);
       } catch {}
     }

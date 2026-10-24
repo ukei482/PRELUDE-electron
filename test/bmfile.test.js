@@ -40,7 +40,7 @@ test('サイドバーのブックマークをペイン1つの配置にする', (
 test('ブックマークでないファイル・壊れた配置は読まない', () => {
   assert.throws(() => bmFileParse('not json', HOME));
   assert.throws(() => bmFileParse('{"a":1}', HOME));
-  assert.throws(() => bmFileParse('{"prelude":"bookmark","version":2,"root":{"k":"leaf","type":"web"}}', HOME), /新しい版/);
+  assert.throws(() => bmFileParse('{"prelude":"bookmark","version":2,"root":{"k":"leaf","type":"web"}}', HOME), /newer version/);
   let deep = { k: 'leaf', type: 'web' };
   for (let i = 0; i < 20; i++) deep = { k: 'split', a: deep, b: { k: 'leaf', type: 'web' } };
   assert.throws(() => bmFileParse(JSON.stringify({ prelude: 'bookmark', root: deep }), HOME));

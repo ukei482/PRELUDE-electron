@@ -55,7 +55,7 @@ async function init() {
       current: async () => pct(await br.brightness()),
       restore: async () => {
         await quick.doOp('brightness', RESTORE_TO);
-        show('brightness', RESTORE_TO, false, '暗すぎたので明るさを戻しました');
+        show('brightness', RESTORE_TO, false, 'Too dark, brightness restored');
       },
     });
     br.on('brightnessChanged', (v) => {

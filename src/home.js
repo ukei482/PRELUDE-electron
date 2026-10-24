@@ -2,7 +2,7 @@
 // ホーム画面(ペインの種類「ホーム」)。壁紙・時計・最近使ったアプリ・ブックマーク・クイック操作。
 // app.js より先に読み込まれる。h / ico / S / C / api / openTab / openBookmark / launchApp などは呼び出し時に app.js・launcher.js のものを使う。
 
-const WEEKDAY = ['日', '月', '火', '水', '木', '金', '土'];
+const WEEKDAY = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 const wall = { path: null, url: null }; // 壁紙は大きいので、設定のパスが変わったときだけ読み直す
 const iconCache = new Map(); // アイコン名 -> data URL | null
 
@@ -23,28 +23,28 @@ async function appIconUrl(name) {
 }
 
 function buildHome(tab, leaf, head, body) {
-  head.append(ico('home'), h('span', { class: 'ptitle' }, 'ホーム'), ...commonButtons(tab, leaf));
+  head.append(ico('home'), h('span', { class: 'ptitle' }, 'Home'), ...commonButtons(tab, leaf));
   const clock = h('div', { class: 'hclock' });
   const date = h('div', { class: 'hdate' });
   const apps = h('div', { class: 'hgrid' });
   const marks = h('div', { class: 'hchips' });
   const root = h('div', { class: 'home' },
     h('div', { class: 'hhero' }, clock, date),
-    h('div', { class: 'hcard' }, h('div', { class: 'hh' }, '最近使ったアプリ'), apps),
-    h('div', { class: 'hcard' }, h('div', { class: 'hh' }, 'ブックマーク'), marks),
+    h('div', { class: 'hcard' }, h('div', { class: 'hh' }, 'RECENT APPS'), apps),
+    h('div', { class: 'hcard' }, h('div', { class: 'hh' }, 'BOOKMARKS'), marks),
     h('div', { class: 'hcard hquick' },
-      h('button', { class: 'textbtn', onclick: () => openLauncher() }, ico('window'), 'アプリ・検索（Ctrl+Shift+P）'),
-      h('button', { class: 'textbtn', onclick: () => openTab('files') }, ico('folder'), 'フォルダ'),
-      h('button', { class: 'textbtn', onclick: () => openTab('field') }, ico('field'), 'フィールド'),
+      h('button', { class: 'textbtn', onclick: () => openLauncher() }, ico('window'), 'Apps / Search (Ctrl+Shift+P)'),
+      h('button', { class: 'textbtn', onclick: () => openTab('files') }, ico('folder'), 'Folder'),
+      h('button', { class: 'textbtn', onclick: () => openTab('field') }, ico('field'), 'Field'),
       h('button', { class: 'textbtn', onclick: () => openTab('web') }, ico('globe'), 'Web'),
-      IS_SUB ? null : h('button', { class: 'textbtn', onclick: () => openSettings() }, ico('settings'), '設定')));
+      IS_SUB ? null : h('button', { class: 'textbtn', onclick: () => openSettings() }, ico('settings'), 'Settings')));
   body.append(root);
 
   const paintClock = () => {
     const d = new Date();
     const p = (n) => String(n).padStart(2, '0');
     clock.textContent = `${p(d.getHours())}:${p(d.getMinutes())}`;
-    date.textContent = `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAY[d.getDay()]}曜日`;
+    date.textContent = `${WEEKDAY[d.getDay()]} ${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getMonth()]} ${d.getDate()}`;
   };
   paintClock(); // この時点ではまだ画面に取り付いていない(isConnected は偽)ので、初回は無条件に描く
   const timer = setInterval(() => {
@@ -67,7 +67,7 @@ function buildHome(tab, leaf, head, body) {
       img.style.display = 'none';
       appIconUrl(a.icon).then((u) => { if (u) { img.src = u; img.style.display = ''; tile.querySelector('.ico').style.display = 'none'; } });
       return tile;
-    }) : [h('div', { class: 'empty' }, 'ランチャーでアプリを開くと、ここに並びます')]));
+    }) : [h('div', { class: 'empty' }, 'Apps you open from the launcher show up here')]));
   };
   if (S.appList) paintApps(S.appList);
   else api.app.list().then((l) => { S.appList = l; if (root.isConnected) paintApps(l); });
@@ -75,5 +75,5 @@ function buildHome(tab, leaf, head, body) {
   marks.replaceChildren(...(S.bookmarks.some((b) => b.kind !== 'folder') ? S.bookmarks.filter((b) => b.kind !== 'folder').map((b) => h('button', {
     class: 'textbtn hchip', title: b.target, onclick: () => openBookmark(b),
   }, ico(bmIcon(b)), b.title || b.target))
-    : [h('div', { class: 'empty' }, 'ペインの ☆ で追加')]));
+    : [h('div', { class: 'empty' }, 'Add with ☆ on a pane')]));
 }

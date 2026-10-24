@@ -42,14 +42,14 @@
   // ファイルの中身 → { title, root }。形がおかしければ Error(message は画面に出す)
   function bmFileParse(text, home) {
     let d;
-    try { d = JSON.parse(text); } catch { throw new Error('ブックマークのファイルではありません'); }
-    if (!d || d.prelude !== 'bookmark' || !d.root) throw new Error('ブックマークのファイルではありません');
-    if (Number(d.version) > 1) throw new Error('新しい版の PRELUDE で作られたファイルです');
+    try { d = JSON.parse(text); } catch { throw new Error('Not a bookmark file'); }
+    if (!d || d.prelude !== 'bookmark' || !d.root) throw new Error('Not a bookmark file');
+    if (Number(d.version) > 1) throw new Error('This file was made by a newer version of PRELUDE');
     let count = 0;
     const walk = (n, depth) => {
-      if (!n || typeof n !== 'object' || depth > MAX_DEPTH) throw new Error('配置が壊れています');
+      if (!n || typeof n !== 'object' || depth > MAX_DEPTH) throw new Error('Layout is corrupted');
       if (n.k === 'split') return { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: Number(n.ratio) || 0.5, a: walk(n.a, depth + 1), b: walk(n.b, depth + 1) };
-      if (++count > MAX_LEAVES) throw new Error('ペインが多すぎます');
+      if (++count > MAX_LEAVES) throw new Error('Too many panes');
       const type = TYPES.includes(n.type) ? n.type : 'files';
       const l = { k: 'leaf', type };
       if (type === 'web') l.url = str(n.url);

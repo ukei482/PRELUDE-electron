@@ -187,7 +187,7 @@ function createShellWindow(key) {
     frame: false, // タイトルバーは無い(☰ は左上のペインの見出しに置く)
     roundedCorners: false, // 枠の無い窓は既定で角が丸くなる(Wayland の Linux でも)。角丸は使わない
     show: false,
-    title: sub ? `PRELUDE:${key}` : EMBEDDED ? 'PRELUDE 開発版' : 'PRELUDE',
+    title: sub ? `PRELUDE:${key}` : EMBEDDED ? 'PRELUDE dev build' : 'PRELUDE',
     backgroundColor: config.get('appearance.bg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -244,7 +244,7 @@ function createWindow() {
 const displayCount = () => (EMBEDDED ? 1 : Number(process.env.PRELUDE_FAKE_DISPLAYS) || screen.getAllDisplays().length);
 const SUB_RE = /^sub(\d+)$/;
 const subIndex = (key) => Number(SUB_RE.exec(key)?.[1] || 0);
-const screenLabel = (key) => (key === 'main' ? '主画面' : `画面${subIndex(key) + 1}`);
+const screenLabel = (key) => (key === 'main' ? 'main display' : `display ${subIndex(key) + 1}`);
 const liveShells = () => [...shells.values()].filter((s) => !s.closing && shellWin(s.key));
 
 // 画面の数に合わせて、2枚目以降の窓を作る・閉じる
@@ -518,7 +518,7 @@ function createWeb(paneId, input, key) {
   wc.on('focus', () => { lastKey = owners.get(paneId) || 'main'; sendPane(paneId, 'web:focused', { paneId }); });
   wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
     if (!isMain || code === -3) return; // -3 = ユーザー操作による中断
-    const html = `<meta charset=utf-8><body style="font:14px sans-serif;padding:40px;color:#444"><h2>ページを表示できません</h2><p>${String(url).replace(/</g, '&lt;')}</p><p>${desc} (${code})</p>`;
+    const html = `<meta charset=utf-8><body style="font:14px sans-serif;padding:40px;color:#444"><h2>Cannot display this page</h2><p>${String(url).replace(/</g, '&lt;')}</p><p>${desc} (${code})</p>`;
     wc.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)).catch(() => {});
   });
 
@@ -630,8 +630,8 @@ ipcMain.handle('dev:info', () => {
   const electron = path.join(dir, 'node_modules', 'electron', 'dist', 'electron');
   // 開発版の中の PRELUDE からは、開発版をさらに開かない(同じプロファイルなので自分自身になる)
   const self = path.resolve(app.getPath('userData')) === path.resolve(DEV_PROFILE);
-  const err = !fs.existsSync(path.join(dir, 'main.js')) ? `${dir} に PRELUDE がありません(設定「開発版のフォルダ」)`
-    : !fs.existsSync(electron) ? `${dir} に node_modules がありません(npm ci が要ります)` : '';
+  const err = !fs.existsSync(path.join(dir, 'main.js')) ? `No PRELUDE in ${dir} (see Settings > Dev build folder)`
+    : !fs.existsSync(electron) ? `No node_modules in ${dir} (run npm ci)` : '';
   // PRELUDE_EMBEDDED=1: ペインの中で動く印(画面は1枚として扱い、全画面にしない)
   const cmd = `env PRELUDE_DEBUG=1 PRELUDE_EMBEDDED=1 ${shq(electron)} ${shq(dir)} --no-sandbox ${shq('--user-data-dir=' + DEV_PROFILE)} --remote-debugging-port=${DEV_PORT}`
     + ` >${shq(path.join(path.dirname(DEV_PROFILE), 'debug.log'))} 2>&1`;

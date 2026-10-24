@@ -52,13 +52,13 @@ async function wifi() {
 }
 
 async function wifiConnect(ssid) {
-  if (typeof ssid !== 'string' || !ssid) return { error: '無効なネットワーク名です' };
+  if (typeof ssid !== 'string' || !ssid) return { error: 'Invalid network name' };
   const w = await wifi();
   const n = w?.networks.find((x) => x.ssid === ssid);
-  if (!n) return { error: 'ネットワークが見つかりません' };
-  if (!n.saved && n.secured) return { error: 'パスワードが必要です。先にKDEのネットワーク設定で一度登録してください' };
+  if (!n) return { error: 'Network not found' };
+  if (!n.saved && n.secured) return { error: 'Password required. Add the network once in KDE network settings first' };
   const r = n.saved ? await exec('nmcli', ['--wait', '15', 'con', 'up', 'id', ssid], 20000) : await exec('nmcli', ['--wait', '15', 'dev', 'wifi', 'connect', ssid], 20000);
-  return r.ok ? {} : { error: '接続できませんでした' };
+  return r.ok ? {} : { error: 'Failed to connect' };
 }
 
 // ---- Bluetooth
@@ -124,7 +124,7 @@ async function doOp(op, arg) {
       if (arg !== 'open') await new Promise((r) => setTimeout(r, 350));
       const r = await exec('gdbus', ['call', '--session', '--dest', 'org.kde.kglobalaccel', '--object-path', '/component/org_kde_spectacle_desktop',
         '--method', 'org.kde.kglobalaccel.Component.invokeShortcut', action]);
-      return r.ok ? {} : { error: 'スクリーンショットを撮れませんでした(Spectacle が見つかりません)' };
+      return r.ok ? {} : { error: 'Could not take a screenshot (Spectacle not found)' };
     }
     case 'lock': return exec('loginctl', ['lock-session']);
     case 'suspend': return exec('systemctl', ['suspend']);
