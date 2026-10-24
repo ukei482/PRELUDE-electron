@@ -25,18 +25,19 @@ Rectangle {
         onPressed: password.forceActiveFocus()
     }
 
-    Rectangle { // CLI 領域(青地に白)
+    Rectangle { // CLI 領域(青地に白)。正方形で固定
         anchors.centerIn: parent
         color: prompt.blue
-        width: 26 * prompt.fs
-        height: 9 * prompt.fs
+        width: 18 * prompt.fs
+        height: width
+        readonly property real pad: prompt.fs * 1.2 // 縁からの余白
 
         Rectangle { // 白地に青の PRELUDE(CLI 領域の色を反転)。角にくっつけると外側の白と続いて欠けて見えるので内側に寄せる
-            x: prompt.fs * 0.6
-            y: prompt.fs * 0.6
+            x: parent.pad
+            y: parent.pad
             color: "white"
-            width: logo.implicitWidth + prompt.fs
-            height: logo.implicitHeight + prompt.fs * 0.3
+            width: logo.implicitWidth + prompt.fs * 1.2
+            height: logo.implicitHeight + prompt.fs * 0.6
             Text {
                 id: logo
                 anchors.centerIn: parent
@@ -48,6 +49,7 @@ Rectangle {
         }
 
         Row {
+            id: line
             anchors.centerIn: parent
             Text {
                 text: "password: "
@@ -92,9 +94,9 @@ Rectangle {
 
         Text {
             id: message
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: prompt.fs * 0.6
+            anchors.left: line.left // password: と頭をそろえる
+            anchors.top: line.bottom
+            anchors.topMargin: prompt.fs
             color: "white"
             font.family: vcr.name
             font.pixelSize: prompt.fs
