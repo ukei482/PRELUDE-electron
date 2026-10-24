@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.7.0] - 2026-10-24
+
 ### 追加
 - PRELUDE の中で開発版を試せるようにした。ランチャーで「PRELUDE 開発版を開く」(`dev`・`かいはつばん` などで出る)か、タブの「＋」の「PRELUDE 開発版」で、
   作業フォルダの PRELUDE を新しいタブのペインに取り込んで起動する。プロファイルは `~/.local/state/prelude/debug-profile`、CDP のポートは 9333(`prelude.sh debug` と同じ)。
@@ -346,7 +348,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.2...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.5.1...v0.6.0
