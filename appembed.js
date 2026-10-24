@@ -195,8 +195,10 @@ function claim(p, w, how) {
   return p;
 }
 // ウィンドウの属するペイン。順に: 取り込み済みのウィンドウID → 起動したプロセスのPID → (まだウィンドウが無いペインだけ)起動後に現れた同じアプリのウィンドウ
+// ペインに取り込んだ別の PRELUDE(開発版)のトースト・OSD・2枚目の窓は取り込まない(その PRELUDE が自分で置く)
+function nestedShell(w) { return /^PRELUDE(-overlay:|:sub[0-9])/.test(w.caption || ''); }
 function paneOf(w, activated) {
-  if (w.pid === EL_PID || !w.normalWindow) return null;
+  if (w.pid === EL_PID || !w.normalWindow || nestedShell(w)) return null;
   var id = wid(w), i, p;
   for (i = 0; i < STATE.panes.length; i++) if (STATE.panes[i].wids.indexOf(id) >= 0) return STATE.panes[i];
   for (i = 0; i < STATE.panes.length; i++) if (STATE.panes[i].pids.indexOf(w.pid) >= 0) return claim(STATE.panes[i], w, 'pid');
@@ -262,7 +264,7 @@ function applyAll() { workspace.windowList().forEach(apply); }
 // 最前面の PRELUDE の後ろに隠れて見えなくなるので、同じ層に上げて前面に出す。追加された時の1回だけ(既存の窓には触らない)
 var surfaced = [];
 function surface(w) {
-  if (orphan || !STATE.shell.fs || w.pid === EL_PID || !(w.normalWindow || w.dialog) || paneOf(w)) return;
+  if (orphan || !STATE.shell.fs || w.pid === EL_PID || nestedShell(w) || !(w.normalWindow || w.dialog) || paneOf(w)) return;
   w.keepAbove = true;
   surfaced.push(w);
   workspace.raiseWindow(w);

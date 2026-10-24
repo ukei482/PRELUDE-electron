@@ -62,6 +62,7 @@ const SCHEMA = [
       { path: 'behavior.sidebarMode', label: 'サイドバー（左上の ☰ で 全部→細い列→非表示 の順に切り替え）', type: 'select', options: [['full', '全部表示'], ['compact', '細い列（アイコンだけ）'], ['hidden', '非表示']] },
       { path: 'behavior.startFullscreen', label: '起動時に全画面で開く（次回起動から）', type: 'bool' },
       { path: 'behavior.subDisplays', label: '2枚目以降の画面にも PRELUDE の窓を開く', type: 'bool' },
+      { path: 'behavior.devDir', label: '開発版のフォルダ（ランチャーの「PRELUDE 開発版」でペインに開く作業フォルダ。空=~/PRELUDE-electron）', type: 'text' },
     ],
   },
   {
@@ -108,6 +109,7 @@ function defaults() {
       sidebarMode: 'full',
       startFullscreen: true,
       subDisplays: true,
+      devDir: '',
     },
     bookmarks: [],
     appUsage: [],

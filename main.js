@@ -92,6 +92,7 @@ const fileops = require('./fileops');
 
 let config;
 let win = null; // 主画面の窓
+const EMBEDDED = !!process.env.PRELUDE_EMBEDDED; // 別の PRELUDE のペインの中で動いている開発版(main.js の「開発版」)
 // 画面ごとの窓。key は 'main'(主画面)と 'sub1', 'sub2'…(2枚目以降の画面。docs/shell-design.md 4.12)
 const shells = new Map(); // key -> { key, win, closing, finish }
 const suspended = new Set(); // Webビューを全部隠している窓の key(メニュー表示中・境界ドラッグ中)
@@ -186,7 +187,7 @@ function createShellWindow(key) {
     frame: false, // タイトルバーは無い(☰ は左上のペインの見出しに置く)
     roundedCorners: false, // 枠の無い窓は既定で角が丸くなる(Wayland の Linux でも)。角丸は使わない
     show: false,
-    title: sub ? `PRELUDE:${key}` : 'PRELUDE',
+    title: sub ? `PRELUDE:${key}` : EMBEDDED ? 'PRELUDE 開発版' : 'PRELUDE',
     backgroundColor: config.get('appearance.bg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -200,6 +201,8 @@ function createShellWindow(key) {
   w.loadFile(path.join(__dirname, 'src', 'index.html'), { query: { role: sub ? 'sub' : 'main', key } });
   hookInput(w.webContents, null, key);
   w.on('focus', () => { lastKey = key; });
+  // 取り込まれた開発版は、題名(取り込んだ側のタブ名になる)を「PRELUDE 開発版」のままにする
+  if (!sub && EMBEDDED) w.on('page-title-updated', (e) => e.preventDefault());
   if (!sub) return w;
   w.on('page-title-updated', (e) => e.preventDefault()); // 題名は KWin が窓を見分ける目印なので変えさせない
   if (!appembed.supported) placeSub(w, key); // KDE 以外(X11・Windows)は自分で位置を決められる
@@ -218,7 +221,7 @@ function createWindow() {
   win = createShellWindow('main');
   win.once('ready-to-show', () => {
     win.show();
-    if (config.get('behavior.startFullscreen')) setFullscreen(true);
+    if (config.get('behavior.startFullscreen') && !EMBEDDED) setFullscreen(true); // ペインの中では全画面にしない
     syncDisplays();
   });
   // シェルとして動いている間は、閉じる・最小化を受け付けない(Alt+F4 などで閉じると、画面に何も無くなる)。戻るときは「Kubuntuに戻る」
@@ -237,7 +240,8 @@ function createWindow() {
 
 // ---------------------------------------------------------------- displays
 // 画面の数。PRELUDE_FAKE_DISPLAYS=2 で、1画面の環境でも2枚目の窓を試せる(デバッグ用。その窓は主画面に重なる)
-const displayCount = () => Number(process.env.PRELUDE_FAKE_DISPLAYS) || screen.getAllDisplays().length;
+// 別の PRELUDE のペインに取り込まれた開発版(PRELUDE_EMBEDDED=1)は、画面を1枚として扱う(2枚目の窓はペインの外に出てしまう)
+const displayCount = () => (EMBEDDED ? 1 : Number(process.env.PRELUDE_FAKE_DISPLAYS) || screen.getAllDisplays().length);
 const SUB_RE = /^sub(\d+)$/;
 const subIndex = (key) => Number(SUB_RE.exec(key)?.[1] || 0);
 const screenLabel = (key) => (key === 'main' ? '主画面' : `画面${subIndex(key) + 1}`);
@@ -604,6 +608,34 @@ ipcMain.handle('app:spawn', (_e, cmd) => {
     p.unref();
     return true;
   } catch { return false; }
+});
+
+// ---------------------------------------------------------------- 開発版
+// 作業フォルダの PRELUDE(開発版)を、デバッグ用の別プロファイルで起動するコマンド。ランチャーの「PRELUDE 開発版」がペインに取り込む。
+// プロファイルと CDP のポートは prelude.sh debug・CLAUDE.md の手順と同じ(同じ開発版を2つは動かせない)
+const DEV_PROFILE = path.join(process.env.XDG_STATE_HOME || path.join(require('os').homedir(), '.local', 'state'), 'prelude', 'debug-profile');
+const DEV_PORT = 9333;
+const devDir = () => config.get('behavior.devDir') || path.join(require('os').homedir(), 'PRELUDE-electron');
+const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+// 開発版が動いていればその PID。Chromium のプロファイルの SingletonLock(「ホスト名-PID」へのリンク)で調べる
+function devPid() {
+  try {
+    const pid = Number(fs.readlinkSync(path.join(DEV_PROFILE, 'SingletonLock')).split('-').pop());
+    process.kill(pid, 0);
+    return pid;
+  } catch { return 0; }
+}
+ipcMain.handle('dev:info', () => {
+  const dir = devDir();
+  const electron = path.join(dir, 'node_modules', 'electron', 'dist', 'electron');
+  // 開発版の中の PRELUDE からは、開発版をさらに開かない(同じプロファイルなので自分自身になる)
+  const self = path.resolve(app.getPath('userData')) === path.resolve(DEV_PROFILE);
+  const err = !fs.existsSync(path.join(dir, 'main.js')) ? `${dir} に PRELUDE がありません(設定「開発版のフォルダ」)`
+    : !fs.existsSync(electron) ? `${dir} に node_modules がありません(npm ci が要ります)` : '';
+  // PRELUDE_EMBEDDED=1: ペインの中で動く印(画面は1枚として扱い、全画面にしない)
+  const cmd = `env PRELUDE_DEBUG=1 PRELUDE_EMBEDDED=1 ${shq(electron)} ${shq(dir)} --no-sandbox ${shq('--user-data-dir=' + DEV_PROFILE)} --remote-debugging-port=${DEV_PORT}`
+    + ` >${shq(path.join(path.dirname(DEV_PROFILE), 'debug.log'))} 2>&1`;
+  return { dir, cmd, err, self, pid: devPid() };
 });
 
 // ---------------------------------------------------------------- file system

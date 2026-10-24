@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('preludeApi', {
     onExited: (cb) => on('app:exited', cb),
     onTitle: (cb) => on('app:title', cb),
   },
+  dev: {
+    info: () => ipcRenderer.invoke('dev:info'),
+  },
   sys: {
     status: () => ipcRenderer.invoke('sys:status'),
     audio: (cmd) => ipcRenderer.invoke('sys:audio', cmd),
