@@ -184,6 +184,7 @@ function createShellWindow(key) {
     minWidth: 640,
     minHeight: 400,
     frame: false, // タイトルバーは無い(☰ は左上のペインの見出しに置く)
+    roundedCorners: false, // 枠の無い窓は既定で角が丸くなる(Wayland の Linux でも)。角丸は使わない
     show: false,
     title: sub ? `PRELUDE:${key}` : 'PRELUDE',
     backgroundColor: config.get('appearance.bg'),

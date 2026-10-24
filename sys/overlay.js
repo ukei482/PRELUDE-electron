@@ -67,7 +67,7 @@ async function loadScript() {
 
 function create(kind) {
   const win = new BrowserWindow({
-    width: KINDS[kind].width, height: 10, show: false, frame: false, transparent: true, hasShadow: false,
+    width: KINDS[kind].width, height: 10, show: false, frame: false, roundedCorners: false, transparent: true, hasShadow: false,
     focusable: false, skipTaskbar: true, resizable: true, alwaysOnTop: true, title: `PRELUDE-overlay:${kind}`,
     webPreferences: { preload: path.join(__dirname, '..', 'preload-overlay.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
