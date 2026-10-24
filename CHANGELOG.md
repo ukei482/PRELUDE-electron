@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.6.1] - 2026-10-24
+
 ### 変更
 - 角丸をやめた。ボタン・入力欄・メニュー・ダイアログ・通知・ランチャー・バー・サイドバー・フィールドのカードなど、PRELUDE の部品はすべて四角になる。
 
@@ -332,7 +334,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.4.11...v0.5.0
