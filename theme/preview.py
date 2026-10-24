@@ -3,7 +3,7 @@
 
   python3 theme/preview.py out.png [幅 高さ] [--fail]
 
---fail を付けると、パスワードを間違えたあとの画面を描く。
+--fail を付けると、パスワードを間違えたあとの画面を描く。--menu はメニュー、--keyboard は画面のキーボードを開いた画面。
 authenticator は偽物で、どのパスワードでも失敗する。
 """
 import os
@@ -67,6 +67,9 @@ def main():
     def typed():
         pw = view.rootObject().findChild(QObject, 'password')
         if pw: pw.setProperty('text', 'hunter2')
+        p = view.rootObject().findChild(QObject, 'prompt')
+        if '--menu' in sys.argv: p.setProperty('menuOpen', True)
+        if '--keyboard' in sys.argv: p.setProperty('keyboardVisible', True)
         if '--fail' in sys.argv and pw: QTimer.singleShot(0, lambda: QMetaObject.invokeMethod(pw, 'accepted'))
 
     def grab():

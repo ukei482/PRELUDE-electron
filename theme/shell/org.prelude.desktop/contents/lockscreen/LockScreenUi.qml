@@ -4,6 +4,11 @@ import QtQuick
 Prompt {
     id: ui
 
+    actions: [
+        { label: "sleep", visible: root.suspendToRamSupported, run: () => root.suspendToRam() },
+        { label: "hibernate", visible: root.suspendToDiskSupported, run: () => root.suspendToDisk() },
+    ]
+
     Connections {
         target: authenticator
         function onFailed(kind) {

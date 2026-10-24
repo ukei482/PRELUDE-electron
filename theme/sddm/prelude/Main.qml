@@ -7,6 +7,12 @@ Prompt {
     id: ui
     property string firstUser: ""
 
+    actions: [
+        { label: "sleep", visible: sddm.canSuspend, run: () => sddm.suspend() },
+        { label: "restart", visible: sddm.canReboot, run: () => sddm.reboot() },
+        { label: "shut down", visible: sddm.canPowerOff, run: () => sddm.powerOff() },
+    ]
+
     Instantiator { // 一覧の先頭のユーザー名を拾う(初回起動で lastUser が空のとき用)
         model: userModel
         delegate: QtObject {
