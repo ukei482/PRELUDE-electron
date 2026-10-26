@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.11.0] - 2026-10-26
+
 ### 追加
 - ホーム: 起動するとまず、上のバーの下いっぱいに白い端末(CLI)が出る。タブより上の階層で、タブの + の「Home」(ランチャーの「Home」)でいつでもここへ戻る。タブへ戻るのは左上の PRELUDE ボタン
   - 中身は本物の bash(`sys/term.js` が `sys/ptyhost.py` の疑似端末で動かす。表示は xterm.js)。最初は `PRELUDE` コマンドが動いた状態で開く
@@ -393,7 +395,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.10.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.7.0...v0.8.0
