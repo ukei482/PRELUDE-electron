@@ -1,0 +1,14 @@
+{
+    "KPackageStructure": "Plasma/Shell",
+    "KPlugin": {
+        "Authors": [{ "Name": "ukeiyamada" }],
+        "Description": "PRELUDE lock screen",
+        "Id": "org.prelude.desktop",
+        "License": "GPL-2.0-or-later",
+        "Name": "PRELUDE",
+        "Version": "1.0"
+    },
+    "X-KDE-ParentApp": "org.kde.plasmashell",
+    "X-Plasma-APIVersion": "2",
+    "X-Plasma-FallbackPackage": "org.kde.plasma.desktop"
+}
