@@ -14,7 +14,7 @@ test('どの行も端末の幅に収まる', () => {
 
 test('広ければロゴの右に PRELUDE と情報を並べる', () => {
   const lines = bannerText(info, 120).split('\n');
-  assert.ok(lines.some((l) => l.includes('▄▄████▄▄') && l.includes('PRELUDE')));
+  assert.ok(lines.some((l) => l.startsWith('█████  ██') && l.includes('PRELUDE')));
   assert.ok(lines.some((l) => l.includes('v1.2.3')));
 });
 
