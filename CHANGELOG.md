@@ -15,6 +15,15 @@
   - 電池が少ない・オフラインのときは、そのボタンを反転して出す
   - 下のバーにあったランチャーのボタン・トレイ・音量・再生中の曲は、今は出していない。ランチャーは Ctrl+Shift+P / Meta+Space で開ける
 
+## [0.9.0] - 2026-10-26
+
+### 追加
+- PRELUDE のロック画面とログイン画面(`theme/`)。白い画面の中央に青地に白文字の正方形の CLI 領域を置き、左上に白地に青の「PRELUDE」、真ん中に `password:` を出す。パスワードは次の行に `*` で出し(どちらも中央揃え)、間違えると `access denied`
+  - ロック画面は kscreenlocker のシェルのパッケージ(`theme/shell/org.prelude.desktop`)、ログイン画面は SDDM のテーマ(`theme/sddm/prelude`)。見た目は共通の `theme/common/Prompt.qml`
+  - 右上の三本線のメニューから、マウスだけで打てる画面のキーボード(US 配列)を出せる。キーボードが効かないとき用。ほかにロック画面ではスリープ、ログイン画面ではスリープ・再起動・電源を切るを選べる
+  - `scripts/theme.sh` で入れる/外す。`lock on|off`(sudo 不要)、`sddm on|off`、`boot on|off`(起動時に Kubuntu のロゴを出さず本物の起動ログを流す)。どれも次のログイン・起動から効く
+  - `lock test` / `sddm test` でテストモードで開ける。`theme/preview.py` は画面に出さずに PNG に描く
+
 ## [0.8.0] - 2026-10-24
 
 ### 変更
@@ -369,7 +378,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.8.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.1...v0.6.2
