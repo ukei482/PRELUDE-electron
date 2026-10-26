@@ -86,7 +86,7 @@ function applyTheme() {
   const mode = C.behavior.sidebarMode;
   document.body.classList.toggle('no-sidebar', mode === 'hidden');
   document.body.classList.toggle('sb-compact', mode === 'compact');
-  document.querySelectorAll('.sb-toggle').forEach((b) => { b.title = sidebarTip(); });
+  topMenuTip();
 }
 const sidebarTip = () => `Sidebar (next: ${{ full: 'compact', compact: 'hidden', hidden: 'full' }[C.behavior.sidebarMode] || 'compact'})`;
 // 上のバーの PRELUDE: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す
@@ -417,6 +417,7 @@ function tabMenu(tab, x, y) {
 // ------------------------------------------------------------------ tabs / panes
 // タブを前面に出す。アプリが終了して空になっているアプリペインは、同じアプリをもう一度起動して全面に出す
 function showTab(tab) {
+  leaveHome();
   S.active = tab.id;
   render();
   for (const l of leaves(tab.root)) if (l.type === 'app' && !l.running && l.dormant) { l.dormant = false; startApp(l, l.cmd, l.cls, l.name); }
@@ -433,6 +434,7 @@ function openTab(kind, o = {}) {
   else if (pos === 'next' && cur >= 0) S.tabs.splice(cur + 1, 0, tab);
   else S.tabs.push(tab);
   if (!o.background || !S.tabs.some((t) => t.id === S.active)) S.active = tab.id;
+  if (!o.background) leaveHome(); // ホームから開いたら、タブへ移る
   render();
   return tab;
 }
@@ -491,6 +493,7 @@ function insertTab(data, o) {
   const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null, bmFile: o.bmFile || null };
   S.tabs.splice(clamp(o.index ?? 0, 0, S.tabs.length), 0, tab);
   S.active = tab.id;
+  leaveHome();
   render();
   if (S.appSupported) for (const l of ls) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
   return tab;
@@ -828,7 +831,7 @@ function syncViews() {
         const isWeb = l.type === 'web' && l.created;
         if (!isWeb && !(l.type === 'app' && l.running)) continue;
         const send = isWeb ? api.web.bounds : api.app.bounds;
-        if (tab === at && l.slot && l.slot.isConnected) {
+        if (tab === at && !homeTerm.on && l.slot && l.slot.isConnected) { // ホームを出している間は隠す
           const r = l.slot.getBoundingClientRect();
           send(l.id, { x: r.left, y: r.top, width: r.width, height: r.height });
         } else send(l.id, null);
@@ -1281,7 +1284,7 @@ api.config.onChanged((values) => {
 // ------------------------------------------------------------------ boot
 function openSettings() {
   const tab = S.tabs.find((t) => leaves(t.root).some((l) => l.type === 'settings'));
-  if (tab) { S.active = tab.id; render(); } else openTab('settings');
+  if (tab) showTab(tab); else openTab('settings');
 }
 
 async function boot() {
@@ -1301,7 +1304,7 @@ async function boot() {
   api.win.screens().then((list) => { S.screens = list || []; });
   $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [
     { header: 'New tab' },
-    { label: 'Home', icon: 'home', run: () => openTab('home') },
+    { label: 'Home', icon: 'home', run: () => showHome() }, // タブではなく、タブの上の階層のホーム(端末)へ戻る
     { label: 'Web', icon: 'globe', run: () => openTab('web') },
     { label: 'Folder', icon: 'folder', run: () => openTab('files') },
     { label: 'Field', icon: 'field', run: () => openTab('field') },
@@ -1310,8 +1313,10 @@ async function boot() {
     IS_SUB ? null : { label: 'Settings', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
-  // 上のバー: 左の PRELUDE を押すとサイドバーを切り替える。右は時計などのボタン(bar.js)
-  Object.assign($('#top-menu'), { title: sidebarTip(), onclick: cycleSidebar });
+  // 上のバー: 左の PRELUDE は、ホームではタブへ戻り、タブではサイドバーを切り替える(term.js)。右は時計などのボタン(bar.js)
+  $('#top-menu').onclick = topMenuClick;
+  topMenuTip();
+  initCli();
   initBar();
   loadSessionState();
   // 起動して少ししてから、新しい版があるか確かめて知らせる(ネットワークの準備を待つ)
@@ -1329,6 +1334,8 @@ async function boot() {
   if (ws && Array.isArray(ws.tabs)) restore(ws);
   if (!S.tabs.length) openTab(C.behavior.startKind);
   else render();
+  // 起動したら、まずホーム(白い端末)を出す。2枚目以降の画面の窓はタブのまま
+  if (!IS_SUB) showHome(); else api.term.home(false);
   // 前回取り込んでいたアプリを再起動する
   if (S.appSupported) for (const t of S.tabs) for (const l of leaves(t.root)) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
 }

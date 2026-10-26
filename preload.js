@@ -142,4 +142,15 @@ contextBridge.exposeInMainWorld('preludeApi', {
     save: (data) => ipcRenderer.send('ws:save', data),
   },
   onShortcut: (cb) => on('shortcut', cb),
+  // ホームの端末(sys/term.js)と PRELUDE コマンド
+  term: {
+    start: (cols, rows) => ipcRenderer.send('term:start', cols, rows),
+    write: (data) => ipcRenderer.send('term:write', data),
+    resize: (cols, rows) => ipcRenderer.send('term:resize', cols, rows),
+    onData: (cb) => on('term:data', cb),
+    onExit: (cb) => on('term:exit', cb),
+    home: (on) => ipcRenderer.send('home:active', on),
+    onCli: (cb) => on('cli:run', cb),
+    cliResult: (r) => ipcRenderer.send('cli:result', r),
+  },
 });
