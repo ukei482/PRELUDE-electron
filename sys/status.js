@@ -1,12 +1,12 @@
 'use strict';
-// ステータスバー用のシステム状態(電池・音量・ネットワーク)。変化したときだけ画面側へ送る。
-// 外部コマンド(wpctl / nmcli / pactl)と /sys を読むだけで、状態の変更は音量操作のみ。
+// バー用のシステム状態(電池・音量・ネットワーク・Bluetooth)。変化したときだけ画面側へ送る。
+// 外部コマンド(wpctl / nmcli / pactl / bluetoothctl)と /sys を読むだけで、状態の変更は音量操作のみ。
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 const { CLOSE_FDS } = require('./util');
 
 let state = null; // 直近に送った状態(JSON文字列)
-let last = { battery: null, volume: null, net: null };
+let last = { battery: null, volume: null, net: null, bluetooth: null };
 let push = () => {};
 let onVolume = () => {};
 
@@ -45,7 +45,16 @@ async function readNet() {
   return { kind: 'none', name: '' };
 }
 
-async function refresh(parts = ['battery', 'volume', 'net']) {
+// Bluetooth: アダプタが無ければ null。電源と、つながっている機器の数
+async function readBluetooth() {
+  const show = await run('bluetoothctl', ['show']);
+  if (!show || !/Powered:/.test(show)) return null;
+  const powered = /Powered:\s*yes/.test(show);
+  const list = powered ? await run('bluetoothctl', ['devices', 'Connected']) : '';
+  return { powered, connected: (list || '').split('\n').filter((l) => /^Device\s/.test(l)).length };
+}
+
+async function refresh(parts = ['battery', 'volume', 'net', 'bluetooth']) {
   if (parts.includes('battery')) last.battery = readBattery();
   const jobs = [];
   if (parts.includes('volume')) {
@@ -56,6 +65,7 @@ async function refresh(parts = ['battery', 'volume', 'net']) {
     }));
   }
   if (parts.includes('net')) jobs.push(readNet().then((v) => { last.net = v; }));
+  if (parts.includes('bluetooth')) jobs.push(readBluetooth().then((v) => { last.bluetooth = v; }));
   await Promise.all(jobs);
   const json = JSON.stringify(last);
   if (json !== state) { state = json; push(last); }
@@ -83,7 +93,7 @@ function init({ send, ipcMain, onVolumeChange }) {
   ipcMain.handle('sys:audio', (_e, cmd) => audio(cmd));
 
   refresh();
-  setInterval(() => refresh(['battery', 'net']), 5000);
+  setInterval(() => refresh(['battery', 'net', 'bluetooth']), 5000);
 
   // 音量の変化は pactl subscribe で即座に拾う(無ければ定期取得のみ)
   let timer = null;

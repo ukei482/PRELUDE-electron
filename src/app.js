@@ -89,11 +89,9 @@ function applyTheme() {
   document.querySelectorAll('.sb-toggle').forEach((b) => { b.title = sidebarTip(); });
 }
 const sidebarTip = () => `Sidebar (next: ${{ full: 'compact', compact: 'hidden', hidden: 'full' }[C.behavior.sidebarMode] || 'compact'})`;
-// タイトルバーの ☰: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す
+// 上のバーの PRELUDE: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す
 const SB_MODES = ['full', 'compact', 'hidden'];
 const cycleSidebar = () => api.config.set('behavior.sidebarMode', SB_MODES[(SB_MODES.indexOf(C.behavior.sidebarMode) + 1) % SB_MODES.length]);
-// ☰ は、タブの一番左上のペインの見出しの先頭に置く(上のタイトルバーは無い)
-const topLeftLeaf = (n) => (n.k === 'leaf' ? n : topLeftLeaf(n.a));
 
 const tabTitle = (tab) => leafTitle(activeLeaf(tab));
 function leafTitle(l) {
@@ -895,7 +893,8 @@ function buildLeaf(tab, leaf) {
   const head = h('div', { class: 'pane-head' });
   const body = h('div', { class: 'pane-body' });
   const pane = h('div', {
-    class: 'pane' + (tab.activePane === leaf.id ? ' active' : '') + (leaf.loading ? ' loading' : '') + (leaf.mode === 'save' ? ' saving' : ''),
+    class: 'pane' + (tab.activePane === leaf.id ? ' active' : '') + (leaf.loading ? ' loading' : '') + (leaf.mode === 'save' ? ' saving' : '')
+      + (leaf.type === 'app' && (leaf.running || leaf.webUrl || leaf.restarting) ? ' app-open' : ''), // アプリを取り込んでいるペインは白地にする
     'data-id': leaf.id,
     onpointerdown: () => setActivePane(tab, leaf),
   }, head, body);
@@ -907,7 +906,6 @@ function buildLeaf(tab, leaf) {
   else if (leaf.type === 'home') buildHome(tab, leaf, head, body);
   else if (leaf.type === 'field') buildField(tab, leaf, head, body);
   else buildSettings(tab, leaf, head, body);
-  if (topLeftLeaf(tab.root) === leaf) head.prepend(h('button', { class: 'ibtn sb-toggle', title: sidebarTip(), onclick: cycleSidebar }, ico('menu')));
   return pane;
 }
 
@@ -1312,6 +1310,8 @@ async function boot() {
     IS_SUB ? null : { label: 'Settings', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
+  // 上のバー: 左の PRELUDE を押すとサイドバーを切り替える。右は時計などのボタン(bar.js)
+  Object.assign($('#top-menu'), { title: sidebarTip(), onclick: cycleSidebar });
   initBar();
   loadSessionState();
   // 起動して少ししてから、新しい版があるか確かめて知らせる(ネットワークの準備を待つ)

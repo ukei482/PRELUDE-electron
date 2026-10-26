@@ -43,6 +43,16 @@ input:focus, select:focus { border-color: var(--accent); }
 
 
 /* ---- layout */
+/* 窓の枠: 上は太いバー、左右と下は細いバー。どれも白地(反転) */
+#topbar { flex: none; display: flex; align-items: center; gap: 14px; height: 48px; padding: 0 26px; background: var(--accent); color: var(--bg); }
+#main { border: solid var(--accent); border-width: 0 26px 26px; }
+/* PRELUDE の名前は、その中でさらに反転して青地に白い文字。押すとサイドバーを切り替える */
+#topbar .logo { border: 0; padding: 2px 8px; background: var(--bg); color: var(--accent); font-size: 1.15em; letter-spacing: .08em; cursor: pointer; }
+#topbar .logo:hover { filter: brightness(1.25); }
+/* 右側のボタン: [ ... ] の形。押せるところはマウスを乗せると反転する */
+#topbar .tbtn { border: 0; background: transparent; color: inherit; padding: 2px 4px; cursor: pointer; white-space: nowrap; }
+#topbar .tbtn .tl { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; padding: 0 2px; }
+#topbar .tbtn:hover, #topbar .tbtn.warn { background: var(--bg); color: var(--accent); }
 #main { flex: 1; display: flex; min-height: 0; }
 #sidebar {
   width: var(--sbw); flex: none; display: flex; flex-direction: column; min-height: 0;
@@ -53,10 +63,6 @@ body.no-sidebar #sidebar { display: none; }
   display: flex; align-items: center; justify-content: space-between;
   color: var(--dim); font-size: .85em; padding: 6px 6px 2px;
 }
-/* 一番上の名前。白地に青い文字(細い列では P だけ) */
-#sb-logo { flex: none; padding: 6px 6px 4px; }
-#sb-logo .logo { display: inline-block; padding: 2px 8px; background: var(--accent); color: var(--bg); font-size: 1.15em; letter-spacing: .08em; }
-#sb-logo .short { display: none; }
 #bm-list { overflow-y: auto; max-height: 30%; }
 #tab-list { flex: 1; overflow-y: auto; min-height: 0; }
 .sb-foot { padding-top: 4px; }
@@ -112,9 +118,6 @@ body.sb-compact #sidebar { width: 44px; padding: 6px 4px; }
 body.sb-compact .sb-title { justify-content: center; padding: 4px 0 2px; }
 body.sb-compact .sb-title .label { display: none; }
 body.sb-compact .bm-title { display: none; }
-body.sb-compact #sb-logo { padding: 4px 0 6px; text-align: center; }
-body.sb-compact #sb-logo .full { display: none; }
-body.sb-compact #sb-logo .short { display: inline; }
 /* 細い列は、ブックマークとタブを別々の枠に分けて、それぞれでスクロールする */
 body.sb-compact #bm-list, body.sb-compact #tab-list { padding: 2px 0; scrollbar-width: none; }
 body.sb-compact #bm-list { max-height: 40%; flex: none; }
@@ -146,11 +149,12 @@ body.sb-compact #open-settings { padding: 6px; }
 .split { flex: 1 1 0; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
 .split.row { flex-direction: row; }
 .split.col { flex-direction: column; }
-/* 境目の線は出さない。つかめる幅は 5px で、マウスを乗せると色が付く */
-.divider { flex: none; }
-.divider:hover { background: var(--panel2); }
-.divider.row { width: 5px; cursor: col-resize; }
-.divider.col { height: 5px; cursor: row-resize; }
+/* 分割の境目は 1px の白い線。つかめる幅は 9px で、マウスを乗せると周りに色が付く */
+.divider { flex: none; background: linear-gradient(var(--accent), var(--accent)) center / 1px 100% no-repeat; }
+.divider.col { background-size: 100% 1px; }
+.divider:hover { background-color: var(--panel2); }
+.divider.row { width: 9px; cursor: col-resize; }
+.divider.col { height: 9px; cursor: row-resize; }
 
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; background: var(--bg); }
 /* 今のペインでない見出しは文字を薄くする */
@@ -158,8 +162,9 @@ body.sb-compact #open-settings { padding: 6px; }
 .pane-head { display: flex; align-items: center; gap: 2px; height: 36px; flex: none; padding: 0 4px; background: var(--bg); }
 .pane-head .addr { flex: 1; margin: 0 4px; height: 26px; min-width: 48px; }
 .pane-head { overflow: hidden; }
-.pane-head .sb-toggle { margin-right: 2px; }
 .pane-head .ptitle { flex: 1; font-weight: 600; margin-left: 6px; }
+/* アプリを取り込んでいるペインは、中身を白地にする(見出しは青のまま)。窓の角丸の外側が白い枠となじむ */
+.pane.app-open > .pane-body, .pane.app-open .web-slot { background: var(--accent); }
 .pane-body { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .web-slot { position: absolute; inset: 0; background: var(--bg); }
 .pane.loading .pane-head::after {
@@ -299,11 +304,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .app-row { padding: 6px 10px; cursor: default; }
 .app-row:hover { background: var(--panel2); color: var(--text); }
 
-/* ---- status bar (bottom, thin) */
-#statusbar {
-  display: flex; align-items: center; gap: 2px; height: 24px; flex: none; padding: 0 4px;
-  background: var(--bg); font-size: .92em;
-}
+/* ---- 下のバーの部品(今は出していない。bar.js) */
 .barbtn {
   display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border: 0;
   background: transparent; cursor: pointer; white-space: nowrap;
@@ -331,7 +332,7 @@ canvas.field { position: absolute; inset: 0; width: 100%; height: 100%; display:
 
 /* ---- quick settings */
 .qpanel {
-  position: fixed; right: 8px; bottom: 30px; width: 340px; max-height: calc(100vh - 80px); overflow-y: auto;
+  position: fixed; right: 30px; top: 54px; width: 340px; max-height: calc(100vh - 60px); overflow-y: auto; /* 上のバーのボタンの下に開く */
   padding: 10px 12px; background: var(--bg); border: 1px solid var(--line);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .35); display: flex; flex-direction: column; gap: 12px;
 }
