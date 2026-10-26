@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.11.1] - 2026-10-26
+
 ### 変更
 - `PRELUDE` コマンドの起動画面のロゴを、へ音記号からハ音記号にし、大きくした(高さ 22 行)。右の情報はロゴの高さの真ん中に寄せる
 
@@ -398,7 +400,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.11.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.8.0...v0.9.0
