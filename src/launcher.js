@@ -76,7 +76,7 @@ async function restartDevPrelude(leaf = findDevLeaf()?.leaf) {
 
 const LAUNCHER_COMMANDS = [
   { name: 'Settings', keys: 'settings せってい 設定', when: () => !IS_SUB, run: () => openSettings() },
-  { name: 'Home screen', keys: 'home ほーむ ホーム画面', run: () => openTab('home') },
+  { name: 'Home', keys: 'home terminal cli shell ほーむ たーみなる ホーム 端末', run: () => showHome() },
   { name: 'New tab (Web)', keys: 'new tab web あたらしい 新しいタブ', run: () => openTab('web') },
   { name: 'New tab (Folder)', keys: 'new tab folder files あたらしい 新しいタブ フォルダ', run: () => openTab('files') },
   { name: 'New tab (Field)', keys: 'new tab field tree folder files ふぃーるど あたらしい 新しいタブ フィールド', run: () => openTab('field') },

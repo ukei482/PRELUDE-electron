@@ -1,0 +1,6 @@
+#!/bin/sh
+# PRELUDE 専用のコマンド。ホームの端末(sys/term.js)の中で使う。中身は cli/prelude.js を Electron 同梱の Node で動かす。
+#   PRELUDE           PRELUDE のコマンドを打てる状態に入る(exit で普通のシェルに戻る)
+#   PRELUDE <命令>    その命令を1つだけ実行する(例: PRELUDE open firefox)
+[ -n "$PRELUDE_SOCK" ] || { echo "PRELUDE: only works in the PRELUDE home terminal" >&2; exit 1; }
+ELECTRON_RUN_AS_NODE=1 exec "$PRELUDE_NODE" "$PRELUDE_CLI_DIR/prelude.js" "$@"

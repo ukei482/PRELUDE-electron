@@ -5,6 +5,17 @@
 
 ## [未リリース]
 
+### 追加
+- ホーム: 起動するとまず、上のバーの下いっぱいに白い端末(CLI)が出る。タブより上の階層で、タブの + の「Home」(ランチャーの「Home」)でいつでもここへ戻る。タブへ戻るのは左上の PRELUDE ボタン
+  - 中身は本物の bash(`sys/term.js` が `sys/ptyhost.py` の疑似端末で動かす。表示は xterm.js)。最初は `PRELUDE` コマンドが動いた状態で開く
+  - `PRELUDE` コマンド: `help`・`tabs`・`tab 3`(`3`・`b3` だけでも)・`bookmarks`・`apps`・`open <名前|URL|パス>`・`web`・`folder`・`field`・`launcher`・`settings`・`back`・`clear`。タブを開く命令はホームを閉じてタブへ移る
+  - `exit` で普通のシェルに戻り、`PRELUDE` と打てばまた使える。`PRELUDE open firefox` のように1つだけ実行することもできる
+  - ホームでは Ctrl+W・Ctrl+R・Ctrl+L などは端末に渡す(PRELUDE のショートカットとして効くのはランチャー・全画面・Ctrl+1〜9 だけ)。Ctrl+Shift+C / Ctrl+Shift+V でコピー・貼り付け
+
+### 変更
+- タブの + の「Home」は、ホームのペインのタブを開くのではなく、ホーム(端末)へ戻るようにした
+- 左上の PRELUDE ボタンは、ホームではタブへ戻る。タブではこれまでどおりサイドバーを切り替える
+
 ## [0.10.0] - 2026-10-26
 
 ### 変更

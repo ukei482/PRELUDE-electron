@@ -1,0 +1,5 @@
+# ホームの端末(sys/term.js)の bash が読む設定。いつもの ~/.bashrc を読んでから、PRELUDE コマンドを使えるようにして実行する。
+# PRELUDE を exit すると、この bash(普通のシェル)に戻る。
+[ -f ~/.bashrc ] && . ~/.bashrc
+PATH="$PRELUDE_CLI_DIR:$PATH"
+PRELUDE

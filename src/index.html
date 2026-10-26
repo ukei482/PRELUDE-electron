@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:">
   <title>PRELUDE</title>
+  <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,8 +20,11 @@
     </aside>
     <section id="workspace"></section>
   </div>
+  <div id="home-term"></div>
   <div id="overlay"></div>
   <div id="toast"></div>
+  <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="bar.js"></script>
   <script src="launcher.js"></script>
   <script src="quick.js"></script>
@@ -32,6 +36,9 @@
   <script src="fieldlayout.js"></script>
   <script src="field.js"></script>
   <script src="bmfile.js"></script>
+  <script src="cliparse.js"></script>
+  <script src="term.js"></script>
+  <script src="cli.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
