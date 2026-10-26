@@ -1,7 +1,7 @@
 'use strict';
 // PRELUDE コマンドの命令。ホームの端末で PRELUDE と打った後の行(cli/prelude.js → sys/term.js のソケット → ここ)を解釈して実行し、
 // 端末に出す文を返す。タブ・ブックマーク・アプリを開く命令は、開いたらホームを閉じてタブへ移る。
-// exit と clear は cli/prelude.js 側で処理する(ここには来ない)。
+// exit・clear・banner は cli/prelude.js 側で処理する(ここには来ない)。
 // app.js より先に読み込まれる。S / openTab / showTab / launcherEntries などは呼び出し時に app.js・launcher.js のものを使う。
 
 const CLI_COMMANDS = [
@@ -18,6 +18,7 @@ const CLI_COMMANDS = [
   { name: 'settings', args: '', desc: 'Open the settings', when: () => !IS_SUB, run: () => cliGo(openSettings, 'Settings') },
   { name: 'back', args: '', desc: 'Back to the tabs (same as the PRELUDE button)', run: () => { hideHome(); return ''; } },
   { name: 'clear', args: '', desc: 'Clear the screen' },
+  { name: 'banner', args: '', desc: 'Show the start screen again (logo, system info, colors)' },
   { name: 'exit', args: '', desc: 'Leave for the shell (type PRELUDE to come back)' },
 ];
 

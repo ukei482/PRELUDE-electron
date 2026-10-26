@@ -3,7 +3,7 @@
 // 端末の中身は bash(main の sys/term.js が疑似端末で動かす)で、最初は PRELUDE コマンド(cli/。命令は src/cli.js)が動いている。
 // タブへ戻るのは左上の PRELUDE ボタン(または PRELUDE コマンドの back・タブを開く命令)。
 // app.js より先に読み込まれる。$ / api / C / render / syncViews / openTab などは呼び出し時に app.js のものを使う。
-// 表示は xterm.js(node_modules/@xterm。index.html で読み込む)。
+// 表示は xterm.js(node_modules/@xterm。index.html で読み込む)。描くのは WebGL のアドオン。
 
 const homeTerm = { on: false, term: null, fit: null, ready: null };
 
@@ -29,6 +29,12 @@ async function openHomeTerm() {
   // 書体を読み込んでから開く(後から読み込まれると文字の幅を測り間違える)
   await Promise.all(['VCR OSD Mono', 'DotGothic16'].map((f) => document.fonts.load(`16px "${f}"`).catch(() => {})));
   t.open(el);
+  // WebGL で描く(ブロックの文字 ▄▀█ を行間なしにマスいっぱいに描くので、ロゴの AA がつながる)。使えなければ普通の描き方のまま
+  try {
+    const gl = new WebglAddon.WebglAddon();
+    gl.onContextLoss(() => gl.dispose());
+    t.loadAddon(gl);
+  } catch {}
   fit.fit();
   // Ctrl+Shift+C で選んだ文字をコピーする。Ctrl+Shift+V は貼り付け(ブラウザの貼り付けを xterm が受ける)
   t.attachCustomKeyEventHandler((e) => {
