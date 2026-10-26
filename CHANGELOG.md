@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.10.0] - 2026-10-26
+
 ### 変更
 - 窓の一番上に専用のバー(白地に青い文字)を作り、「PRELUDE」の名前をそこへ移した。左右と下にも細い白のバーを付けて、窓を枠で囲んだ
 - 分割したペインの境目を、1px の白い線にした(つかめる幅は 9px)
@@ -378,7 +380,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.9.0...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.6.2...v0.7.0
