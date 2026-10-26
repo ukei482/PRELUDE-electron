@@ -80,6 +80,7 @@ const LAUNCHER_COMMANDS = [
   { name: 'New tab (Web)', keys: 'new tab web あたらしい 新しいタブ', run: () => openTab('web') },
   { name: 'New tab (Folder)', keys: 'new tab folder files あたらしい 新しいタブ フォルダ', run: () => openTab('files') },
   { name: 'New tab (Field)', keys: 'new tab field tree folder files ふぃーるど あたらしい 新しいタブ フィールド', run: () => openTab('field') },
+  { name: 'New space', keys: 'new space すぺーす スペース', run: () => newSpace() },
   { name: 'Toggle fullscreen', keys: 'fullscreen ぜんがめん 全画面', when: () => !IS_SUB, run: () => api.win.cmd('toggleFullscreen') },
   { name: 'Toggle maximize', keys: 'maximize window さいだいか 最大化', when: () => !IS_SUB, run: () => api.win.cmd('toggleMaximize') },
   { name: 'Cycle sidebar', keys: 'sidebar tabs さいどばー たぶ サイドバー', run: () => cycleSidebar() },
@@ -132,6 +133,7 @@ function launcherEntries(q) {
   for (const { x: tab } of pick(S.tabs, tabTitle)) out.push({ kind: `Tab ${tab.num}`, name: tabTitle(tab), run: () => showTab(tab) });
   for (const { x: b } of pick(S.bookmarks.filter((b) => b.kind !== 'folder'), (b) => b.title || b.target)) out.push({ kind: `Bookmark b${b.num}`, name: b.title || b.target, run: () => openBookmark(b) });
   for (const { x: a } of pick(S.appList || [], (a) => a.name, usedRank).slice(0, 8)) out.push({ kind: 'App', name: a.name, run: () => launchApp(a) });
+  for (const { x: n } of pick(S.spaces.filter((n) => n !== S.space), (n) => n)) out.push({ kind: 'Space', name: `Switch to ${n}`, run: () => switchSpace(n) });
   for (const { x: c } of pick(LAUNCHER_COMMANDS.filter((c) => !c.when || c.when()), (c) => c.name + ' ' + c.keys)) out.push({ kind: 'Command', name: c.name, run: c.run });
   out.push({ kind: 'Web', name: `Open / search the web: ${q}`, run: () => openTab('web', { url: q }) });
   return out.slice(0, 14);

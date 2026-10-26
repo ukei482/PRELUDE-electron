@@ -41,7 +41,7 @@ const getPath = (o, p) => p.split('.').reduce((v, k) => (v == null ? undefined :
 // ------------------------------------------------------------------ state
 let C = null; // config values
 let SCHEMA = [];
-const S = { tabs: [], active: null, bookmarks: [], foreignBm: [], screens: [] };
+const S = { tabs: [], active: null, bookmarks: [], screens: [] };
 
 const activeTab = () => S.tabs.find((t) => t.id === S.active) || S.tabs[0];
 const leaves = (n) => (n.k === 'leaf' ? [n] : [...leaves(n.a), ...leaves(n.b)]);
@@ -203,12 +203,20 @@ function renderSidebar() {
   }
 }
 
-// ブックマーク欄。フォルダは1段だけ(フォルダの中にフォルダは作れない)。▸ で開閉し、開閉は覚えておく。
+// ブックマーク欄(今のスペースの .prelude)。フォルダはスペースの中のサブフォルダで1段だけ。▸ で開閉し、閉じたフォルダは覚えておく。
+// 並びは、開いているもの(タブの順)が先で、残りは名前順(space.js の spaceSort)。番号 b1, b2… はこの並びで振る。
 // 細い列ではフォルダはアイコン1つで、押すと中身をメニューで出す
 const bmIcon = (b) => (b.kind === 'folder' ? 'folder' : b.kind === 'web' ? 'globe' : b.kind === 'app' ? 'window' : b.kind === 'tab' ? 'split-h' : 'folder');
 const bmChildren = (f) => S.bookmarks.filter((b) => b.folder === f.id);
 const bmOpen = (b) => S.tabs.some((t) => t.bookmarkId === b.id);
+function sortBookmarks() {
+  S.bookmarks = spaceSort(S.bookmarks, S.tabs.map((t) => t.bookmarkId));
+  let n = 0;
+  for (const b of S.bookmarks) if (b.kind !== 'folder') b.num = ++n;
+}
 function renderBookmarks() {
+  sortBookmarks();
+  renderSpaceButton();
   const bl = $('#bm-list');
   bl.replaceChildren();
   bl.oncontextmenu = (e) => {
@@ -216,9 +224,10 @@ function renderBookmarks() {
     e.preventDefault();
     popup([
       { label: 'New folder', icon: 'folder', run: () => newBmFolder() },
-      { label: 'Open bookmark file folder', icon: 'file', run: openBmDir },
+      { label: 'Open space folder', icon: 'file', run: openBmDir },
     ], e.clientX, e.clientY);
   };
+  bmDropTarget(bl, null);
   if (!S.bookmarks.length) bl.append(h('div', { class: 'empty' }, 'Add with ☆ on a pane'));
   const cur = activeTab()?.bookmarkId;
   for (const b of S.bookmarks) {
@@ -234,13 +243,11 @@ function renderBookmarks() {
           popup([{ header: b.title }, ...(kids.length ? kids.map((k) => ({ label: k.title || k.target, icon: bmIcon(k), run: () => openBookmark(k) })) : [{ label: '(empty)', disabled: true, run: () => {} }])], r.right + 4, r.top);
           return;
         }
-        b.open = !b.open;
-        saveBookmarks();
-        renderSidebar();
+        setFolderOpen(b, !b.open);
       },
       oncontextmenu: (e) => { e.preventDefault(); bmFolderMenu(b, e.clientX, e.clientY); },
     }, h('span', { class: 'chev' }, b.open ? '▾' : '▸'), ico('folder'), h('span', { class: 'label' }, b.title), kids.some(bmOpen) ? h('span', { class: 'badge' }, '●') : null);
-    bmDraggable(el, b);
+    bmDropTarget(el, b);
     bl.append(el);
     if (b.open) for (const k of kids) bl.append(bmRow(k, cur, true));
   }
@@ -253,101 +260,70 @@ function bmRow(b, cur, inFolder = false) {
     onclick: () => openBookmark(b),
     oncontextmenu: (e) => { e.preventDefault(); bmMenu(b, e.clientX, e.clientY); },
   }, h('span', { class: 'num', title: `Bookmark b${b.num} (launcher: b${b.num})` }, b.num ? 'b' + b.num : ''), ico(bmIcon(b)), h('span', { class: 'label' }, b.title || b.target), open ? h('span', { class: 'badge' }, '●') : null);
-  bmDraggable(el, b);
+  el.draggable = true;
+  el.ondragstart = (e) => { sbDrag = { bm: b }; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); };
+  el.ondragend = () => { sbDrag = null; document.querySelectorAll('#sidebar .drop-in, #sidebar .dragging').forEach((z) => z.classList.remove('drop-in', 'dragging')); };
+  bmDropTarget(el, inFolder ? S.bookmarks.find((f) => f.id === b.folder) : null);
   return el;
 }
+// ブックマークのドラッグ。フォルダ(またはその中の行)に落とすとそのフォルダへ、フォルダの外の行・空いた所に落とすとスペースの直下へ動かす
+function bmDropTarget(el, folder) {
+  const ok = () => {
+    const x = sbDrag?.bm;
+    return !!x && x.folder !== (folder ? folder.id : '');
+  };
+  el.ondragover = (e) => {
+    if (!ok()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    el.classList.add('drop-in');
+  };
+  el.ondragleave = () => el.classList.remove('drop-in');
+  el.ondrop = (e) => {
+    if (!ok()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.remove('drop-in');
+    moveBm(sbDrag.bm, folder);
+  };
+}
 function bmMenu(b, x, y) {
-  const tab = b.kind === 'tab' ? S.tabs.find((t) => t.bookmarkId === b.id) : null;
+  const tab = S.tabs.find((t) => t.bookmarkId === b.id);
   popup([
     { label: 'Rename', icon: 'text', run: () => renameBookmark(b) },
     { label: 'Move to folder…', icon: 'folder', run: () => moveToFolderMenu(b, x, y) },
-    { label: `Change number… (now b${b.num})`, icon: 'text', run: () => renumberBookmark(b) },
-    tab ? { label: 'Overwrite with current layout', icon: 'split-h', run: () => { b.root = serNode(tab.root); b.target = layoutLabel(b.root); saveBookmarks(); toast('Overwritten with current layout'); } } : null,
+    tab ? { label: 'Overwrite with current layout', icon: 'split-h', run: () => overwriteBmFile(tab) } : null,
+    { label: 'Show in folder', icon: 'file', run: () => openTab('files', { path: dirName(b.id) }) },
     { sep: true },
-    { label: 'Export to file', icon: 'file', run: () => exportBookmark(b, false) },
-    { label: 'Move to file (remove from sidebar)', icon: 'file', run: () => exportBookmark(b, true) },
-    { sep: true },
-    { label: 'Delete', icon: 'close', danger: true, run: () => { S.bookmarks = S.bookmarks.filter((z) => z !== b); saveBookmarks(); renderSidebar(); } },
+    { label: 'Delete (move to trash)', icon: 'close', danger: true, run: () => deleteBookmark(b) },
   ].filter(Boolean), x, y);
 }
 function moveToFolderMenu(b, x, y) {
   const folders = S.bookmarks.filter((f) => f.kind === 'folder');
   popup([
     { header: 'Move to folder' },
-    ...folders.map((f) => ({ label: f.title, icon: 'folder', disabled: b.folder === f.id, run: () => moveBm(b, f, 'into') })),
+    ...folders.map((f) => ({ label: f.title, icon: 'folder', disabled: b.folder === f.id, run: () => moveBm(b, f) })),
     folders.length ? { sep: true } : null,
-    { label: 'Move into new folder', icon: 'plus', run: async () => { const f = await newBmFolder(); if (f) moveBm(b, f, 'into'); } },
-    b.folder ? { label: 'Remove from folder', icon: 'up', run: () => moveBm(b, S.bookmarks.find((f) => f.id === b.folder), 'after') } : null,
+    { label: 'Move into new folder', icon: 'plus', run: async () => { const f = await newBmFolder(); if (f) moveBm(b, f); } },
+    b.folder ? { label: 'Remove from folder', icon: 'up', run: () => moveBm(b, null) } : null,
   ].filter(Boolean), x, y);
 }
 function bmFolderMenu(f, x, y) {
   const kids = bmChildren(f);
   popup([
-    { label: f.open ? 'Collapse' : 'Expand', icon: 'folder', run: () => { f.open = !f.open; saveBookmarks(); renderSidebar(); } },
-    { label: `Open all (${kids.length})`, icon: 'plus', disabled: !kids.length, run: () => kids.forEach((k) => openBookmark(k)) },
+    { label: f.open ? 'Collapse' : 'Expand', icon: 'folder', run: () => setFolderOpen(f, !f.open) },
+    { label: `Open all (${kids.length})`, icon: 'plus', disabled: !kids.length, run: async () => { for (const k of kids) await openBookmark(k); } },
     { label: 'Rename', icon: 'text', run: () => renameBookmark(f) },
+    { label: 'Show in folder', icon: 'file', run: () => openTab('files', { path: f.id }) },
     { sep: true },
-    // 中のブックマークは消さずに、フォルダのあった場所へ出す
-    { label: 'Delete folder (keep contents)', icon: 'close', danger: true, run: () => { for (const k of kids) k.folder = ''; S.bookmarks = S.bookmarks.filter((z) => z !== f); saveBookmarks(); renderSidebar(); } },
+    // 中のブックマークは消さずにスペースの直下へ出してから、フォルダをゴミ箱へ
+    { label: 'Delete folder (keep contents)', icon: 'close', danger: true, run: () => deleteBmFolder(f) },
   ], x, y);
 }
-async function newBmFolder() {
-  const name = await askText('Folder name', 'New folder');
-  if (name == null || !name.trim()) return null;
-  const f = { id: 'b' + Date.now().toString(36), kind: 'folder', title: name.trim(), open: true };
-  S.bookmarks.push(f);
-  saveBookmarks();
-  renderSidebar();
-  return f;
-}
-// x を y の前・後ろ・中(y がフォルダの時)へ動かす。並びは S.bookmarks の順で、フォルダの中身もその順に出る
-function moveBm(x, y, where) {
-  const L = S.bookmarks;
-  L.splice(L.indexOf(x), 1);
-  if (where === 'into') {
-    x.folder = y.id;
-    y.open = true;
-    L.push(x);
-  } else {
-    x.folder = y.kind === 'folder' ? '' : y.folder || '';
-    L.splice(L.indexOf(y) + (where === 'after' ? 1 : 0), 0, x);
-  }
-  saveBookmarks();
-  renderSidebar();
-}
-// ブックマークのドラッグ。フォルダの行の真ん中に落とすと中へ、上下の端なら前後へ。フォルダはフォルダの中へは入れない
-function bmDraggable(el, b) {
-  el.draggable = true;
-  el.ondragstart = (e) => { sbDrag = { list: S.bookmarks, item: b }; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); };
-  el.ondragend = () => { sbDrag = null; document.querySelectorAll('#sidebar .drop-a, #sidebar .drop-b, #sidebar .drop-in, #sidebar .dragging').forEach((z) => z.classList.remove('drop-a', 'drop-b', 'drop-in', 'dragging')); };
-  const where = (e) => {
-    const x = sbDrag?.list === S.bookmarks ? sbDrag.item : null;
-    if (!x || x === b || (x.kind === 'folder' && b.folder)) return null;
-    const r = el.getBoundingClientRect();
-    const t = (e.clientY - r.top) / r.height;
-    if (b.kind === 'folder' && x.kind !== 'folder' && t > 0.25 && t < 0.75) return 'into';
-    return t > 0.5 ? 'after' : 'before';
-  };
-  el.ondragover = (e) => {
-    const w = where(e);
-    if (!w) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    el.classList.toggle('drop-a', w === 'before');
-    el.classList.toggle('drop-b', w === 'after');
-    el.classList.toggle('drop-in', w === 'into');
-  };
-  el.ondragleave = () => el.classList.remove('drop-a', 'drop-b', 'drop-in');
-  el.ondrop = (e) => {
-    const w = where(e);
-    if (!w) return;
-    e.preventDefault();
-    moveBm(sbDrag.item, b, w);
-  };
-}
 
-// ---- 番号(名札)。タブは開いた時に空いている一番小さい番号(全部の画面の窓で重ならない。main.js が振る)、
-// ブックマークは b1, b2… で、どちらも並べ替えても変わらない。ランチャーで「3」「b3」、Ctrl+1〜9、prelude.sh tab 3 で呼ぶ
+// ---- 番号(名札)。タブは開いた時に空いている一番小さい番号(全部の画面の窓で重ならない。main.js が振る)で、並べ替えても変わらない。
+// ブックマークは b1, b2… で、サイドバーの並び順(sortBookmarks)。ランチャーで「3」「b3」、Ctrl+1〜9、prelude.sh tab 3 で呼ぶ
 const reportNums = () => api.tab.nums(S.tabs.map((t) => t.num).filter(Boolean));
 async function renumberTab(tab) {
   const v = await askText('Tab number', String(tab.num));
@@ -363,17 +339,6 @@ async function renumberTab(tab) {
 function gotoTabNum(n) {
   const tab = S.tabs.find((t) => t.num === n);
   if (tab) showTab(tab); else api.tab.goto(String(n)); // 別の画面の窓にあれば、その窓が前に出て切り替える
-}
-const nextBmNum = () => { const used = new Set(S.bookmarks.map((b) => b.num)); let n = 1; while (used.has(n)) n++; return n; };
-async function renumberBookmark(b) {
-  const v = await askText('Bookmark number (the digits after b)', String(b.num));
-  const n = parseInt(String(v).replace(/^b/i, ''), 10);
-  if (!(n > 0) || n === b.num) return;
-  const other = S.bookmarks.find((x) => x.num === n);
-  if (other) other.num = b.num;
-  b.num = n;
-  saveBookmarks();
-  renderSidebar();
 }
 api.tab.onGoto(({ bookmark, num, missing }) => {
   if (missing) { toast(`No tab ${num}`); return; }
@@ -400,10 +365,9 @@ function tabMenu(tab, x, y) {
     web.length ? { label: muted ? 'Unmute' : 'Mute', icon: muted ? 'volume' : 'volume-off', run: () => setMuted(ls, !muted) } : null,
     { label: 'Duplicate', icon: 'plus', run: () => duplicateTab(tab) },
     { label: `Change number… (now ${tab.num})`, icon: 'text', run: () => renumberTab(tab) },
-    ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'Add bookmark', icon: 'bookmark', run: () => addBookmark(l) } : null,
+    ['web', 'files', 'app'].includes(l.type) && leafPlace(l) && l.mode !== 'save' ? { label: 'Add bookmark', icon: 'bookmark', run: () => addBookmark(l, tab) } : null,
     ls.length > 1 ? { label: 'Bookmark whole layout', icon: 'split-h', run: () => addLayoutBookmark(tab) } : null,
-    { label: 'Save layout to file', icon: 'file', run: () => saveTabToFile(tab) },
-    tab.bmFile ? { label: `Overwrite file (${bmFileShort(tab.bmFile)}) with current layout`, icon: 'file', run: () => overwriteBmFile(tab) } : null,
+    tab.bookmarkId || tab.bmFile ? { label: `Overwrite ${tab.bookmarkId ? 'bookmark' : 'file'} (${bmFileShort(tab.bookmarkId || tab.bmFile)}) with current layout`, icon: 'file', run: () => overwriteBmFile(tab) } : null,
     others.length ? { sep: true } : null,
     ...others.map((s) => ({ label: `Move to ${s.label}`, icon: 'window', run: () => moveTab(tab, s.key) })),
     { sep: true },
@@ -546,133 +510,263 @@ function setActivePane(tab, leaf) {
   document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('active', p.dataset.id === leaf.id));
 }
 
-// ------------------------------------------------------------------ bookmarks
-// 種類: web / files / app / tab(分割ごとの配置。root は serNode の形)/ folder(1段だけ)。folder はブックマークの入っているフォルダの id
-const bmToJson = (b) => {
-  if (b.kind === 'folder') return { id: b.id, kind: 'folder', title: b.title, open: !!b.open };
-  const o = b.kind === 'app' ? { cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' }
-    : b.kind === 'tab' ? { root: b.root }
-    : { [b.kind === 'web' ? 'url' : 'path']: b.target };
-  return { id: b.id, kind: b.kind, num: b.num, title: b.title, ...(b.folder ? { folder: b.folder } : {}), ...o };
-};
-function loadBookmarks() {
-  S.bookmarks = [];
-  S.foreignBm = [];
-  const src = C.bookmarks || [];
-  const folders = new Set(src.filter((b) => b.kind === 'folder').map((b) => b.id));
-  for (const b of src) {
-    const folder = folders.has(b.folder) ? b.folder : '';
-    if (b.kind === 'folder') S.bookmarks.push({ id: b.id, kind: 'folder', title: b.title || 'Folder', open: !!b.open, folder: '' });
-    else if (b.kind === 'app' && (b.cmd || b.webUrl)) S.bookmarks.push({ id: b.id, kind: 'app', folder, title: b.title || '', target: b.webUrl || b.cmd, cmd: b.cmd || '', cls: b.cls || '', webUrl: b.webUrl || '' });
-    else if (b.kind === 'web' || b.kind === 'files') S.bookmarks.push({ id: b.id, kind: b.kind, folder, title: b.title || '', target: b.url || b.path || '' });
-    else if (b.kind === 'tab' && b.root) S.bookmarks.push({ id: b.id, kind: 'tab', folder, title: b.title || '', root: b.root, target: layoutLabel(b.root) });
-    else { S.foreignBm.push(b); continue; } // Rust版のアプリ取り込みブックマークなどは保持だけする
-    if (b.kind !== 'folder') S.bookmarks[S.bookmarks.length - 1].num = Number(b.num) > 0 ? Number(b.num) : 0;
-  }
-  // 番号の無い(この版より前の)ブックマーク・重なった番号には、空いている番号を振って保存する(主画面の窓だけ)
-  const seen = new Set();
-  let changed = false;
-  for (const b of S.bookmarks) {
-    if (b.kind === 'folder') continue;
-    if (!b.num || seen.has(b.num)) { b.num = 0; b.num = nextBmNum(); changed = true; }
-    seen.add(b.num);
-  }
-  if (changed && !IS_SUB) saveBookmarks();
+// ------------------------------------------------------------------ spaces
+// スペースは「スペースのフォルダ」(設定。既定は ~/スペース)の下のフォルダ1つ(space.js)。中の .prelude がそのスペースのブックマーク
+// (S.bookmarks の id はファイルのフルパス)、サブフォルダがブックマークのフォルダ(id はフォルダのフルパス)。
+// タブはスペースごとに持つ。切り替えると今のタブは全部閉じて(Web もアプリも終わる)、切り替え先で前に開いていたタブを開き直す。
+// ブックマークから開いたタブはそのファイルを tab.bookmarkId に覚えていて、同じブックマークをもう一度開くとそのタブへ移る(1ファイル = 最大1タブ)
+S.space = '';
+S.spaceDir = '';
+S.spaces = [];
+S.wsSpaces = {}; // 今のスペース以外のタブ { 名前: { active, tabs } }
+S.closedBy = {}; // スペースごとの閉じたタブ
+const dirName = (p) => String(p).replace(/\/[^/]*$/, '') || '/';
+async function spaceRoot() {
+  const home = await api.fs.home();
+  const d = String(C.behavior.spaceDir || '').trim().replace(/\/+$/, '');
+  return !d ? home + '/スペース' : d === '~' || d.startsWith('~/') ? home + d.slice(1) : d;
 }
+async function loadSpaceList() {
+  const r = await api.fs.spaceList(await spaceRoot(), SPACE_DEFAULT);
+  if (r.error) toast(`Cannot read the space folder (${r.error})`);
+  S.spaces = (r.names || []).sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
+  if (!S.spaces.length) S.spaces = [SPACE_DEFAULT];
+}
+
+// 今のスペースのフォルダを読み直して S.bookmarks を作る。消えたファイルに結びついていたタブは、ふつうのタブにする
+let scanSeq = 0;
+async function scanSpace() {
+  const seq = ++scanSeq;
+  const dir = S.spaceDir;
+  const [r, home] = await Promise.all([api.fs.spaceRead(dir), api.fs.home()]);
+  if (seq !== scanSeq || dir !== S.spaceDir) return;
+  if (r.error) { toast(`Cannot read space "${S.space}" (${r.error})`); return; }
+  const closed = folderClosed();
+  const list = r.folders.map((n) => ({ id: dir + '/' + n, kind: 'folder', title: n, open: !closed.has(dir + '/' + n), folder: '' }));
+  for (const f of r.files) {
+    let d = null;
+    try { if (!f.error) d = bmFileParse(f.text, home); } catch {}
+    if (!d) continue; // 読めない・形の違うファイルは出さない(フォルダから開くと理由が出る)
+    const title = bmFileShort(f.path);
+    const b = { id: f.path, folder: f.folder ? dir + '/' + f.folder : '', ...bmFileToBookmark(title, d.root), root: d.root };
+    if (b.kind === 'tab') b.target = layoutLabel(d.root);
+    list.push(b);
+  }
+  S.bookmarks = list;
+  const ids = new Set(list.map((b) => b.id));
+  const gone = S.tabs.filter((t) => t.bookmarkId && !ids.has(t.bookmarkId));
+  for (const t of gone) t.bookmarkId = null;
+  renderSidebar();
+  if (gone.length) scheduleSave();
+}
+// フォルダの中が変わったら読み直す(サブフォルダも見る)
+let spaceWatched = [];
+function watchSpace() {
+  for (const d of spaceWatched) api.fs.unwatch('space:' + d);
+  spaceWatched = [S.spaceDir, ...S.bookmarks.filter((b) => b.kind === 'folder').map((f) => f.id)];
+  for (const d of spaceWatched) api.fs.watch('space:' + d, d);
+}
+let spaceScanTimer = 0;
+function spaceOnChanged() {
+  clearTimeout(spaceScanTimer);
+  spaceScanTimer = setTimeout(async () => { await scanSpace(); watchSpace(); }, 150);
+}
+
+// 閉じてあるフォルダ(フルパス)。この PC の画面の中だけで覚える
+function folderClosed() {
+  try { return new Set(JSON.parse(localStorage.getItem('bmClosed') || '[]')); } catch { return new Set(); }
+}
+function setFolderOpen(f, open) {
+  const s = folderClosed();
+  if (open) s.delete(f.id); else s.add(f.id);
+  try { localStorage.setItem('bmClosed', JSON.stringify([...s])); } catch {}
+  f.open = open;
+  renderSidebar();
+}
+
+// スペースに入る(起動時・切り替え)。保存してあったタブを開き直す
+async function enterSpace(name) {
+  S.space = name;
+  S.spaceDir = (await spaceRoot()) + '/' + name;
+  S.closed = S.closedBy[name] || [];
+  S.bookmarks = [];
+  await scanSpace();
+  watchSpace();
+  const saved = S.wsSpaces[name];
+  delete S.wsSpaces[name];
+  if (saved) restore(saved);
+  if (!S.tabs.length) openTab(C.behavior.startKind);
+  else render();
+  if (S.appSupported) for (const t of S.tabs) for (const l of leaves(t.root)) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
+}
+let switching = false;
+async function switchSpace(name) {
+  if (switching || name === S.space) return;
+  switching = true;
+  try {
+    clearTimeout(saveTimer);
+    S.wsSpaces[S.space] = tabsData();
+    S.closedBy[S.space] = S.closed;
+    for (const t of S.tabs) leaves(t.root).forEach(destroyLeaf);
+    S.tabs.length = 0;
+    S.active = null;
+    reportNums(); // 閉じたタブの番号を空けて、切り替え先のタブが 1 から使えるようにする
+    await enterSpace(name);
+    toast(`Space: ${name}`);
+  } finally { switching = false; }
+}
+async function spaceMenu(x, y) {
+  await loadSpaceList();
+  popup([
+    { header: 'Spaces' },
+    ...S.spaces.map((n) => ({ label: n, checked: n === S.space, run: () => switchSpace(n) })),
+    { sep: true },
+    { label: 'New space…', icon: 'plus', run: newSpace },
+    { label: `Rename "${S.space}"…`, icon: 'text', run: renameSpace },
+    { label: 'Open space folder', icon: 'file', run: openBmDir },
+  ], x, y);
+}
+function renderSpaceButton() {
+  const b = $('#space-btn');
+  if (!b) return;
+  b.replaceChildren(h('span', { class: 'label' }, S.space || ''), h('span', { class: 'chev' }, '▾'));
+  b.title = `Space: ${S.space} (click to switch)`;
+}
+async function newSpace() {
+  const name = await askText('Space name', '');
+  if (name == null || !name.trim()) return;
+  const r = await api.fs.mkdir(await spaceRoot(), name.trim());
+  if (!r.ok) { toast(`Cannot create (${r.error})`); return; }
+  await loadSpaceList();
+  switchSpace(r.name);
+}
+async function renameSpace() {
+  const name = await askText('Space name', S.space);
+  if (name == null || !name.trim() || name.trim() === S.space) return;
+  const old = S.spaceDir;
+  const r = await api.fs.rename(old, name.trim());
+  if (!r.ok) { toast(`Cannot rename (${r.error})`); return; }
+  S.closedBy[r.name] = S.closed;
+  delete S.closedBy[S.space];
+  S.space = r.name;
+  S.spaceDir = dirName(old) + '/' + r.name;
+  relinkTabs(old, S.spaceDir, true);
+  await loadSpaceList();
+  await scanSpace();
+  watchSpace();
+}
+// ブックマークのファイル・フォルダが動いたので、結びついているタブ(と閉じたタブ)のパスを付け替える。prefix: フォルダごと動いた
+function relinkTabs(from, to, prefix = false) {
+  const map = (id) => (id === from ? to : prefix && id && id.startsWith(from + '/') ? to + id.slice(from.length) : id);
+  for (const t of [...S.tabs, ...S.closed]) t.bookmarkId = map(t.bookmarkId);
+  scheduleSave();
+}
+
+// ------------------------------------------------------------------ bookmarks
+// 種類: web / files / app / tab(分割ごとの配置)。中身は bmfile.js の配置(root)で、開くとこの配置の新しいタブになる。folder はフォルダの id
 // 分割ごとのブックマークの説明(中のペインの名前を | でつなぐ)
 const layoutLabel = (root) => leaves(root).map((l) => (l.type === 'web' ? hostOf(l.url || '') : l.type === 'app' ? l.name : l.type === 'files' || l.type === 'field' ? baseName(l.path || '') : l.type === 'home' ? 'Home' : 'Settings') || l.type).join(' | ');
+// 今のスペースに .prelude を作る。できたファイルのパス(作れなければ null)
+async function saveBmFile(title, root, dir = S.spaceDir) {
+  const r = await api.fs.bmSave(dir, bmFileName(title), bmFileText(title, root, await api.fs.home()));
+  if (r.error) { toast(`Cannot save (${r.error})`); return null; }
+  await scanSpace();
+  return r.path;
+}
 // 今のタブの配置(分割・各ペインの中身)をそのままブックマークにする。開くと同じ配置で開く
-function addLayoutBookmark(tab) {
-  const root = serNode(tab.root);
-  const b = { id: 'b' + Date.now().toString(36), kind: 'tab', num: nextBmNum(), folder: '', title: leaves(tab.root).map(leafTitle).join(' | '), root, target: layoutLabel(root) };
-  S.bookmarks.push(b);
-  if (!tab.bookmarkId) tab.bookmarkId = b.id;
-  saveBookmarks();
-  renderSidebar();
+async function addLayoutBookmark(tab) {
+  const p = await saveBmFile(leaves(tab.root).map(leafTitle).join(' | '), serNode(tab.root));
+  if (!p) return;
+  if (!tab.bookmarkId) { tab.bookmarkId = p; tab.bmFile = null; renderSidebar(); scheduleSave(); }
   toast('Bookmarked whole layout');
 }
-const saveBookmarks = () => api.config.set('bookmarks', [...S.bookmarks.map(bmToJson), ...S.foreignBm]);
-
-function addBookmark(leaf) {
-  if (leaf.type === 'app') {
-    const target = leaf.webUrl || leaf.cmd;
-    if (!target) return;
-    if (S.bookmarks.some((b) => b.kind === 'app' && b.target === target)) { toast('Already bookmarked'); return; }
-    S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind: 'app', num: nextBmNum(), title: leaf.name || target, target, cmd: leaf.webUrl ? '' : leaf.cmd, cls: leaf.webUrl ? '' : leaf.cls, webUrl: leaf.webUrl || '' });
-    saveBookmarks();
-    renderSidebar();
-    toast('Bookmark added');
-    return;
-  }
-  const kind = leaf.type === 'web' ? 'web' : 'files';
-  const target = kind === 'web' ? leaf.url : leaf.path;
+// ペイン1つのブックマーク。そのペインだけのタブなら、タブもブックマークに結びつける
+async function addBookmark(leaf, tab) {
+  const kind = leaf.type === 'app' ? 'app' : leaf.type === 'web' ? 'web' : 'files';
+  const target = kind === 'app' ? leaf.webUrl || leaf.cmd : kind === 'web' ? leaf.url : leaf.path;
   if (!target) return;
   if (S.bookmarks.some((b) => b.kind === kind && b.target === target)) { toast('Already bookmarked'); return; }
-  S.bookmarks.push({ id: 'b' + Date.now().toString(36), kind, num: nextBmNum(), title: (kind === 'web' ? leaf.title || hostOf(target) : baseName(target)) || target, target });
-  saveBookmarks();
-  renderSidebar();
+  const title = (kind === 'app' ? leaf.name : kind === 'web' ? leaf.title || hostOf(target) : baseName(target)) || target;
+  const p = await saveBmFile(title, serNode(leaf));
+  if (!p) return;
+  if (tab && tab.root === leaf && !tab.bookmarkId) { tab.bookmarkId = p; tab.bmFile = null; renderSidebar(); scheduleSave(); }
   toast('Bookmark added');
 }
 
-function openBookmark(b) {
+// 新しいタブを置く位置(設定「新しいタブの位置」。既定は Arc と同じ一番上)
+function newTabIndex() {
+  const pos = C.tabs?.newTabPosition;
+  const cur = S.tabs.findIndex((t) => t.id === S.active);
+  return pos === 'top' ? 0 : pos === 'next' && cur >= 0 ? cur + 1 : S.tabs.length;
+}
+async function openBookmark(b) {
   const tab = S.tabs.find((t) => t.bookmarkId === b.id);
   if (tab) { showTab(tab); return; } // 1ブックマーク = 最大1タブ
   if (b.kind === 'folder') return;
-  if (b.kind === 'tab') { insertTab(b.root, { bookmarkId: b.id, index: 0 }); return; }
-  if (b.kind === 'app') {
-    const t = openTab('app', { cmd: b.cmd, cls: b.cls, name: b.title, webUrl: b.webUrl, bookmarkId: b.id });
-    startApp(t.root, b.cmd, b.cls, b.title);
-    return;
+  const root = await checkBmCommands(b.root, b.title);
+  if (!root || S.tabs.some((t) => t.bookmarkId === b.id)) return;
+  insertTab(root, { bookmarkId: b.id, index: newTabIndex() });
+}
+
+async function renameBookmark(b) {
+  const name = await askText(b.kind === 'folder' ? 'Folder name' : 'Bookmark name', b.title);
+  if (name == null || !name.trim() || name.trim() === b.title) return;
+  const r = await api.fs.rename(b.id, b.kind === 'folder' ? name.trim() : bmFileName(name.trim()));
+  if (!r.ok) { toast(`Cannot rename (${r.error})`); return; }
+  relinkTabs(b.id, dirName(b.id) + '/' + r.name, b.kind === 'folder');
+  await scanSpace();
+  if (b.kind === 'folder') watchSpace();
+}
+// folder: 動かす先のフォルダ(null ならスペースの直下)
+async function moveBm(b, folder) {
+  const r = await api.fs.transfer('move', [b.id], folder ? folder.id : S.spaceDir);
+  if (!r.ok) { toast(`Cannot move (${r.errors.join(', ')})`); return; }
+  relinkTabs(b.id, (folder ? folder.id : S.spaceDir) + '/' + r.names[0]);
+  if (folder && !folder.open) setFolderOpen(folder, true);
+  await scanSpace();
+}
+async function deleteBookmark(b) {
+  const r = await api.fs.remove([b.id], false);
+  if (!r.ok) { toast(`Cannot delete (${r.errors.join(', ')})`); return; }
+  await scanSpace();
+  toast(`Moved to trash: ${b.title}`);
+}
+async function newBmFolder() {
+  const name = await askText('Folder name', 'New folder');
+  if (name == null || !name.trim()) return null;
+  const r = await api.fs.mkdir(S.spaceDir, name.trim());
+  if (!r.ok) { toast(`Cannot create (${r.error})`); return null; }
+  await scanSpace();
+  watchSpace();
+  return S.bookmarks.find((f) => f.id === S.spaceDir + '/' + r.name) || null;
+}
+async function deleteBmFolder(f) {
+  for (const k of bmChildren(f)) {
+    const r = await api.fs.transfer('move', [k.id], S.spaceDir);
+    if (!r.ok) { toast(`Cannot move (${r.errors.join(', ')})`); await scanSpace(); return; }
+    relinkTabs(k.id, S.spaceDir + '/' + r.names[0]);
   }
-  openTab(b.kind, { url: b.target, path: b.target, bookmarkId: b.id });
+  const r = await api.fs.remove([f.id], false);
+  if (!r.ok) toast(`Cannot delete (${r.errors.join(', ')})`);
+  await scanSpace();
+  watchSpace();
 }
 
 // ------------------------------------------------------------------ bookmark files
-// ブックマークをファイル(.prelude。形は bmfile.js)にして、普通のフォルダ(設定「ブックマークのファイルの保存先」。既定は ~/ブックマーク)にしまう。
-// あまり使わないものはサイドバーから外してファイルにしておき、フォルダ・フィールドから開く(開くと同じ配置の新しいタブ)。
-// ファイルから開いたタブはそのファイルを覚えていて(tab.bmFile)、同じファイルをもう一度開くとそのタブへ移る。
-async function bmFileDir() {
-  const home = await api.fs.home();
-  const d = String(C.behavior.bookmarkDir || '').trim();
-  return !d ? home + '/ブックマーク' : d === '~' || d.startsWith('~/') ? home + d.slice(1) : d;
-}
+// .prelude はスペースの外(人からもらったファイルなど)にもあって、フォルダ・フィールドから開ける(開くと同じ配置の新しいタブ)。
+// スペースの外のファイルから開いたタブはそのファイルを覚えていて(tab.bmFile)、同じファイルをもう一度開くとそのタブへ移る。
 const bmFileShort = (p) => baseName(p).replace(/\.prelude$/i, '');
-async function saveBmFile(title, root) {
-  const r = await api.fs.bmSave(await bmFileDir(), bmFileName(title), bmFileText(title, root, await api.fs.home()));
-  if (r.error) toast(`Cannot save (${r.error})`);
-  return r.path || null;
-}
-// サイドバーのブックマークをファイルにする。remove: サイドバーから外す(開いているタブはファイルのタブになる)
-async function exportBookmark(b, remove) {
-  const root = bmFileRoot(b);
-  if (!root) return;
-  const p = await saveBmFile(b.title || b.target, root);
-  if (!p) return;
-  if (remove) {
-    S.bookmarks = S.bookmarks.filter((z) => z.id !== b.id); // 書いている間に設定の知らせで S.bookmarks が作り直されていることがあるので、id で比べる
-    for (const t of S.tabs) if (t.bookmarkId === b.id) Object.assign(t, { bookmarkId: null, bmFile: p });
-    saveBookmarks();
-    renderSidebar();
-    scheduleSave();
-  }
-  toast(`${remove ? 'Moved to file' : 'Exported to file'}: ${bmFileShort(p)}`);
-}
-// タブの配置をファイルにする
-async function saveTabToFile(tab) {
-  const p = await saveBmFile(leaves(tab.root).map(leafTitle).join(' | '), serNode(tab.root));
-  if (!p) return;
-  tab.bmFile = p;
-  scheduleSave();
-  toast(`Saved to file: ${bmFileShort(p)}`);
-}
-// ファイルから開いたタブの今の配置で、そのファイルを書き直す(タイトルはファイルのものを残す)
+// タブが結びついているファイル(ブックマークか、スペースの外のファイル)を今の配置で書き直す(タイトルはファイルのものを残す)
 async function overwriteBmFile(tab) {
+  const file = tab.bookmarkId || tab.bmFile;
+  if (!file) return;
   const home = await api.fs.home();
-  const r = await api.fs.bmRead(tab.bmFile);
-  let title = bmFileShort(tab.bmFile);
+  const r = await api.fs.bmRead(file);
+  let title = bmFileShort(file);
   try { title = bmFileParse(r.text, home).title || title; } catch {}
-  const w = await api.fs.bmWrite(tab.bmFile, bmFileText(title, serNode(tab.root), home));
+  const w = await api.fs.bmWrite(file, bmFileText(title, serNode(tab.root), home));
   toast(w.error ? `Cannot save (${w.error})` : 'Overwritten with current layout');
+  if (!w.error && tab.bookmarkId) scanSpace();
 }
 // ファイルを読んで、起動コマンドを確かめた配置 { title, root } にする。開かない時は null
 async function readBmFile(full) {
@@ -704,33 +798,47 @@ async function checkBmCommands(root, name) {
   return v === 'run' ? root : v === 'strip' ? bmFileStripCommands(root, unknown) : null;
 }
 async function openBmFile(full) {
+  const b = S.bookmarks.find((x) => x.id === full);
+  if (b) { openBookmark(b); return; } // 今のスペースのブックマーク
   const open = S.tabs.find((t) => t.bmFile === full);
   if (open) { showTab(open); return; } // 1ファイル = 最大1タブ
   const d = await readBmFile(full);
-  if (d) insertTab(d.root, { bmFile: full, index: 0 });
+  if (d) insertTab(d.root, { bmFile: full, index: newTabIndex() });
 }
-// ファイルをサイドバーのブックマークに入れる(ファイルは残す)
+// ファイルを今のスペースに写す(元のファイルは残す)
 async function importBmFile(full) {
-  const d = await readBmFile(full);
-  if (!d) return;
-  const b = { id: 'b' + Date.now().toString(36), num: nextBmNum(), folder: '', ...bmFileToBookmark(d.title, d.root) };
-  if (b.kind === 'tab') b.target = layoutLabel(b.root);
-  else if (S.bookmarks.some((z) => z.kind === b.kind && z.target === b.target)) { toast('Already bookmarked'); return; }
-  S.bookmarks.push(b);
-  saveBookmarks();
-  renderSidebar();
-  toast('Bookmark added');
+  if (dirName(full) === S.spaceDir || dirName(dirName(full)) === S.spaceDir) { toast('Already in this space'); return; }
+  const r = await api.fs.bmRead(full);
+  if (r.error) { toast(`Cannot open: ${baseName(full)} (${r.error})`); return; }
+  try { bmFileParse(r.text, await api.fs.home()); } catch (e) { toast(`Cannot open: ${baseName(full)} (${e.message})`); return; }
+  const w = await api.fs.bmSave(S.spaceDir, baseName(full), r.text);
+  if (w.error) { toast(`Cannot save (${w.error})`); return; }
+  await scanSpace();
+  toast(`Added to space "${S.space}"`);
 }
-async function openBmDir() {
-  const dir = await bmFileDir();
-  const r = await api.fs.bmMkdir(dir);
-  if (r.error) { toast(`Cannot open (${r.error})`); return; }
-  openTab('files', { path: dir });
-}
+function openBmDir() { openTab('files', { path: S.spaceDir }); }
 
-async function renameBookmark(b) {
-  const name = await askText(b.kind === 'folder' ? 'Folder name' : 'Bookmark name', b.title);
-  if (name != null && name.trim()) { b.title = name.trim(); saveBookmarks(); renderSidebar(); }
+// 0.10.0 までのサイドバーのブックマーク(設定の bookmarks)を、既定のスペースのファイルにする(主画面の窓で1回だけ)。
+// 元のブックマークは設定の bookmarksBackup に残す。戻り値: 古い id → ファイルのパス
+async function migrateBookmarks() {
+  const old = C.bookmarks || [];
+  if (IS_SUB || !old.length) return {};
+  const m = spaceMigrate(old, bmFileRoot);
+  if (!m.items.length) return {};
+  const dir = (await spaceRoot()) + '/' + SPACE_DEFAULT;
+  const home = await api.fs.home();
+  const safe = (n) => bmFileName(n).replace(/\.prelude$/, '');
+  const map = {};
+  for (const it of m.items) {
+    const r = await api.fs.bmSave(it.folder ? dir + '/' + safe(it.folder) : dir, bmFileName(it.title), bmFileText(it.title, it.root, home));
+    if (r.error) { toast(`Cannot move bookmarks to space (${r.error})`, 8000); return {}; }
+    map[it.id] = r.path;
+  }
+  await api.config.set('bookmarksMigrated', { ...(C.bookmarksMigrated || {}), ...map });
+  await api.config.set('bookmarksBackup', old);
+  await api.config.set('bookmarks', m.rest);
+  toast(`Moved ${m.items.length} bookmarks to space "${SPACE_DEFAULT}"`, 6000);
+  return map;
 }
 
 // ------------------------------------------------------------------ popups / modal / toast
@@ -927,7 +1035,7 @@ function commonButtons(tab, leaf) {
     realBrowser,
     splitBtn('split-h', 'Split left/right', 'row'),
     splitBtn('split-v', 'Split top/bottom', 'col'),
-    leaf.type !== 'settings' && leaf.type !== 'home' && (leaf.type !== 'app' || leaf.running) && leaf.mode !== 'save' ? btn('bookmark', 'Add bookmark', () => addBookmark(leaf)) : null,
+    leaf.type !== 'settings' && leaf.type !== 'home' && (leaf.type !== 'app' || leaf.running) && leaf.mode !== 'save' ? btn('bookmark', 'Add bookmark', () => addBookmark(leaf, tab)) : null,
     btn('close', 'Close', () => closeLeaf(tab, leaf)),
   ].filter(Boolean);
 }
@@ -1137,19 +1245,21 @@ const deserNode = (n) => (n.k === 'split'
   ? { k: 'split', dir: n.dir === 'col' ? 'col' : 'row', ratio: clamp(Number(n.ratio) || 0.5, 0.1, 0.9), a: deserNode(n.a), b: deserNode(n.b) }
   : makeLeaf(['web', 'files', 'settings', 'app', 'home', 'field'].includes(n.type) ? n.type : 'files', { url: n.url, path: n.path, cmd: n.cmd, cls: n.cls, name: n.name, icon: n.icon, webUrl: n.webUrl, sort: n.sort }));
 
+// 保存はスペースごと(space.js の spaceWsSave)。今のスペースのタブと、ほかのスペースで開いていたタブ(S.wsSpaces)を窓ごとのファイルへ
+const tabsData = () => ({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ num: t.num, bookmarkId: t.bookmarkId || undefined, bmFile: t.bmFile || undefined, root: serNode(t.root) })) });
 let saveTimer = 0;
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    api.ws.save({ active: Math.max(0, S.tabs.findIndex((t) => t.id === S.active)), tabs: S.tabs.map((t) => ({ num: t.num, bookmarkId: t.bookmarkId, bmFile: t.bmFile || undefined, root: serNode(t.root) })) });
-  }, 600);
+  if (!S.space) return; // 起動中(スペースに入る前)は保存しない
+  saveTimer = setTimeout(() => api.ws.save(spaceWsSave(S.space, tabsData(), S.wsSpaces)), 600);
 }
 
 function restore(ws) {
+  const ids = new Set(S.bookmarks.map((b) => b.id));
   for (const t of ws.tabs) {
     try {
       const root = deserNode(t.root);
-      S.tabs.push({ id: nid('t'), num: api.tab.allocNum(t.num || 0), root, activePane: leaves(root)[0].id, bookmarkId: t.bookmarkId || null, bmFile: typeof t.bmFile === 'string' ? t.bmFile : null });
+      S.tabs.push({ id: nid('t'), num: api.tab.allocNum(t.num || 0), root, activePane: leaves(root)[0].id, bookmarkId: ids.has(t.bookmarkId) ? t.bookmarkId : null, bmFile: typeof t.bmFile === 'string' ? t.bmFile : null });
     } catch {}
   }
   if (S.tabs.length) S.active = S.tabs[clamp(ws.active | 0, 0, S.tabs.length - 1)].id;
@@ -1263,19 +1373,29 @@ api.tab.onEvacuate((to) => {
   }
   reportNums();
   clearTimeout(saveTimer);
-  api.ws.save({ active: 0, tabs: [] }); // 次にこの画面をつないだときは新しいタブから始める
+  api.ws.save(spaceWsSave(S.space, { active: 0, tabs: [] }, S.wsSpaces)); // 次にこの画面をつないだときは新しいタブから始める
   api.tab.evacuated();
 });
 api.win.onScreens((list) => { S.screens = list || []; });
 
 api.config.onChanged((values) => {
   const hidden = C.behavior.showHidden;
+  const spaceDir = C.behavior.spaceDir;
   C = values;
   if (hidden !== C.behavior.showHidden) { reloadAllFiles(); fieldReloadAll(); }
   applyTheme();
-  loadBookmarks();
   renderSidebar();
   syncViews();
+  // スペースのフォルダが変わったら、同じ名前のスペース(無ければ Main など)を新しい場所で読む。タブはそのまま
+  if (spaceDir !== C.behavior.spaceDir && S.space) {
+    (async () => {
+      await loadSpaceList();
+      S.space = spacePick(S.space, S.spaces);
+      S.spaceDir = (await spaceRoot()) + '/' + S.space;
+      await scanSpace();
+      watchSpace();
+    })();
+  }
 });
 
 // ------------------------------------------------------------------ boot
@@ -1290,7 +1410,6 @@ async function boot() {
   C = cfg.values;
   SCHEMA = cfg.schema;
   applyTheme();
-  loadBookmarks();
   initFiles();
   S.appSupported = await api.app.supported();
   api.dev.info().then((d) => { S.devSelf = d.self; }); // 自分が開発版なら、開発版を開くコマンドは出さない
@@ -1310,6 +1429,7 @@ async function boot() {
     IS_SUB ? null : { label: 'Settings', icon: 'settings', run: () => openSettings() },
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
+  $('#space-btn').onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); spaceMenu(r.left, r.bottom + 2); };
   // 上のバー: 左の PRELUDE を押すとサイドバーを切り替える。右は時計などのボタン(bar.js)
   Object.assign($('#top-menu'), { title: sidebarTip(), onclick: cycleSidebar });
   initBar();
@@ -1326,11 +1446,13 @@ async function boot() {
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closePopup(); closeLauncher(); closeQuick(); closeNotifications(); } });
 
   reportNums(); // 再読込の前に使っていた番号を main.js から消してから、保存した番号で戻す
-  if (ws && Array.isArray(ws.tabs)) restore(ws);
-  if (!S.tabs.length) openTab(C.behavior.startKind);
-  else render();
-  // 前回取り込んでいたアプリを再起動する
-  if (S.appSupported) for (const t of S.tabs) for (const l of leaves(t.root)) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
+  // 保存したタブ(スペースごと)。旧ブックマークをスペースへ移したときは、タブが覚えている古い id をファイルのパスに替える
+  const saved = spaceWsLoad(ws);
+  const moved = { ...(C.bookmarksMigrated || {}), ...(await migrateBookmarks()) };
+  for (const sp of Object.values(saved.spaces)) for (const t of sp.tabs) if (t && moved[t.bookmarkId]) t.bookmarkId = moved[t.bookmarkId];
+  S.wsSpaces = saved.spaces;
+  await loadSpaceList();
+  await enterSpace(spacePick(saved.space, S.spaces)); // 前回のタブを開き直し、取り込んでいたアプリを再起動する
 }
 
 window.__prelude = { S, openTab, splitLeaf, activeTab, activeLeaf, leaves, moveTab }; // デバッグ用

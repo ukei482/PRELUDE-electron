@@ -114,6 +114,9 @@ contextBridge.exposeInMainWorld('preludeApi', {
     bmMkdir: (dir) => ipcRenderer.invoke('fs:bm-mkdir', dir),
     bmWrite: (full, text) => ipcRenderer.invoke('fs:bm-write', full, text),
     bmRead: (full) => ipcRenderer.invoke('fs:bm-read', full),
+    // スペース。{ names } / { files: [{ path, folder, text か error }], folders } か { error }
+    spaceList: (root, fallback) => ipcRenderer.invoke('fs:space-list', root, fallback),
+    spaceRead: (dir) => ipcRenderer.invoke('fs:space-read', dir),
     drives: () => ipcRenderer.invoke('fs:drives'),
     mkdir: (dir, name) => ipcRenderer.invoke('fs:mkdir', dir, name),
     rename: (full, name) => ipcRenderer.invoke('fs:rename', full, name),

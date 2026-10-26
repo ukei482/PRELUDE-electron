@@ -10,7 +10,7 @@
 - `fileops.js` — ファイラの IPC(`fs:*`。一覧・コピー・削除・監視など)
 - `appembed.js` — 外部アプリの窓をペインに取り込む(KWin 経由)
 - `sys/` — バー・トレイ・通知・音量・更新(`sys/update.js`)などシステム連携
-- `src/` — レンダラ。`app.js`(タブ・分割・ペイン)、`files.js`(フォルダ)、`field.js`(フィールド表示)、`fieldlayout.js`(フィールドのカードの配置の計算)、`bmfile.js`(ブックマークのファイル `.prelude` の読み書き)、`history.js`(開いた履歴と点数)、ほか
+- `src/` — レンダラ。`app.js`(タブ・分割・ペイン)、`files.js`(フォルダ)、`field.js`(フィールド表示)、`fieldlayout.js`(フィールドのカードの配置の計算)、`bmfile.js`(ブックマークのファイル `.prelude` の読み書き)、`space.js`(スペース。ブックマークの並び・旧ブックマークの移し方・タブの保存の形)、`history.js`(開いた履歴と点数)、ほか
   - `app.js` 以外は `app.js` より先に読み込まれ、共通関数(`h`、`ico`、`api` など)は呼び出し時に使う
 - `theme/` — ロック画面(kscreenlocker のシェルのパッケージ)と SDDM のテーマ。QML。見た目は `theme/common/Prompt.qml` で共通。入れる/外すのは `scripts/theme.sh`
 - `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)
