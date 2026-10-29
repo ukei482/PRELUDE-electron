@@ -534,7 +534,13 @@ function childEnv() {
 }
 
 const starting = new Set();
-async function launch(paneId, cmd, cls, owner = 'main') {
+// アプリを起動する作業フォルダ。渡されたフォルダ(.prelude の paths.terminal)が無ければホーム
+const workDir = (dir) => {
+  try { if (typeof dir === 'string' && dir.startsWith('/') && fs.statSync(dir).isDirectory()) return dir; } catch {}
+  return os.homedir();
+};
+
+async function launch(paneId, cmd, cls, owner = 'main', cwd = '') {
   if (!supported || panes.has(paneId) || starting.has(paneId) || !String(cmd || '').trim()) return false;
   startMonitor();
   starting.add(paneId);
@@ -542,7 +548,7 @@ async function launch(paneId, cmd, cls, owner = 'main') {
   const old = monitorOk ? [...(await snapshot())] : null;
   starting.delete(paneId);
   if (panes.has(paneId)) return false;
-  const proc = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: childEnv(), cwd: os.homedir() });
+  const proc = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: childEnv(), cwd: workDir(cwd) });
   const e = { proc, cmd, owner, keys: keysOf(cmd, cls), wids: [], owned: new Set(), adopted: [], old, rect: null, launchedAt: uptime(), t0: Date.now(), hadWindow: false, gone: 0 };
   log(`launch ${paneId} ${cmd} keys=${e.keys}`);
   panes.set(paneId, e);
@@ -683,6 +689,7 @@ function browserCmd(url, cls) {
 module.exports = {
   closeAll,
   childEnv,
+  workDir,
   browserCmd,
   hasBrowser,
   supported, setShell, setSubs, setOwner, launch, setBounds, setSuspended, close, shutdown, listApps: apps.list,
