@@ -4,9 +4,9 @@
 //! - `hello` で `subscribe` したつなぎには、すぐに今の `state` を送り、その後は変わるたびに送る
 //! - ソケットは自分だけが使えるようにする(フォルダ 0700・ソケット 0600)
 use crate::embed::{self, Note};
-use crate::recipes;
 use crate::state::{Core, Saved};
-use prelude_proto::{Command, ErrorCode, Event, Hello, Request, Response, MAX_LINE, PROTOCOL, SUPPORTED};
+use crate::{recipes, web};
+use prelude_proto::{Command, ErrorCode, Event, Hello, PaneSpec, Request, Response, WebAction, MAX_LINE, PROTOCOL, SUPPORTED};
 use serde_json::{json, Value};
 use std::future::Future;
 use std::io;
@@ -54,13 +54,26 @@ struct Shared {
     events: broadcast::Sender<Arc<str>>,
     save: Notify,
     embed: Option<embed::Handle>,
+    web: Option<web::Handle>,
 }
 
 impl Shared {
-    /// 取り込みに、今の状態の取り込むペインを送る
+    /// 取り込みと Web のペインに、今の状態を送る
     fn sync_embed(&self, core: &Core) {
         if let Some(e) = &self.embed {
             e.want(core.wants());
+        }
+        if let Some(w) = &self.web {
+            let (wants, dl) = core.web_wants();
+            w.sync(wants, dl);
+        }
+    }
+
+    /// 状態が変わったことを配る。save なら書き出す
+    fn changed(&self, core: &Core, save: bool) {
+        let _ = self.events.send(Shared::state_line(core));
+        if save {
+            self.save.notify_one();
         }
     }
 
@@ -117,12 +130,16 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     let listener = UnixListener::bind(&opt.socket)?;
     std::fs::set_permissions(&opt.socket, std::fs::Permissions::from_mode(0o600))?;
 
+    let tag = instance_tag(&opt.socket);
     let mut core = Core::new(opt.home.clone(), opt.spaces_root.clone(), load_saved(&opt.state_file));
     core.set_recipes(recipes::load(&opt.recipes_dir));
+    core.set_tag(&tag);
     let (events, _) = broadcast::channel(64);
     let (notes_tx, mut notes) = tokio::sync::mpsc::unbounded_channel();
-    let embed = if opt.embed { embed::start(&instance_tag(&opt.socket), notes_tx).await } else { None };
-    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), embed });
+    let embed = if opt.embed { embed::start(&tag, notes_tx.clone()).await } else { None };
+    // Web のペインは窓の取り込みがあるときだけ(窓をペインに置けないと、Chromium の窓がばらばらに出るだけになる)
+    let web = if embed.is_some() { web::start(&tag, notes_tx) } else { None };
+    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), embed, web });
     // 前回のタブのアプリを起動し直す
     shared.sync_embed(&shared.core.lock().unwrap());
 
@@ -132,17 +149,43 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
         tokio::spawn(async move {
             while let Some(n) = notes.recv().await {
                 let core = &mut *shared.core.lock().unwrap();
-                let changed = match n {
+                match n {
                     Note::Exited { pane, had_window } => {
                         if !had_window {
                             eprintln!("prelude-core: no window found for pane {pane}");
                         }
-                        core.note_exited(pane)
+                        if core.note_exited(pane) {
+                            shared.changed(core, false);
+                            shared.sync_embed(core); // 止まった Web のペインを閉じる
+                        }
                     }
-                    Note::Title { pane, title } => core.note_title(pane, title),
-                };
-                if changed {
-                    let _ = shared.events.send(Shared::state_line(core));
+                    Note::Title { pane, title } => {
+                        if core.note_title(pane, title) {
+                            shared.changed(core, false);
+                        }
+                    }
+                    Note::Claimed { pane } => {
+                        if let Some(w) = &shared.web {
+                            w.claimed(pane);
+                        }
+                    }
+                    Note::Web { pane, url, title } => {
+                        let (changed, save) = core.note_web(pane, url, title);
+                        if changed {
+                            shared.changed(core, save);
+                        }
+                    }
+                    Note::OpenTab { url, from: _ } => {
+                        // 新しいタブで開くリンク(設定「リンクの開き方」は UI ができてから)
+                        let pane = PaneSpec { kind: "web".into(), fields: [("url".to_string(), json!(url))].into_iter().collect() };
+                        if core.handle(Command::TabOpen { pane, index: None }).changed {
+                            shared.changed(core, true);
+                            shared.sync_embed(core);
+                        }
+                    }
+                    Note::Download(data) => {
+                        let _ = shared.events.send(line(&Event { event: "download".into(), data }).into());
+                    }
                 }
             }
         })
@@ -178,6 +221,9 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
 
     saver.abort();
     noter.abort();
+    if let Some(w) = &shared.web {
+        w.shutdown().await; // Chromium を閉じる
+    }
     if let Some(e) = &shared.embed {
         e.shutdown().await; // 起動したアプリを閉じる
     }
@@ -251,9 +297,23 @@ async fn serve(stream: UnixStream, shared: Arc<Shared>) {
             }
             Ok(Request { id, .. }) if !greeted => Response::err(id, ErrorCode::Protocol, format!("Send hello first (protocol {PROTOCOL})")),
             Ok(Request { id, command }) => {
+                let go = match &command {
+                    Command::WebGo { pane, action } => Some((*pane, *action)),
+                    _ => None,
+                };
                 let (o, ev) = {
                     let mut core = shared.core.lock().unwrap();
                     let o = core.handle(command);
+                    if let (Some((pane, a)), Some(w), true) = (go, &shared.web, o.reply.is_ok()) {
+                        w.go(
+                            pane,
+                            match a {
+                                WebAction::Back => web::Go::Back,
+                                WebAction::Forward => web::Go::Forward,
+                                WebAction::Reload => web::Go::Reload,
+                            },
+                        );
+                    }
                     shared.sync_embed(&core);
                     let ev = o.changed.then(|| Shared::state_line(&core));
                     (o, ev)

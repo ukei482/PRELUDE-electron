@@ -6,6 +6,7 @@
 //! - 残すもの(スペース・タブ・分割・開いているブックマーク)は [`Saved`] にして書き出す。ペインの場所(UI から来る)は残さない
 use crate::embed::Want;
 use crate::recipes::{self, Recipe};
+use crate::web::WebWant;
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
 use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, PaneRect, PaneSpec, RecipeInfo, State, TabInfo, TabRef};
 use serde::{Deserialize, Serialize};
@@ -274,6 +275,8 @@ pub struct Core {
     titles: HashMap<u64, String>,
     /// 起動コマンドがインストール済みのアプリのものか(テストで差し替える)
     installed: fn(&str) -> bool,
+    /// このコアの印(Web のペインの窓の題名の印に入れる)
+    tag: String,
 }
 
 /// コマンドの結果。changed なら状態が変わった(イベントを配り、書き出す)
@@ -297,6 +300,7 @@ impl Core {
             stopped: HashSet::new(),
             titles: HashMap::new(),
             installed: crate::apps::is_installed,
+            tag: String::new(),
         };
         let names = c.space_names();
         if let Some(s) = saved {
@@ -422,8 +426,51 @@ impl Core {
         self.installed = f;
     }
 
-    /// 窓を取り込むペイン(今のスペースのもの)。アプリのペインは起動コマンド、レシピのペインはレシピのコマンド。
-    /// 止まったペイン・コマンドの無いペインは入れない。Web のペインは段階 3-b
+    pub fn set_tag(&mut self, tag: &str) {
+        self.tag = tag.to_string();
+    }
+
+    /// Web のペインの URL。Electron 版の「実ブラウザのペイン」(アプリのペインの webUrl)も Web のペインとして開く
+    fn web_url(l: &Leaf) -> Option<&str> {
+        match l.kind.as_str() {
+            "web" => Some(l.str("url")),
+            "app" if !l.str("webUrl").is_empty() => Some(l.str("webUrl")),
+            _ => None,
+        }
+    }
+
+    /// Web のペイン(今のスペースのもの。止まったものは除く)と、ダウンロードの保存先(今のタブの paths の download)
+    pub fn web_wants(&self) -> (Vec<WebWant>, String) {
+        let mut out = vec![];
+        for t in &self.tabs.tabs {
+            for (id, l) in t.layout.panes() {
+                if let Some(url) = Self::web_url(l).filter(|_| !self.stopped.contains(&id)) {
+                    out.push(WebWant { pane: id, url: url.to_string() });
+                }
+            }
+        }
+        let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
+        let dl = self.paths(active).get("download").and_then(Json::as_str).unwrap_or("").to_string();
+        (out, dl)
+    }
+
+    /// Web のペインの今の URL と題名(Chromium から)。URL は残す(起動し直すとその URL で開く)。変われば (状態が変わった, 残すものが変わった)
+    pub fn note_web(&mut self, pane: u64, url: String, title: String) -> (bool, bool) {
+        let Ok((i, _)) = self.find_pane(pane) else { return (false, false) };
+        let mut saved = false;
+        if let Some(l) = self.tabs.tabs[i].layout.leaf_mut(pane) {
+            let key = if l.kind == "app" { "webUrl" } else { "url" };
+            if !url.is_empty() && l.str(key) != url {
+                l.fields.insert(key.into(), url.into());
+                saved = true;
+            }
+        }
+        let titled = self.note_title(pane, title);
+        (saved || titled, saved)
+    }
+
+    /// 窓を取り込むペイン(今のスペースのもの)。アプリのペインは起動コマンド、レシピのペインはレシピのコマンド、
+    /// Web のペインは窓の題名の印(窓は web.rs が作る)。止まったペイン・コマンドの無いペインは入れない
     pub fn wants(&self) -> Vec<Want> {
         let mut out = vec![];
         for t in &self.tabs.tabs {
@@ -432,7 +479,19 @@ impl Core {
                 if self.stopped.contains(&id) {
                     continue;
                 }
-                let (cmd, cls) = if l.kind == "app" && l.str("webUrl").is_empty() {
+                if Self::web_url(l).is_some() {
+                    let marker = crate::web::marker(&self.tag, id);
+                    out.push(Want {
+                        pane: id,
+                        cmd: String::new(),
+                        cls: String::new(),
+                        cwd: String::new(),
+                        rect: self.places.get(&id).copied(),
+                        marker,
+                    });
+                    continue;
+                }
+                let (cmd, cls) = if l.kind == "app" {
                     (l.str("cmd").to_string(), l.str("cls").to_string())
                 } else if let Some(r) = self.recipes.iter().find(|r| r.kind == l.kind) {
                     let p = paths.get_or_insert_with(|| self.paths(Some(t)));
@@ -446,7 +505,7 @@ impl Core {
                 }
                 let p = paths.get_or_insert_with(|| self.paths(Some(t)));
                 let cwd = p.get("terminal").and_then(Json::as_str).unwrap_or(&self.home).to_string();
-                out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied() });
+                out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied(), marker: String::new() });
             }
         }
         out
@@ -554,6 +613,14 @@ impl Core {
             Command::PanePlace { rects } => {
                 let live: Vec<u64> = self.tabs.tabs.iter().flat_map(|t| t.layout.panes().into_iter().map(|(id, _)| id)).collect();
                 self.places = rects.into_iter().filter(|r| live.contains(&r.pane)).map(|r| (r.pane, r)).collect();
+                Ok(Json::Null)
+            }
+            Command::WebGo { pane, .. } => {
+                // 動かすのはソケットの側(web.rs)。ここでは Web のペインかだけ確かめる
+                let (_, l) = self.find_pane(pane)?;
+                if Self::web_url(l).is_none() {
+                    return Err(fail(ErrorCode::BadRequest, "Not a web pane"));
+                }
                 Ok(Json::Null)
             }
             Command::PathsGet { tab } => {

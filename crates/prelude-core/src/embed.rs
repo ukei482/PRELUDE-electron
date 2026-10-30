@@ -26,6 +26,8 @@ pub struct Want {
     pub cwd: String,
     /// 見えていれば場所
     pub rect: Option<PaneRect>,
+    /// 窓の題名の印(Web のペイン)。あれば起動はせず、この題名の窓を取り込む(窓は web.rs が作る)
+    pub marker: String,
 }
 
 /// 取り込みからコアへの知らせ
@@ -35,6 +37,14 @@ pub enum Note {
     Exited { pane: u64, had_window: bool },
     /// ペインの本体の窓の題名
     Title { pane: u64, title: String },
+    /// ペインの窓を取り込んだ
+    Claimed { pane: u64 },
+    /// Web のペインの今の URL と題名(web.rs から)
+    Web { pane: u64, url: String, title: String },
+    /// Web のペインから新しいタブで開くリンク(web.rs から)
+    OpenTab { url: String, from: u64 },
+    /// ダウンロードの始まり・進み具合(CDP の Browser.downloadWillBegin / downloadProgress の params)
+    Download(serde_json::Value),
 }
 
 enum Msg {
@@ -309,10 +319,34 @@ impl Embedder {
                     }
                     p.want.rect = w.rect;
                 }
+                None if !w.marker.is_empty() => self.watch(w),
                 None if !w.cmd.trim().is_empty() => self.launch(w, rx).await,
                 None => {}
             }
         }
+    }
+
+    /// 起動はせず、印の題名の窓が現れるのを待つ(Web のペイン)
+    fn watch(&mut self, w: Want) {
+        let p = Pane {
+            keys: vec![],
+            want: w,
+            sh: None,
+            sh_pid: 0,
+            owned: HashSet::new(),
+            wids: vec![],
+            adopted: vec![],
+            old: vec![],
+            adopt: false,
+            launched_at: procs::uptime(),
+            t0: Instant::now(),
+            had_window: false,
+            gone: 0,
+            dead: 0,
+            activate_until: None,
+        };
+        self.panes.insert(p.want.pane, p);
+        self.dirty = true;
     }
 
     /// 起動する。起動前からある窓を知るため、まだ報告が無ければ一度スクリプトを読んで報告を待つ
@@ -386,6 +420,7 @@ impl Embedder {
                     return;
                 }
                 p.wids.push(c.wid.clone());
+                let _ = self.notes.send(Note::Claimed { pane: c.pane });
                 match c.how.as_str() {
                     "pid" => {
                         p.owned.insert(c.pid);
@@ -501,6 +536,7 @@ impl Embedder {
                 "id": id,
                 "pids": pids_of(p, &others),
                 "keys": p.keys,
+                "marker": p.want.marker,
                 "wids": p.wids,
                 "old": p.old,
                 "adopt": p.adopt,

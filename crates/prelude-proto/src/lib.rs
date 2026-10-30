@@ -137,12 +137,24 @@ pub enum Command {
     #[serde(rename = "pane.place")]
     PanePlace { rects: Vec<PaneRect> },
 
+    /// Web のペインで戻る・進む・読み直す。URL を開くのは `pane.update` で `url` を変える
+    #[serde(rename = "web.go")]
+    WebGo { pane: u64, action: WebAction },
+
     /// タブで使うフォルダ(`.prelude`・`space.toml` の paths) → `{ files, open, save, download, terminal }`
     #[serde(rename = "paths.get")]
     PathsGet {
         #[serde(default)]
         tab: Option<TabRef>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WebAction {
+    Back,
+    Forward,
+    Reload,
 }
 
 /// タブの指し方。`{"id": 7}` か、画面に出ている番号 `{"num": 3}`
@@ -224,7 +236,9 @@ pub enum ErrorCode {
     Io,
 }
 
-/// コアから来るイベント。今は `state`(data は [`State`])だけ。知らないイベントは無視する
+/// コアから来るイベント。知らないイベントは無視する。
+/// - `state`: data は [`State`]。状態が変わるたび
+/// - `download`: data は CDP の `Browser.downloadWillBegin`(`guid`・`url`・`suggestedFilename`)か `Browser.downloadProgress`(`guid`・`state`・`receivedBytes`・`totalBytes`)の params
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {
     pub event: String,

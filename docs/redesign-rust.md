@@ -121,6 +121,12 @@ Rust の UI は Electron と違って Wayland の **layer-shell** が使える(�
 - 上の 「1 つの Chromium + CDP でアプリ窓」
 - 案: ペインごとに `chromium --app=URL` を別々に起動(今の方式。単純だが、URL やタイトルを PRELUDE が知れない)
 
+**Web のペインの作り方(段階 3-b で分かったこと。上の 3〜4 を具体的にしたもの)**
+- CDP の `Target.createTarget { newWindow: true }` で作る窓は、タブ・アドレスバーのある普通の窓になる(アプリの窓にする引数が無い)。そこで、動いている Chromium に同じプロファイルで `--app=<URL>` を頼む(頼んだプロセスはすぐ終わり、CDP の側に新しいページとして現れる)
+- `--app=` は `data:` や `about:blank` では窓にならない。そこで題名に印を出すだけのページ(`prelude-pane.html`。snap 版が読める `~/snap/chromium/common` に置く)を `file:///…/prelude-pane.html#<コアの印>:<ペイン>` で開く。題名が `PRELUDE-PANE:<コアの印>:<ペイン>` になるので、KWin スクリプトはその窓を取り込み、取り込んだら CDP で本当の URL へ移す
+- snap 版の Chromium には終了の合図(シグナル)を送れない(AppArmor)。終わらせるときは、窓を閉じてから CDP の通信の口を閉じる。snap 版は普通に閉じてもプロファイルに「落ちた」と記録されるので(CDP を使わなくても同じ。Electron 版の Chromium の窓も同じ)、起動するときに `--hide-crash-restore-bubble` を付ける
+- 新しいタブで開くリンク(noopener)と、ログインなどの小さな窓(opener のあるもの)は、CDP の `canAccessOpener` で見分ける
+
 **決めること 3-b: Chromium が無い PC**
 - おすすめ: 起動時に `chromium` / `google-chrome` を探し、無ければ Web ペインは「Chromium を入れてください」の表示にする(Firefox などは対象外)
 
@@ -282,7 +288,8 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)、ソケットの約束(版つき)、`prelude` コマンド | `prelude` コマンドで状態を見られる |
 | | ↳ 済: `prelude-proto`(約束の版 1)・`prelude-core`・`prelude-cli`。判断 8 の前の「ソケットの約束(版 1)」 | |
 | 3 | KWin の取り込み(`appembed.js` の移植)、Chromium の Web ペイン(CDP)、ペインのレシピ(判断 7 の段階 1) | Rust 版で Web・アプリ・コンソールのペインが開く |
-| | ↳ 済(3-a): KWin の取り込み(`embed.rs`・`embed.js`)、ペインのレシピ(`recipes.rs`。既定の `console`)、人からもらったブックマークの起動コマンドの確認(`bookmark.open` の `allow`)。残り(3-b): Chromium の Web ペイン | |
+| | ↳ 済(3-a): KWin の取り込み(`embed.rs`・`embed.js`)、ペインのレシピ(`recipes.rs`。既定の `console`)、人からもらったブックマークの起動コマンドの確認(`bookmark.open` の `allow`) | |
+| | ↳ 済(3-b): Chromium の Web ペイン(`web.rs`)。下の「Web のペインの作り方(段階 3-b で分かったこと)」 | |
 | 4 | 既定の UI(Slint): バー・ナビ・タブ・ペインの枠、`ui.toml`・`theme.toml` | Rust 版を日常で試せる |
 | 5 | ファイラ(`fileops.js`・`files.js`・`field.js` の移植。フォルダ・フィールドの部品) | |
 | 6 | システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植 | plasmashell の代わりになる |
@@ -303,7 +310,9 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 
 段階 3-a で足したもの: `recipe.list`、`bookmark.open` の `allow` と返事の `held`(外した起動コマンド)、ペインの `window_title`・`stopped`。取り込みの D-Bus は `org.prelude.Core`(`/org/prelude/Core` の `Report`。KWin スクリプトが呼ぶ)
 
-まだしていないこと: Chromium の Web ペイン(段階 3-b)、ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
+段階 3-b で足したもの: `web.go`、`download` のイベント
+
+まだしていないこと: ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
 
 ---
 
