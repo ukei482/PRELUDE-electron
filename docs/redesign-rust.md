@@ -1,6 +1,6 @@
 # PRELUDE 再設計: Rust への移行(設計判断の記録)
 
-状態: **草案**。決まったもの: 1-a(同じリポジトリ)、1-b(コアと UI は別プロセス、ペインの場所は UI)、3-a・3-c(Chromium 1 つ + CDP、タブは PRELUDE が戻す、プロファイル 1 つ)、5(スペース = フォルダ、`.prelude` = ブックマーク 1 つで paths を持つ、スペースは既定の paths)、5-a(ポータルを実装)、2(Slint)、4-a(部品ごとに付け替え・3 つの深さ・約束に版)、7(ペインの種類はレシピ → Slint の部品 → プラグインの 3 段階)。
+状態: **設計の論点は一通り決まった**。決まったもの: 1-a(同じリポジトリ)、1-b(コアと UI は別プロセス、ペインの場所は UI)、3-a・3-c(Chromium 1 つ + CDP、タブは PRELUDE が戻す、プロファイル 1 つ)、5(スペース = フォルダ、`.prelude` = ブックマーク 1 つで paths を持つ、スペースは既定の paths)、5-a(ポータルを実装)、2(Slint)、4-a(部品ごとに付け替え・3 つの深さ・約束に版)、7(ペインの種類はレシピ → Slint の部品 → プラグインの 3 段階)、8(試す間は同じデータ、GitHub でビルドして配る)。
 判断 2(UI の技術)は Slint に決定。
 
 ## 0. 目的
@@ -272,19 +272,41 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 
 ## 判断 6: 移行の順番
 
-上から順に、1 つずつ PR にする。各段階で Electron 版は動いたまま。
+上から順に、1 つずつ PR にする。各段階で Electron 版は動いたまま(ふだん使いのリリース)。
 
 | 段階 | 中身 | 見える成果 |
 |---|---|---|
-| 0 | この設計の合意、Rust の開発環境(rustup)を入れる | — |
-| 1 | スペースと `.prelude` の形(判断 5)。Rust 側は `prelude-format` クレートとテスト。Electron 版にも入れるかは未決 | — |
-| 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)と、UI の約束、Unix ソケット | `prelude` コマンドで状態を見られる |
-| 3 | KWin の取り込み(`appembed.js` の移植)と、Chromium の Web ペイン(CDP) | Rust 版で Web とアプリのペインが開く |
-| 4 | 既定の UI(判断 2 の技術で): バー・ナビ・タブ・ペインの枠 | Rust 版を日常で試せる |
-| 5 | ファイラ(`fileops.js`・`files.js`・`field.js` の移植) | |
-| 6 | システム(通知・トレイ・OSD・音量・クイック設定・更新)= `sys/` の移植 | plasmashell の代わりになる |
+| 0 | Rust の開発環境(rustup)。**Slint の試作**: 日本語入力・フォント、ファイル 1 万件の一覧、`.slint` の実行時の差し替え、layer-shell(判断 2) | Slint で行けるかが分かる |
+| 1 | スペースと `.prelude` の TOML(判断 5)。Rust 側は `prelude-format` クレートとテスト。**Electron 版も TOML を読み書きする**(判断 8)。PR #66・#71 をこの形に合わせる | 今の PRELUDE で新しい形式・paths が使える |
+| 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)、ソケットの約束(版つき)、`prelude` コマンド | `prelude` コマンドで状態を見られる |
+| 3 | KWin の取り込み(`appembed.js` の移植)、Chromium の Web ペイン(CDP)、ペインのレシピ(判断 7 の段階 1) | Rust 版で Web・アプリ・コンソールのペインが開く |
+| 4 | 既定の UI(Slint): バー・ナビ・タブ・ペインの枠、`ui.toml`・`theme.toml` | Rust 版を日常で試せる |
+| 5 | ファイラ(`fileops.js`・`files.js`・`field.js` の移植。フォルダ・フィールドの部品) | |
+| 6 | システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植 | plasmashell の代わりになる |
 | 7 | FileChooser のポータル(判断 5-a) | アプリのダイアログが PRELUDE になる |
-| 8 | 切り替え: Rust 版をリリースにし、Electron 版を消す | |
+| 8 | 設定の引き継ぎ、GitHub Actions でのビルドと配布、更新の仕組み(判断 8)。Rust 版をリリースにし、Electron 版を消す | 切り替え |
+
+---
+
+## 判断 8: 引き継ぎと配布(決定)
+
+### 試している間
+- **Electron 版と Rust 版は同じデータを使う**。Electron 版も TOML の `.prelude`・`space.toml` を読み書きできるようにし(段階 1)、両方が同じ `~/スペース` を使う。Rust 版で足したブックマークは Electron 版にも出る
+
+### 引き継ぐもの(段階 8。初めて Rust 版を起動したとき 1 回だけ)
+
+| もの | 引き継ぎ方 |
+|---|---|
+| ブックマーク(`config.json` の `bookmarks`、`~/ブックマーク/*.prelude`) | `~/スペース/Main/` に 1 つずつ `.prelude` として書き出す(PR #66 と同じ)。サイドバーのフォルダは本物のフォルダにする |
+| 色・フォント(`appearance`) | `theme.toml` |
+| 動き・ショートカット(`behavior`・`tabs`・`shortcuts`) | 新しい設定ファイル。Rust 版で無くなる設定(`chromiumSites` など)は一覧にして知らせる |
+| 前回のタブ(`workspace*.json`) | 引き継がない(スペースのブックマークから開き直せる) |
+| Web のログイン | 今 Chromium の窓で使っている `prelude-profile` を、そのまま Rust 版の Chromium のプロファイルにする。**Electron 版の中でログインしていたサイトは、一度ログインし直す**(Electron から Chromium へログイン状態を移す確かな方法が無い) |
+| 元のファイル | 消さない。いつでも Electron 版に戻れる |
+
+### 配布
+- **GitHub Actions でビルドし、タグのリリースに添付する**。各 PC の「アップデート」はそれをダウンロードするだけ(各 PC に Rust は要らない)
+- 今と同じく `release.sh switch` で前の版(Electron 版も含む)に戻せる
 
 ---
 
