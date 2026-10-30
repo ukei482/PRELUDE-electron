@@ -1,0 +1,42 @@
+# ブックマーク 1 つ。Electron 版(test/bmfile.test.js)と Rust 版(crates/prelude-format)の両方のテストが読む
+version = 2
+title = "本文"
+
+[paths]
+files = "~/研究/論文"
+open = "./文献"
+save = "~/研究/論文/原稿"
+
+[layout]
+k = "split"
+dir = "row"
+ratio = 0.4
+
+[layout.a]
+k = "leaf"
+type = "web"
+url = "https://example.com/"
+
+[layout.b]
+k = "split"
+dir = "col"
+ratio = 0.5
+
+[layout.b.a]
+k = "leaf"
+type = "files"
+path = "~/src"
+
+[layout.b.a.sort]
+key = "date"
+desc = true
+
+[layout.b.b]
+k = "leaf"
+type = "app"
+cmd = "kate"
+cls = "kate"
+name = "Kate"
+
+[ui.field]
+color = "blue"

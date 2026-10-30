@@ -34,6 +34,7 @@ const ID_PREFIX = `${WIN_KEY}${Math.random().toString(36).slice(2, 6)}-`;
 const nid = (p) => `${ID_PREFIX}${p}${++seq}`;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const baseName = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '');
+const parentDir = (p) => String(p || '').replace(/[\\/]+$/, '').replace(/[\\/][^\\/]*$/, '') || '/';
 const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
 const fmtSize = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB');
 const getPath = (o, p) => p.split('.').reduce((v, k) => (v == null ? undefined : v[k]), o);
@@ -86,7 +87,7 @@ function applyTheme() {
   const mode = C.behavior.sidebarMode;
   document.body.classList.toggle('no-sidebar', mode === 'hidden');
   document.body.classList.toggle('sb-compact', mode === 'compact');
-  document.querySelectorAll('.sb-toggle').forEach((b) => { b.title = sidebarTip(); });
+  topMenuTip();
 }
 const sidebarTip = () => `Sidebar (next: ${{ full: 'compact', compact: 'hidden', hidden: 'full' }[C.behavior.sidebarMode] || 'compact'})`;
 // 上のバーの PRELUDE: 全部表示 → 細い列(アイコンだけ)→ 非表示 → 全部表示 の順に回す
@@ -381,6 +382,7 @@ function tabMenu(tab, x, y) {
 // ------------------------------------------------------------------ tabs / panes
 // タブを前面に出す。アプリが終了して空になっているアプリペインは、同じアプリをもう一度起動して全面に出す
 function showTab(tab) {
+  leaveHome();
   S.active = tab.id;
   render();
   for (const l of leaves(tab.root)) if (l.type === 'app' && !l.running && l.dormant) { l.dormant = false; startApp(l, l.cmd, l.cls, l.name); }
@@ -390,13 +392,14 @@ function showTab(tab) {
 function openTab(kind, o = {}) {
   if (kind === 'app' && !S.appSupported) kind = 'files';
   const leaf = makeLeaf(kind, o);
-  const tab = { id: nid('t'), num: api.tab.allocNum(0), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(0), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null, paths: o.paths || null };
   const pos = C.tabs?.newTabPosition;
   const cur = S.tabs.findIndex((t) => t.id === S.active);
   if (pos === 'top') S.tabs.unshift(tab);
   else if (pos === 'next' && cur >= 0) S.tabs.splice(cur + 1, 0, tab);
   else S.tabs.push(tab);
   if (!o.background || !S.tabs.some((t) => t.id === S.active)) S.active = tab.id;
+  if (!o.background) leaveHome(); // ホームから開いたら、タブへ移る
   render();
   return tab;
 }
@@ -452,9 +455,10 @@ const duplicateTab = (tab) => insertTab(serNode(tab.root), { activeIndex: leaves
 function insertTab(data, o) {
   const root = deserNode(data);
   const ls = leaves(root);
-  const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null, bmFile: o.bmFile || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null, bmFile: o.bmFile || null, filePaths: o.filePaths || null, paths: o.paths || null };
   S.tabs.splice(clamp(o.index ?? 0, 0, S.tabs.length), 0, tab);
   S.active = tab.id;
+  leaveHome();
   render();
   if (S.appSupported) for (const l of ls) if (l.type === 'app' && (l.cmd || l.webUrl)) startApp(l, l.cmd, l.cls, l.name);
   return tab;
@@ -464,7 +468,7 @@ function insertTab(data, o) {
 // o.quiet: 残りのタブが無くなっても新しいタブを開かない(画面を外して全部移すとき)
 const LIVE_ONLY = new Set(['el', 'ui', 'slot', 'vl', 'apps', 'entries', 'view', 'sel', 'ta', 'fv']); // 画面の部品など、移った先で作り直すもの
 function moveTab(tab, to, o = {}) {
-  const data = JSON.parse(JSON.stringify({ num: tab.num, bookmarkId: tab.bookmarkId, bmFile: tab.bmFile, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
+  const data = JSON.parse(JSON.stringify({ num: tab.num, bookmarkId: tab.bookmarkId, bmFile: tab.bmFile, paths: tab.paths, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
   const i = S.tabs.indexOf(tab);
   S.tabs.splice(i, 1);
   if (S.active === tab.id) S.active = S.tabs[Math.min(i, S.tabs.length - 1)]?.id ?? null;
@@ -476,7 +480,7 @@ function moveTab(tab, to, o = {}) {
 // 別の窓から移ってきたタブ。ペインは id も状態もそのまま(Webビューは作り直さず、アプリも起動し直さない)
 function adoptTab(data) {
   const ids = new Set(leaves(data.root).map((l) => l.id));
-  const tab = { id: nid('t'), num: api.tab.allocNum(data.num || 0), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null, bmFile: data.bmFile || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(data.num || 0), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null, bmFile: data.bmFile || null, paths: data.paths || null };
   // フォルダペインは一覧を持ってこない(大きい)ので、同じフォルダを読み直す。並べ方と戻る/進むの履歴は引き継ぐ
   for (const l of leaves(tab.root)) if (l.type === 'files') Object.assign(l, newFilesState(l), { hist: l.hist || { back: [], fwd: [] }, loaded: false, paintQ: false });
   S.tabs.unshift(tab);
@@ -485,7 +489,7 @@ function adoptTab(data) {
 }
 
 function splitLeaf(tab, leaf, dir, kind, o = {}) {
-  if ((kind === 'files' || kind === 'field') && o.path == null) o.path = (leaf.type === 'files' && leaf.mode !== 'save') || leaf.type === 'field' ? leaf.path : C.behavior.startPath;
+  if ((kind === 'files' || kind === 'field') && o.path == null) o.path = (leaf.type === 'files' && leaf.mode !== 'save') || leaf.type === 'field' ? leaf.path : tabPaths(tab).files || C.behavior.startPath;
   const nl = makeLeaf(kind, o);
   replaceNode(tab, leaf, { k: 'split', dir, ratio: 0.5, a: leaf, b: nl });
   tab.activePane = nl.id;
@@ -520,6 +524,8 @@ S.spaceDir = '';
 S.spaces = [];
 S.wsSpaces = {}; // 今のスペース以外のタブ { 名前: { active, tabs } }
 S.closedBy = {}; // スペースごとの閉じたタブ
+S.spaceConf = {}; // 今のスペースの設定(space.toml の中身。paths はブックマークに書いていない項目の既定)
+S.home = '';
 const dirName = (p) => String(p).replace(/\/[^/]*$/, '') || '/';
 async function spaceRoot() {
   const home = await api.fs.home();
@@ -545,14 +551,15 @@ async function scanSpace() {
   const list = r.folders.map((n) => ({ id: dir + '/' + n, kind: 'folder', title: n, open: !closed.has(dir + '/' + n), folder: '' }));
   for (const f of r.files) {
     let d = null;
-    try { if (!f.error) d = bmFileParse(f.text, home); } catch {}
+    try { if (!f.error) d = bmFileParse(f.data, home); } catch {}
     if (!d) continue; // 読めない・形の違うファイルは出さない(フォルダから開くと理由が出る)
     const title = bmFileShort(f.path);
-    const b = { id: f.path, folder: f.folder ? dir + '/' + f.folder : '', ...bmFileToBookmark(title, d.root), root: d.root };
+    const b = { id: f.path, folder: f.folder ? dir + '/' + f.folder : '', ...bmFileToBookmark(title, d.root), root: d.root, paths: d.paths };
     if (b.kind === 'tab') b.target = layoutLabel(d.root);
     list.push(b);
   }
   S.bookmarks = list;
+  S.spaceConf = r.conf || {};
   const ids = new Set(list.map((b) => b.id));
   const gone = S.tabs.filter((t) => t.bookmarkId && !ids.has(t.bookmarkId));
   for (const t of gone) t.bookmarkId = null;
@@ -590,6 +597,7 @@ async function enterSpace(name) {
   S.spaceDir = (await spaceRoot()) + '/' + name;
   S.closed = S.closedBy[name] || [];
   S.bookmarks = [];
+  S.spaceConf = {};
   await scanSpace();
   watchSpace();
   const saved = S.wsSpaces[name];
@@ -668,7 +676,7 @@ function relinkTabs(from, to, prefix = false) {
 const layoutLabel = (root) => leaves(root).map((l) => (l.type === 'web' ? hostOf(l.url || '') : l.type === 'app' ? l.name : l.type === 'files' || l.type === 'field' ? baseName(l.path || '') : l.type === 'home' ? 'Home' : 'Settings') || l.type).join(' | ');
 // 今のスペースに .prelude を作る。できたファイルのパス(作れなければ null)
 async function saveBmFile(title, root, dir = S.spaceDir) {
-  const r = await api.fs.bmSave(dir, bmFileName(title), bmFileText(title, root, await api.fs.home()));
+  const r = await api.fs.bmSave(dir, bmFileName(title), bmFileData(title, root, await api.fs.home()));
   if (r.error) { toast(`Cannot save (${r.error})`); return null; }
   await scanSpace();
   return r.path;
@@ -703,7 +711,7 @@ async function openBookmark(b) {
   const tab = S.tabs.find((t) => t.bookmarkId === b.id);
   if (tab) { showTab(tab); return; } // 1ブックマーク = 最大1タブ
   if (b.kind === 'folder') return;
-  const root = await checkBmCommands(b.root, b.title);
+  const root = await checkBmCommands(bmFileFillPaths(b.root, bmFilePaths(b.paths, S.home, dirName(b.id), spacePathsSrc()).files), b.title);
   if (!root || S.tabs.some((t) => t.bookmarkId === b.id)) return;
   insertTab(root, { bookmarkId: b.id, index: newTabIndex() });
 }
@@ -756,28 +764,49 @@ async function deleteBmFolder(f) {
 // .prelude はスペースの外(人からもらったファイルなど)にもあって、フォルダ・フィールドから開ける(開くと同じ配置の新しいタブ)。
 // スペースの外のファイルから開いたタブはそのファイルを覚えていて(tab.bmFile)、同じファイルをもう一度開くとそのタブへ移る。
 const bmFileShort = (p) => baseName(p).replace(/\.prelude$/i, '');
-// タブが結びついているファイル(ブックマークか、スペースの外のファイル)を今の配置で書き直す(タイトルはファイルのものを残す)
+// タブが結びついているファイル(ブックマークか、スペースの外のファイル)を今の配置で書き直す(タイトル・paths・知らない項目はファイルのものを残す)
 async function overwriteBmFile(tab) {
   const file = tab.bookmarkId || tab.bmFile;
   if (!file) return;
   const home = await api.fs.home();
   const r = await api.fs.bmRead(file);
   let title = bmFileShort(file);
-  try { title = bmFileParse(r.text, home).title || title; } catch {}
-  const w = await api.fs.bmWrite(file, bmFileText(title, serNode(tab.root), home));
+  let paths = {};
+  let rest = {};
+  try { ({ title = title, paths, rest } = bmFileParse(r.data, home)); title ||= bmFileShort(file); } catch {}
+  const w = await api.fs.bmWrite(file, bmFileData(title, serNode(tab.root), home, paths, rest));
   toast(w.error ? `Cannot save (${w.error})` : 'Overwritten with current layout');
   if (!w.error && tab.bookmarkId) scanSpace();
 }
-// ファイルを読んで、起動コマンドを確かめた配置 { title, root } にする。開かない時は null
+// ファイルを読んで、起動コマンドを確かめた配置 { title, root, filePaths } にする。開かない時は null。
+// filePaths はファイルに書いたままの paths(使うフォルダは tabPaths で決める)。パスの無いフォルダのペインは files で開く
 async function readBmFile(full) {
   const r = await api.fs.bmRead(full);
   let d = null;
+  const home = await api.fs.home();
   try {
     if (r.error) throw new Error(r.error);
-    d = bmFileParse(r.text, await api.fs.home());
+    d = bmFileParse(r.data, home);
   } catch (e) { toast(`Cannot open: ${baseName(full)} (${e.message})`); return null; }
-  const root = await checkBmCommands(d.root, baseName(full));
-  return root && { title: d.title || bmFileShort(full), root };
+  const paths = bmFilePaths(d.paths, home, parentDir(full), spacePathsSrc());
+  const root = await checkBmCommands(bmFileFillPaths(d.root, paths.files), baseName(full));
+  return root && { title: d.title || bmFileShort(full), root, filePaths: d.paths };
+}
+// スペースの外のファイルから開いたタブの paths を読み直す(起動し直したあと。tab.filePaths は保存しない)
+async function refreshTabPaths(tab) {
+  const r = await api.fs.bmRead(tab.bmFile);
+  const home = await api.fs.home();
+  try { if (!r.error) tab.filePaths = bmFileParse(r.data, home).paths; } catch {}
+}
+// タブで使うフォルダ(bmfile.js の bmFilePaths の形)。今のスペースの既定(space.toml)の上に、
+// スペースのブックマークから開いたタブはそのファイルの paths、スペースの外のファイルから開いたタブはそのファイルの paths を重ねる。
+// どちらでもないタブは、ランチャーで開いたときに元のタブから引き継いだもの(tab.paths)か、スペースの既定
+const spacePathsSrc = () => ({ paths: S.spaceConf?.paths || {}, dir: S.spaceDir });
+function tabPaths(tab) {
+  const b = tab?.bookmarkId && S.bookmarks.find((x) => x.id === tab.bookmarkId);
+  if (b) return bmFilePaths(b.paths, S.home, dirName(b.id), spacePathsSrc());
+  if (tab?.bmFile) return bmFilePaths(tab.filePaths, S.home, dirName(tab.bmFile), spacePathsSrc());
+  return tab?.paths || bmFilePaths({}, S.home, '', spacePathsSrc());
 }
 // ファイルは人からもらうこともあるので、インストール済みのアプリ(.desktop の Exec)と同じでない起動コマンドは、黙って起動しない。
 // 既定は「起動しないで開く」(そのペインは「アプリを取り込む」の画面になる)
@@ -803,15 +832,17 @@ async function openBmFile(full) {
   const open = S.tabs.find((t) => t.bmFile === full);
   if (open) { showTab(open); return; } // 1ファイル = 最大1タブ
   const d = await readBmFile(full);
-  if (d) insertTab(d.root, { bmFile: full, index: newTabIndex() });
+  if (d) insertTab(d.root, { bmFile: full, filePaths: d.filePaths, index: newTabIndex() });
 }
 // ファイルを今のスペースに写す(元のファイルは残す)
 async function importBmFile(full) {
   if (dirName(full) === S.spaceDir || dirName(dirName(full)) === S.spaceDir) { toast('Already in this space'); return; }
   const r = await api.fs.bmRead(full);
   if (r.error) { toast(`Cannot open: ${baseName(full)} (${r.error})`); return; }
-  try { bmFileParse(r.text, await api.fs.home()); } catch (e) { toast(`Cannot open: ${baseName(full)} (${e.message})`); return; }
-  const w = await api.fs.bmSave(S.spaceDir, baseName(full), r.text);
+  const home = await api.fs.home();
+  let d;
+  try { d = bmFileParse(r.data, home); } catch (e) { toast(`Cannot open: ${baseName(full)} (${e.message})`); return; }
+  const w = await api.fs.bmSave(S.spaceDir, baseName(full), bmFileData(d.title, d.root, home, d.paths, d.rest)); // 0.11 までの JSON も TOML で写す
   if (w.error) { toast(`Cannot save (${w.error})`); return; }
   await scanSpace();
   toast(`Added to space "${S.space}"`);
@@ -830,7 +861,7 @@ async function migrateBookmarks() {
   const safe = (n) => bmFileName(n).replace(/\.prelude$/, '');
   const map = {};
   for (const it of m.items) {
-    const r = await api.fs.bmSave(it.folder ? dir + '/' + safe(it.folder) : dir, bmFileName(it.title), bmFileText(it.title, it.root, home));
+    const r = await api.fs.bmSave(it.folder ? dir + '/' + safe(it.folder) : dir, bmFileName(it.title), bmFileData(it.title, it.root, home));
     if (r.error) { toast(`Cannot move bookmarks to space (${r.error})`, 8000); return {}; }
     map[it.id] = r.path;
   }
@@ -936,7 +967,7 @@ function syncViews() {
         const isWeb = l.type === 'web' && l.created;
         if (!isWeb && !(l.type === 'app' && l.running)) continue;
         const send = isWeb ? api.web.bounds : api.app.bounds;
-        if (tab === at && l.slot && l.slot.isConnected) {
+        if (tab === at && !homeTerm.on && l.slot && l.slot.isConnected) { // ホームを出している間は隠す
           const r = l.slot.getBoundingClientRect();
           send(l.id, { x: r.left, y: r.top, width: r.width, height: r.height });
         } else send(l.id, null);
@@ -1093,7 +1124,8 @@ async function startApp(leaf, cmd, cls = '', name = '', icon = '') {
     name = hostOf(leaf.webUrl) || 'Chromium';
   }
   if (!cmd.trim()) return;
-  if (await api.app.launch(leaf.id, cmd, cls)) {
+  const cwd = tabPaths(findLeaf(leaf.id)?.tab || activeTab()).terminal || ''; // 作業空間(.prelude・space.toml の paths)のコンソールのフォルダで起動する
+  if (await api.app.launch(leaf.id, cmd, cls, cwd)) {
     Object.assign(leaf, { cmd, cls, name: name || cmd.split(/\s+/)[0].split('/').pop(), running: true, dormant: false });
     if (icon && icon !== leaf.icon) Object.assign(leaf, { icon, iconUrl: '', iconTried: false });
     if (!leaf.webUrl) { try { localStorage.setItem('lastApp', JSON.stringify({ cmd, cls, name: leaf.name, icon: leaf.icon })); } catch {} }
@@ -1263,6 +1295,7 @@ function restore(ws) {
     } catch {}
   }
   if (S.tabs.length) S.active = S.tabs[clamp(ws.active | 0, 0, S.tabs.length - 1)].id;
+  for (const t of S.tabs) if (t.bmFile) refreshTabPaths(t);
 }
 
 // ------------------------------------------------------------------ events from main
@@ -1328,7 +1361,7 @@ api.dl.onStart(({ id, filename, fromPaneId, defaultDir, total }) => {
   const src = f ? f.leaf : activeLeaf(tab);
   const w = src.el?.pane.getBoundingClientRect().width || 0;
   // 元のペインが狭ければ下に、広ければ右に保存先ペインを出す
-  splitLeaf(tab, src, w && w < 640 ? 'col' : 'row', 'files', { path: defaultDir, mode: 'save', dlId: id, filename });
+  splitLeaf(tab, src, w && w < 640 ? 'col' : 'row', 'files', { path: tabPaths(tab).download || defaultDir, mode: 'save', dlId: id, filename });
 });
 api.dl.onProgress(({ id, received, total }) => {
   Object.assign(S.dl[id] ||= {}, { received, total });
@@ -1401,11 +1434,12 @@ api.config.onChanged((values) => {
 // ------------------------------------------------------------------ boot
 function openSettings() {
   const tab = S.tabs.find((t) => leaves(t.root).some((l) => l.type === 'settings'));
-  if (tab) { S.active = tab.id; render(); } else openTab('settings');
+  if (tab) showTab(tab); else openTab('settings');
 }
 
 async function boot() {
-  const [icons, cfg, ws] = await Promise.all([api.icons(), api.config.get(), api.ws.load()]);
+  const [icons, cfg, ws, home] = await Promise.all([api.icons(), api.config.get(), api.ws.load(), api.fs.home()]);
+  S.home = home;
   ICONS = icons;
   C = cfg.values;
   SCHEMA = cfg.schema;
@@ -1420,7 +1454,7 @@ async function boot() {
   api.win.screens().then((list) => { S.screens = list || []; });
   $('#new-tab').onclick = (e) => popupAt(e.currentTarget, [
     { header: 'New tab' },
-    { label: 'Home', icon: 'home', run: () => openTab('home') },
+    { label: 'Home', icon: 'home', run: () => showHome() }, // タブではなく、タブの上の階層のホーム(端末)へ戻る
     { label: 'Web', icon: 'globe', run: () => openTab('web') },
     { label: 'Folder', icon: 'folder', run: () => openTab('files') },
     { label: 'Field', icon: 'field', run: () => openTab('field') },
@@ -1430,8 +1464,10 @@ async function boot() {
   ].filter(Boolean));
   $('#open-settings').onclick = openSettings;
   $('#space-btn').onclick = (e) => { const r = e.currentTarget.getBoundingClientRect(); spaceMenu(r.left, r.bottom + 2); };
-  // 上のバー: 左の PRELUDE を押すとサイドバーを切り替える。右は時計などのボタン(bar.js)
-  Object.assign($('#top-menu'), { title: sidebarTip(), onclick: cycleSidebar });
+  // 上のバー: 左の PRELUDE は、ホームではタブへ戻り、タブではサイドバーを切り替える(term.js)。右は時計などのボタン(bar.js)
+  $('#top-menu').onclick = topMenuClick;
+  topMenuTip();
+  initCli();
   initBar();
   loadSessionState();
   // 起動して少ししてから、新しい版があるか確かめて知らせる(ネットワークの準備を待つ)
@@ -1453,6 +1489,8 @@ async function boot() {
   S.wsSpaces = saved.spaces;
   await loadSpaceList();
   await enterSpace(spacePick(saved.space, S.spaces)); // 前回のタブを開き直し、取り込んでいたアプリを再起動する
+  // 起動したら、まずホーム(白い端末)を出す。2枚目以降の画面の窓はタブのまま
+  if (!IS_SUB) showHome(); else api.term.home(false);
 }
 
 window.__prelude = { S, openTab, splitLeaf, activeTab, activeLeaf, leaves, moveTab }; // デバッグ用

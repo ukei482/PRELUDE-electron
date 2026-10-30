@@ -89,12 +89,14 @@ const overlay = require('./sys/overlay');
 const osd = require('./sys/osd');
 const tray = require('./sys/tray');
 const fileops = require('./fileops');
+const term = require('./sys/term');
 
 let config;
 let win = null; // 主画面の窓
 const EMBEDDED = !!process.env.PRELUDE_EMBEDDED; // 別の PRELUDE のペインの中で動いている開発版(main.js の「開発版」)
 // 画面ごとの窓。key は 'main'(主画面)と 'sub1', 'sub2'…(2枚目以降の画面。docs/shell-design.md 4.12)
 const shells = new Map(); // key -> { key, win, closing, finish }
+const atHome = new Set(); // ホーム(端末)を出している窓の key。端末で使うキー(Ctrl+W・Ctrl+R など)を PRELUDE のショートカットにしない
 const suspended = new Set(); // Webビューを全部隠している窓の key(メニュー表示中・境界ドラッグ中)
 const views = new Map(); // paneId -> { id, view, wc, rect }
 const owners = new Map(); // paneId -> そのペインがある窓の key(Web・アプリのペイン。タブを別の画面へ移すと変わる)
@@ -152,6 +154,9 @@ function bindings() {
   ].map(([action, accel]) => [action, parseAccel(accel)]);
 }
 
+// ホームの端末を出している間も PRELUDE のショートカットとして使うもの
+const HOME_KEYS = /^(launcher|fullscreen|devtools|goto:\d)$/;
+
 function hookInput(wc, paneId = null, key = 'main') {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
@@ -163,6 +168,7 @@ function hookInput(wc, paneId = null, key = 'main') {
     }
     for (const [action, accel] of bindings()) {
       if (!accelMatches(accel, input)) continue;
+      if (!paneId && atHome.has(key) && !HOME_KEYS.test(action)) return; // ホームでは端末へそのまま渡す
       event.preventDefault();
       if (action === 'devtools') { wc.toggleDevTools(); return; }
       const to = paneId ? owners.get(paneId) || 'main' : key;
@@ -289,6 +295,8 @@ function dropShell(key) {
   if (!shells.has(key)) return;
   shells.delete(key);
   tabNums.delete(key);
+  atHome.delete(key);
+  term.stop(key);
   suspended.delete(key);
   for (const [id, k] of [...owners]) {
     if (k !== key) continue;
@@ -591,19 +599,19 @@ appembed.onEvent((ev, paneId, extra) => sendPane(paneId, 'app:' + ev, { paneId, 
 ipcMain.handle('app:supported', () => appembed.supported);
 ipcMain.handle('app:browser-cmd', (_e, url, cls) => appembed.browserCmd(url, cls));
 ipcMain.handle('app:list', () => appembed.listApps());
-ipcMain.handle('app:launch', async (e, paneId, cmd, cls) => {
+ipcMain.handle('app:launch', async (e, paneId, cmd, cls, cwd) => {
   const key = keyOf(e.sender) || 'main';
-  const ok = await appembed.launch(paneId, cmd, cls, key);
+  const ok = await appembed.launch(paneId, cmd, cls, key, appembed.workDir(cwd));
   if (ok) owners.set(paneId, key);
   return ok;
 });
 ipcMain.on('app:bounds', (_e, paneId, rect) => appembed.setBounds(paneId, rect));
 ipcMain.on('app:close', (_e, paneId) => { appembed.close(paneId); if (!views.has(paneId)) owners.delete(paneId); });
 // 取り込まずに普通のウィンドウとして起動する(設定「アプリを開く方法」が「別ウィンドウ」のとき)
-ipcMain.handle('app:spawn', (_e, cmd) => {
+ipcMain.handle('app:spawn', (_e, cmd, cwd) => {
   if (typeof cmd !== 'string' || !cmd.trim()) return false;
   try {
-    const p = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: appembed.childEnv(), cwd: require('os').homedir() });
+    const p = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: appembed.childEnv(), cwd: appembed.workDir(cwd) });
     p.on('error', () => {});
     p.unref();
     return true;
@@ -727,6 +735,8 @@ app.whenReady().then(async () => {
   quick.init({ ipcMain, refreshStatus: sys?.refresh, onSelfChange: () => osd.quiet() });
   sessionCtl.init({ ipcMain });
   updater.init({ ipcMain });
+  term.init({ ipcMain, keyOf, sendTo, childEnv: appembed.childEnv });
+  ipcMain.on('home:active', (e, on) => { const k = keyOf(e.sender); if (k) (on ? atHome.add(k) : atHome.delete(k)); });
   if (process.platform === 'linux') {
     media.init({ ipcMain, send: broadcast });
     // どのアプリが前面でも効くショートカット(KWinスクリプト経由)。
@@ -771,6 +781,6 @@ app.on('before-quit', (e) => {
   e.preventDefault();
   appembed.closeAll(8000).catch(() => {}).finally(() => { qlog('closeAll done'); app.quit(); });
 });
-app.on('will-quit', () => { qlog('will-quit'); fileops.shutdown(); appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); qlog('will-quit done'); });
+app.on('will-quit', () => { qlog('will-quit'); fileops.shutdown(); term.shutdown(); appembed.shutdown(); keys.shutdown(); overlay.shutdown(); bus.shutdown(); qlog('will-quit done'); });
 app.on('quit', () => qlog('quit'));
 process.on('exit', () => qlog('process exit'));

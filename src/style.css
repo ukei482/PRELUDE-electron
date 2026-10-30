@@ -54,6 +54,12 @@ input:focus, select:focus { border-color: var(--accent); }
 #topbar .tbtn .tl { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; padding: 0 2px; }
 #topbar .tbtn:hover, #topbar .tbtn.warn { background: var(--bg); color: var(--accent); }
 #main { flex: 1; display: flex; min-height: 0; }
+/* ホーム(term.js): 上のバーの下いっぱいの白い端末。出している間はタブ(#main)を隠す */
+#home-term { display: none; flex: 1; min-height: 0; padding: 4px 26px 26px; background: var(--accent); }
+body.at-home #home-term { display: block; }
+body.at-home #main { display: none; }
+#home-term .xterm { height: 100%; }
+#home-term .xterm-viewport { background: var(--accent) !important; scrollbar-width: none; }
 #sidebar {
   width: var(--sbw); flex: none; display: flex; flex-direction: column; min-height: 0;
   background: var(--bg); padding: 6px; gap: 2px; overflow: hidden;

@@ -8,13 +8,16 @@
 - `preload.js` — レンダラへ出す API(`window.preludeApi`)
 - `config.js` — 設定の既定値と設定画面のスキーマ
 - `fileops.js` — ファイラの IPC(`fs:*`。一覧・コピー・削除・監視など)
+- `bmcodec.js` — `.prelude` の文字列(TOML。0.11 までの JSON も読む)⇔ 中身。中身の形は `src/bmfile.js`
 - `appembed.js` — 外部アプリの窓をペインに取り込む(KWin 経由)
-- `sys/` — バー・トレイ・通知・音量・更新(`sys/update.js`)などシステム連携
-- `src/` — レンダラ。`app.js`(タブ・分割・ペイン)、`files.js`(フォルダ)、`field.js`(フィールド表示)、`fieldlayout.js`(フィールドのカードの配置の計算)、`bmfile.js`(ブックマークのファイル `.prelude` の読み書き)、`space.js`(スペース。ブックマークの並び・旧ブックマークの移し方・タブの保存の形)、`history.js`(開いた履歴と点数)、ほか
+- `sys/` — バー・トレイ・通知・音量・更新(`sys/update.js`)などシステム連携。ホームの端末は `sys/term.js`(疑似端末は `sys/ptyhost.py`)
+- `cli/` — ホームの端末で使う `PRELUDE` コマンド(`cli/PRELUDE` → `cli/prelude.js`)と、その bash の設定 `cli/bashrc`
+- `src/` — レンダラ。`app.js`(タブ・分割・ペイン)、`files.js`(フォルダ)、`field.js`(フィールド表示)、`fieldlayout.js`(フィールドのカードの配置の計算)、`bmfile.js`(ブックマークのファイル `.prelude` の読み書き)、`space.js`(スペース。ブックマークの並び・旧ブックマークの移し方・タブの保存の形)、`history.js`(開いた履歴と点数)、`term.js`(ホーム = 起動直後の白い端末)、`cli.js`(PRELUDE コマンドの命令)、ほか
   - `app.js` 以外は `app.js` より先に読み込まれ、共通関数(`h`、`ico`、`api` など)は呼び出し時に使う
 - `theme/` — ロック画面(kscreenlocker のシェルのパッケージ)と SDDM のテーマ。QML。見た目は `theme/common/Prompt.qml` で共通。入れる/外すのは `scripts/theme.sh`
 - `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)
 - `test/` — `npm test`(Node の `node:test`)。DOM・Electron なしで動く計算だけをテストする
+- `crates/` — Rust 版(`docs/redesign-rust.md`)。`prelude-format`(`.prelude`・`space.toml`)。`cargo test`。`test/fixtures/format/` は JS と Rust の両方のテストが読む
 - `docs/release.md` — リリースと更新の詳しい手順
 
 ## 開発版を試す

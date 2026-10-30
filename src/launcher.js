@@ -20,11 +20,14 @@ function launchApp(a) {
   usage.unshift({ exec: a.exec, n: ((C.appUsage || []).find((u) => u.exec === a.exec)?.n || 0) + 1 });
   api.config.set('appUsage', usage.slice(0, 50));
   // スクリーンショットのアプリはペインに取り込まない(範囲選びの画面や「画面全体」が取り込みと噛み合わない)
+  // 今のタブが .prelude の作業空間なら、その paths を引き継ぐ(コンソールなどはそのフォルダで起動する)。違えばスペースの既定(space.toml)
+  const cur = activeTab();
+  const paths = cur && (cur.bookmarkId || cur.bmFile || cur.paths) ? tabPaths(cur) : null;
   if (!S.appSupported || C.behavior.appOpen === 'window' || NO_EMBED.test(a.exec)) {
-    api.app.spawn(a.exec).then((ok) => { if (!ok) toast('Failed to launch'); });
+    api.app.spawn(a.exec, (paths || tabPaths(null)).terminal || '').then((ok) => { if (!ok) toast('Failed to launch'); });
     return;
   }
-  const t = openTab('app', { cmd: a.exec, cls: a.cls, name: a.name, icon: a.icon });
+  const t = openTab('app', { cmd: a.exec, cls: a.cls, name: a.name, icon: a.icon, paths });
   startApp(t.root, a.exec, a.cls, a.name, a.icon);
 }
 
@@ -76,7 +79,7 @@ async function restartDevPrelude(leaf = findDevLeaf()?.leaf) {
 
 const LAUNCHER_COMMANDS = [
   { name: 'Settings', keys: 'settings せってい 設定', when: () => !IS_SUB, run: () => openSettings() },
-  { name: 'Home screen', keys: 'home ほーむ ホーム画面', run: () => openTab('home') },
+  { name: 'Home', keys: 'home terminal cli shell ほーむ たーみなる ホーム 端末', run: () => showHome() },
   { name: 'New tab (Web)', keys: 'new tab web あたらしい 新しいタブ', run: () => openTab('web') },
   { name: 'New tab (Folder)', keys: 'new tab folder files あたらしい 新しいタブ フォルダ', run: () => openTab('files') },
   { name: 'New tab (Field)', keys: 'new tab field tree folder files ふぃーるど あたらしい 新しいタブ フィールド', run: () => openTab('field') },

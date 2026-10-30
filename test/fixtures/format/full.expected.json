@@ -1,0 +1,13 @@
+{
+  "title": "本文",
+  "paths": { "files": "~/研究/論文", "open": "./文献", "save": "~/研究/論文/原稿" },
+  "root": {
+    "k": "split", "dir": "row", "ratio": 0.4,
+    "a": { "k": "leaf", "type": "web", "url": "https://example.com/" },
+    "b": {
+      "k": "split", "dir": "col", "ratio": 0.5,
+      "a": { "k": "leaf", "type": "files", "path": "/home/u/src", "sort": { "key": "date", "desc": true } },
+      "b": { "k": "leaf", "type": "app", "cmd": "kate", "cls": "kate", "name": "Kate" }
+    }
+  }
+}

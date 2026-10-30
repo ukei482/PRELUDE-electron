@@ -53,10 +53,10 @@ contextBridge.exposeInMainWorld('preludeApi', {
     supported: () => ipcRenderer.invoke('app:supported'),
     list: () => ipcRenderer.invoke('app:list'),
     browserCmd: (url, cls) => ipcRenderer.invoke('app:browser-cmd', url, cls),
-    launch: (id, cmd, cls) => ipcRenderer.invoke('app:launch', id, cmd, cls),
+    launch: (id, cmd, cls, cwd) => ipcRenderer.invoke('app:launch', id, cmd, cls, cwd),
     bounds: (id, rect) => ipcRenderer.send('app:bounds', id, rect),
     close: (id) => ipcRenderer.send('app:close', id),
-    spawn: (cmd) => ipcRenderer.invoke('app:spawn', cmd),
+    spawn: (cmd, cwd) => ipcRenderer.invoke('app:spawn', cmd, cwd),
     onExited: (cb) => on('app:exited', cb),
     onTitle: (cb) => on('app:title', cb),
   },
@@ -109,12 +109,12 @@ contextBridge.exposeInMainWorld('preludeApi', {
     open: (p) => ipcRenderer.invoke('fs:open', p),
     openWith: (p) => ipcRenderer.invoke('fs:open-with', p),
     home: () => ipcRenderer.invoke('fs:home'),
-    // ブックマークのファイル(.prelude)。{ path } / { text } か { error }
-    bmSave: (dir, name, text) => ipcRenderer.invoke('fs:bm-save', dir, name, text),
+    // ブックマークのファイル(.prelude)。中身はオブジェクト(src/bmfile.js の bmFileData の形)で渡し、ファイルは TOML。{ path } / { data } か { error }
+    bmSave: (dir, name, data) => ipcRenderer.invoke('fs:bm-save', dir, name, data),
     bmMkdir: (dir) => ipcRenderer.invoke('fs:bm-mkdir', dir),
-    bmWrite: (full, text) => ipcRenderer.invoke('fs:bm-write', full, text),
+    bmWrite: (full, data) => ipcRenderer.invoke('fs:bm-write', full, data),
     bmRead: (full) => ipcRenderer.invoke('fs:bm-read', full),
-    // スペース。{ names } / { files: [{ path, folder, text か error }], folders } か { error }
+    // スペース。{ names } / { files: [{ path, folder, data か error }], folders, conf(space.toml の中身) } か { error }
     spaceList: (root, fallback) => ipcRenderer.invoke('fs:space-list', root, fallback),
     spaceRead: (dir) => ipcRenderer.invoke('fs:space-read', dir),
     drives: () => ipcRenderer.invoke('fs:drives'),
@@ -145,4 +145,15 @@ contextBridge.exposeInMainWorld('preludeApi', {
     save: (data) => ipcRenderer.send('ws:save', data),
   },
   onShortcut: (cb) => on('shortcut', cb),
+  // ホームの端末(sys/term.js)と PRELUDE コマンド
+  term: {
+    start: (cols, rows) => ipcRenderer.send('term:start', cols, rows),
+    write: (data) => ipcRenderer.send('term:write', data),
+    resize: (cols, rows) => ipcRenderer.send('term:resize', cols, rows),
+    onData: (cb) => on('term:data', cb),
+    onExit: (cb) => on('term:exit', cb),
+    home: (on) => ipcRenderer.send('home:active', on),
+    onCli: (cb) => on('cli:run', cb),
+    cliResult: (r) => ipcRenderer.send('cli:result', r),
+  },
 });
