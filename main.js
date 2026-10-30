@@ -599,19 +599,19 @@ appembed.onEvent((ev, paneId, extra) => sendPane(paneId, 'app:' + ev, { paneId, 
 ipcMain.handle('app:supported', () => appembed.supported);
 ipcMain.handle('app:browser-cmd', (_e, url, cls) => appembed.browserCmd(url, cls));
 ipcMain.handle('app:list', () => appembed.listApps());
-ipcMain.handle('app:launch', async (e, paneId, cmd, cls) => {
+ipcMain.handle('app:launch', async (e, paneId, cmd, cls, cwd) => {
   const key = keyOf(e.sender) || 'main';
-  const ok = await appembed.launch(paneId, cmd, cls, key);
+  const ok = await appembed.launch(paneId, cmd, cls, key, appembed.workDir(cwd));
   if (ok) owners.set(paneId, key);
   return ok;
 });
 ipcMain.on('app:bounds', (_e, paneId, rect) => appembed.setBounds(paneId, rect));
 ipcMain.on('app:close', (_e, paneId) => { appembed.close(paneId); if (!views.has(paneId)) owners.delete(paneId); });
 // 取り込まずに普通のウィンドウとして起動する(設定「アプリを開く方法」が「別ウィンドウ」のとき)
-ipcMain.handle('app:spawn', (_e, cmd) => {
+ipcMain.handle('app:spawn', (_e, cmd, cwd) => {
   if (typeof cmd !== 'string' || !cmd.trim()) return false;
   try {
-    const p = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: appembed.childEnv(), cwd: require('os').homedir() });
+    const p = spawn(...cleanShell(cmd), { detached: true, stdio: 'ignore', env: appembed.childEnv(), cwd: appembed.workDir(cwd) });
     p.on('error', () => {});
     p.unref();
     return true;

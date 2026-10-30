@@ -20,11 +20,13 @@ function launchApp(a) {
   usage.unshift({ exec: a.exec, n: ((C.appUsage || []).find((u) => u.exec === a.exec)?.n || 0) + 1 });
   api.config.set('appUsage', usage.slice(0, 50));
   // スクリーンショットのアプリはペインに取り込まない(範囲選びの画面や「画面全体」が取り込みと噛み合わない)
+  // 今のタブが .prelude の作業空間なら、その paths を引き継ぐ(コンソールなどはそのフォルダで起動する)
+  const paths = activeTab()?.paths || null;
   if (!S.appSupported || C.behavior.appOpen === 'window' || NO_EMBED.test(a.exec)) {
-    api.app.spawn(a.exec).then((ok) => { if (!ok) toast('Failed to launch'); });
+    api.app.spawn(a.exec, paths?.terminal || '').then((ok) => { if (!ok) toast('Failed to launch'); });
     return;
   }
-  const t = openTab('app', { cmd: a.exec, cls: a.cls, name: a.name, icon: a.icon });
+  const t = openTab('app', { cmd: a.exec, cls: a.cls, name: a.name, icon: a.icon, paths });
   startApp(t.root, a.exec, a.cls, a.name, a.icon);
 }
 

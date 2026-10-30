@@ -34,6 +34,7 @@ const ID_PREFIX = `${WIN_KEY}${Math.random().toString(36).slice(2, 6)}-`;
 const nid = (p) => `${ID_PREFIX}${p}${++seq}`;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const baseName = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || String(p || '');
+const parentDir = (p) => String(p || '').replace(/[\\/]+$/, '').replace(/[\\/][^\\/]*$/, '') || '/';
 const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
 const fmtSize = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB');
 const getPath = (o, p) => p.split('.').reduce((v, k) => (v == null ? undefined : v[k]), o);
@@ -427,7 +428,7 @@ function showTab(tab) {
 function openTab(kind, o = {}) {
   if (kind === 'app' && !S.appSupported) kind = 'files';
   const leaf = makeLeaf(kind, o);
-  const tab = { id: nid('t'), num: api.tab.allocNum(0), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(0), root: leaf, activePane: leaf.id, bookmarkId: o.bookmarkId || null, paths: o.paths || null };
   const pos = C.tabs?.newTabPosition;
   const cur = S.tabs.findIndex((t) => t.id === S.active);
   if (pos === 'top') S.tabs.unshift(tab);
@@ -490,7 +491,7 @@ const duplicateTab = (tab) => insertTab(serNode(tab.root), { activeIndex: leaves
 function insertTab(data, o) {
   const root = deserNode(data);
   const ls = leaves(root);
-  const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null, bmFile: o.bmFile || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(o.num || 0), root, activePane: (ls[o.activeIndex] || ls[0]).id, bookmarkId: o.bookmarkId || null, bmFile: o.bmFile || null, paths: o.paths || null };
   S.tabs.splice(clamp(o.index ?? 0, 0, S.tabs.length), 0, tab);
   S.active = tab.id;
   leaveHome();
@@ -503,7 +504,7 @@ function insertTab(data, o) {
 // o.quiet: 残りのタブが無くなっても新しいタブを開かない(画面を外して全部移すとき)
 const LIVE_ONLY = new Set(['el', 'ui', 'slot', 'vl', 'apps', 'entries', 'view', 'sel', 'ta', 'fv']); // 画面の部品など、移った先で作り直すもの
 function moveTab(tab, to, o = {}) {
-  const data = JSON.parse(JSON.stringify({ num: tab.num, bookmarkId: tab.bookmarkId, bmFile: tab.bmFile, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
+  const data = JSON.parse(JSON.stringify({ num: tab.num, bookmarkId: tab.bookmarkId, bmFile: tab.bmFile, paths: tab.paths, activePane: tab.activePane, root: tab.root }, (k, v) => (LIVE_ONLY.has(k) ? undefined : v)));
   const i = S.tabs.indexOf(tab);
   S.tabs.splice(i, 1);
   if (S.active === tab.id) S.active = S.tabs[Math.min(i, S.tabs.length - 1)]?.id ?? null;
@@ -515,7 +516,7 @@ function moveTab(tab, to, o = {}) {
 // 別の窓から移ってきたタブ。ペインは id も状態もそのまま(Webビューは作り直さず、アプリも起動し直さない)
 function adoptTab(data) {
   const ids = new Set(leaves(data.root).map((l) => l.id));
-  const tab = { id: nid('t'), num: api.tab.allocNum(data.num || 0), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null, bmFile: data.bmFile || null };
+  const tab = { id: nid('t'), num: api.tab.allocNum(data.num || 0), root: data.root, activePane: ids.has(data.activePane) ? data.activePane : leaves(data.root)[0].id, bookmarkId: data.bookmarkId || null, bmFile: data.bmFile || null, paths: data.paths || null };
   // フォルダペインは一覧を持ってこない(大きい)ので、同じフォルダを読み直す。並べ方と戻る/進むの履歴は引き継ぐ
   for (const l of leaves(tab.root)) if (l.type === 'files') Object.assign(l, newFilesState(l), { hist: l.hist || { back: [], fwd: [] }, loaded: false, paintQ: false });
   S.tabs.unshift(tab);
@@ -524,7 +525,7 @@ function adoptTab(data) {
 }
 
 function splitLeaf(tab, leaf, dir, kind, o = {}) {
-  if ((kind === 'files' || kind === 'field') && o.path == null) o.path = (leaf.type === 'files' && leaf.mode !== 'save') || leaf.type === 'field' ? leaf.path : C.behavior.startPath;
+  if ((kind === 'files' || kind === 'field') && o.path == null) o.path = (leaf.type === 'files' && leaf.mode !== 'save') || leaf.type === 'field' ? leaf.path : tab.paths?.files || C.behavior.startPath;
   const nl = makeLeaf(kind, o);
   replaceNode(tab, leaf, { k: 'split', dir, ratio: 0.5, a: leaf, b: nl });
   tab.activePane = nl.id;
@@ -673,20 +674,30 @@ async function overwriteBmFile(tab) {
   const home = await api.fs.home();
   const r = await api.fs.bmRead(tab.bmFile);
   let title = bmFileShort(tab.bmFile);
-  try { title = bmFileParse(r.text, home).title || title; } catch {}
-  const w = await api.fs.bmWrite(tab.bmFile, bmFileText(title, serNode(tab.root), home));
+  let paths = {};
+  try { ({ title = title, paths } = bmFileParse(r.text, home)); title ||= bmFileShort(tab.bmFile); } catch {}
+  const w = await api.fs.bmWrite(tab.bmFile, bmFileText(title, serNode(tab.root), home, paths));
   toast(w.error ? `Cannot save (${w.error})` : 'Overwritten with current layout');
 }
-// ファイルを読んで、起動コマンドを確かめた配置 { title, root } にする。開かない時は null
+// ファイルを読んで、起動コマンドを確かめた配置 { title, root, paths } にする。開かない時は null。
+// paths はこの作業空間のフォルダ(bmFilePaths で決めたもの)。パスの無いフォルダのペインは paths.files で開く
 async function readBmFile(full) {
   const r = await api.fs.bmRead(full);
   let d = null;
+  const home = await api.fs.home();
   try {
     if (r.error) throw new Error(r.error);
-    d = bmFileParse(r.text, await api.fs.home());
+    d = bmFileParse(r.text, home);
   } catch (e) { toast(`Cannot open: ${baseName(full)} (${e.message})`); return null; }
-  const root = await checkBmCommands(d.root, baseName(full));
-  return root && { title: d.title || bmFileShort(full), root };
+  const paths = bmFilePaths(d.paths, home, parentDir(full));
+  const root = await checkBmCommands(bmFileFillPaths(d.root, paths.files), baseName(full));
+  return root && { title: d.title || bmFileShort(full), root, paths };
+}
+// ファイルから開いたタブの paths を読み直す(起動し直したあと。tab.paths は保存しない)
+async function refreshTabPaths(tab) {
+  const r = await api.fs.bmRead(tab.bmFile);
+  const home = await api.fs.home();
+  try { if (!r.error) tab.paths = bmFilePaths(bmFileParse(r.text, home).paths, home, parentDir(tab.bmFile)); } catch {}
 }
 // ファイルは人からもらうこともあるので、インストール済みのアプリ(.desktop の Exec)と同じでない起動コマンドは、黙って起動しない。
 // 既定は「起動しないで開く」(そのペインは「アプリを取り込む」の画面になる)
@@ -710,7 +721,7 @@ async function openBmFile(full) {
   const open = S.tabs.find((t) => t.bmFile === full);
   if (open) { showTab(open); return; } // 1ファイル = 最大1タブ
   const d = await readBmFile(full);
-  if (d) insertTab(d.root, { bmFile: full, index: 0 });
+  if (d) insertTab(d.root, { bmFile: full, paths: d.paths, index: 0 });
 }
 // ファイルをサイドバーのブックマークに入れる(ファイルは残す)
 async function importBmFile(full) {
@@ -988,7 +999,8 @@ async function startApp(leaf, cmd, cls = '', name = '', icon = '') {
     name = hostOf(leaf.webUrl) || 'Chromium';
   }
   if (!cmd.trim()) return;
-  if (await api.app.launch(leaf.id, cmd, cls)) {
+  const cwd = (findLeaf(leaf.id)?.tab || activeTab())?.paths?.terminal || ''; // 作業空間(.prelude の paths)のコンソールのフォルダで起動する
+  if (await api.app.launch(leaf.id, cmd, cls, cwd)) {
     Object.assign(leaf, { cmd, cls, name: name || cmd.split(/\s+/)[0].split('/').pop(), running: true, dormant: false });
     if (icon && icon !== leaf.icon) Object.assign(leaf, { icon, iconUrl: '', iconTried: false });
     if (!leaf.webUrl) { try { localStorage.setItem('lastApp', JSON.stringify({ cmd, cls, name: leaf.name, icon: leaf.icon })); } catch {} }
@@ -1156,6 +1168,7 @@ function restore(ws) {
     } catch {}
   }
   if (S.tabs.length) S.active = S.tabs[clamp(ws.active | 0, 0, S.tabs.length - 1)].id;
+  for (const t of S.tabs) if (t.bmFile) refreshTabPaths(t);
 }
 
 // ------------------------------------------------------------------ events from main
@@ -1221,7 +1234,7 @@ api.dl.onStart(({ id, filename, fromPaneId, defaultDir, total }) => {
   const src = f ? f.leaf : activeLeaf(tab);
   const w = src.el?.pane.getBoundingClientRect().width || 0;
   // 元のペインが狭ければ下に、広ければ右に保存先ペインを出す
-  splitLeaf(tab, src, w && w < 640 ? 'col' : 'row', 'files', { path: defaultDir, mode: 'save', dlId: id, filename });
+  splitLeaf(tab, src, w && w < 640 ? 'col' : 'row', 'files', { path: tab.paths?.save || defaultDir, mode: 'save', dlId: id, filename });
 });
 api.dl.onProgress(({ id, received, total }) => {
   Object.assign(S.dl[id] ||= {}, { received, total });
