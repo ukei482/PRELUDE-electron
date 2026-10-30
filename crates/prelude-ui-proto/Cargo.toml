@@ -1,0 +1,9 @@
+# 段階 0 の Slint の試作(docs/slint-prototype.md)。捨ててよい
+[package]
+name = "prelude-ui-proto"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+slint = "1"
