@@ -11,6 +11,10 @@
   - 項目は自由に増やせる。知らない項目も「今の配置で上書き」で消えない
 - Rust への移行の設計(`docs/redesign-rust.md`)
 - Rust 版の土台: Cargo のワークスペース(`Cargo.toml`・`crates/`)と、`.prelude`・`space.toml` を読み書きする `prelude-format` クレート。Electron 版と同じ共通のファイル(`test/fixtures/format/`)で、両方のテストが同じ結果になることを確かめる(`cargo test`)
+- Rust 版のコアの骨組み(移行の段階 2)。まだ画面は無く、Electron 版とは別に動く(試すためのもの)
+  - `prelude-core`: 常駐して、スペース・タブ・分割・開いているブックマークを持つ。状態は `~/.local/state/prelude/core.json` に残し、起動し直すと戻る。スペースのフォルダは Electron 版と同じ `~/スペース`
+  - `prelude-proto`: コアと UI・コマンドの約束。Unix ソケット(`$XDG_RUNTIME_DIR/prelude/core.sock`)に 1 行 1 つの JSON。最初に `hello` で約束の版を確かめ、`subscribe` すると状態が変わるたびに `state` のイベントが来る
+  - `prelude` コマンド: `status`・`tabs`・`tab <n>`・`close [n]`・`open <URL|フォルダ|.prelude|ブックマークの名前>`・`spaces`・`space <名前>`・`space new <名前>`・`bookmarks`・`paths [n]`・`watch`・`raw <コマンド> [引数の JSON]`
 
 ### 変更
 - **ブックマークのファイル(`.prelude`)を TOML にした** **[互換性]**。`version = 2`・`title`・`[paths]`・`[layout]`(タブの配置)を持つ

@@ -1,0 +1,16 @@
+[package]
+name = "prelude-core"
+version = "0.1.0"
+description = "PRELUDE のコア(常駐。状態の持ち主で、UI の約束をソケットで出す)"
+edition.workspace = true
+
+[dependencies]
+prelude-format = { path = "../prelude-format" }
+prelude-proto = { path = "../prelude-proto" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "macros", "signal", "time", "fs"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread"] }
