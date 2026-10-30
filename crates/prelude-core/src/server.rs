@@ -3,6 +3,8 @@
 //! - つないだら最初に `hello`。版がコアの話せるもの(`SUPPORTED`)でなければ断る
 //! - `hello` で `subscribe` したつなぎには、すぐに今の `state` を送り、その後は変わるたびに送る
 //! - ソケットは自分だけが使えるようにする(フォルダ 0700・ソケット 0600)
+use crate::embed::{self, Note};
+use crate::recipes;
 use crate::state::{Core, Saved};
 use prelude_proto::{Command, ErrorCode, Event, Hello, Request, Response, MAX_LINE, PROTOCOL, SUPPORTED};
 use serde_json::{json, Value};
@@ -27,15 +29,41 @@ pub struct Options {
     pub home: String,
     /// スペースのフォルダ(この下のフォルダ 1 つがスペース 1 つ)
     pub spaces_root: PathBuf,
+    /// ペインのレシピのフォルダ
+    pub recipes_dir: PathBuf,
+    /// アプリの窓を取り込む(KDE のとき)。テストでは false
+    pub embed: bool,
+}
+
+/// このコアの印。既定のソケットなら空、別のソケット(試すときなど)ならその場所から作った短い印。
+/// D-Bus の名前・KWin スクリプトの名前に付けて、ふだんのコアと取り合わないようにする
+pub fn instance_tag(socket: &Path) -> String {
+    if socket == prelude_proto::default_socket_path() {
+        return String::new();
+    }
+    // FNV-1a(版が変わっても同じ値になるように、自前で計算する)
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in socket.as_os_str().as_encoded_bytes() {
+        h = (h ^ u64::from(*b)).wrapping_mul(0x100000001b3);
+    }
+    format!(".d{:08x}", h as u32)
 }
 
 struct Shared {
     core: Mutex<Core>,
     events: broadcast::Sender<Arc<str>>,
     save: Notify,
+    embed: Option<embed::Handle>,
 }
 
 impl Shared {
+    /// 取り込みに、今の状態の取り込むペインを送る
+    fn sync_embed(&self, core: &Core) {
+        if let Some(e) = &self.embed {
+            e.want(core.wants());
+        }
+    }
+
     fn state_line(core: &Core) -> Arc<str> {
         line(&Event { event: "state".into(), data: json!(core.state()) }).into()
     }
@@ -89,9 +117,36 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     let listener = UnixListener::bind(&opt.socket)?;
     std::fs::set_permissions(&opt.socket, std::fs::Permissions::from_mode(0o600))?;
 
-    let core = Core::new(opt.home.clone(), opt.spaces_root.clone(), load_saved(&opt.state_file));
+    let mut core = Core::new(opt.home.clone(), opt.spaces_root.clone(), load_saved(&opt.state_file));
+    core.set_recipes(recipes::load(&opt.recipes_dir));
     let (events, _) = broadcast::channel(64);
-    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new() });
+    let (notes_tx, mut notes) = tokio::sync::mpsc::unbounded_channel();
+    let embed = if opt.embed { embed::start(&instance_tag(&opt.socket), notes_tx).await } else { None };
+    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), embed });
+    // 前回のタブのアプリを起動し直す
+    shared.sync_embed(&shared.core.lock().unwrap());
+
+    // 取り込みからの知らせ(窓が閉じた・題名が変わった)を状態に入れる
+    let noter = {
+        let shared = shared.clone();
+        tokio::spawn(async move {
+            while let Some(n) = notes.recv().await {
+                let core = &mut *shared.core.lock().unwrap();
+                let changed = match n {
+                    Note::Exited { pane, had_window } => {
+                        if !had_window {
+                            eprintln!("prelude-core: no window found for pane {pane}");
+                        }
+                        core.note_exited(pane)
+                    }
+                    Note::Title { pane, title } => core.note_title(pane, title),
+                };
+                if changed {
+                    let _ = shared.events.send(Shared::state_line(core));
+                }
+            }
+        })
+    };
 
     // 書き出し
     let saver = {
@@ -122,6 +177,10 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     }
 
     saver.abort();
+    noter.abort();
+    if let Some(e) = &shared.embed {
+        e.shutdown().await; // 起動したアプリを閉じる
+    }
     let s = shared.core.lock().unwrap().saved();
     let saved = write_saved(&opt.state_file, &s);
     let _ = std::fs::remove_file(&opt.socket);
@@ -195,6 +254,7 @@ async fn serve(stream: UnixStream, shared: Arc<Shared>) {
                 let (o, ev) = {
                     let mut core = shared.core.lock().unwrap();
                     let o = core.handle(command);
+                    shared.sync_embed(&core);
                     let ev = o.changed.then(|| Shared::state_line(&core));
                     (o, ev)
                 };

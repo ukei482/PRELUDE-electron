@@ -1,6 +1,6 @@
 //! prelude コマンド。コアのソケット(prelude-proto)につないで、状態を見る・操作する。
 //! 画面の文は Electron 版に合わせて英語。外のスクリプトからは `prelude raw` と `prelude watch` で JSON をそのまま使える。
-use prelude_proto::{BookmarkInfo, Incoming, State, PROTOCOL};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Incoming, RecipeInfo, State, PROTOCOL};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -13,7 +13,12 @@ usage: prelude <command> [args]
   tabs                   List tabs (* = current)
   tab <n>                Switch to tab n
   close [n]              Close tab n (default: current)
-  open <target>          Open a URL, a folder, a .prelude file, or a bookmark of this space by name
+  open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name
+                         (--run: also run commands that do not match an installed app)
+  new <type> [key=value...]  Open a pane in a new tab (e.g. new console, new app cmd=kate)
+  panes                  List panes of all tabs (id, type, place)
+  place <pane> <x> <y> <w> <h>  Tell where a pane is on screen (what the UI does; for testing)
+  recipes                Pane types made from recipes (~/.config/prelude/panes)
   spaces                 List spaces (* = current)
   space <name>           Switch to a space
   space new <name>       Create a space
@@ -106,13 +111,30 @@ fn abs(p: &str) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(p))
 }
 
+/// ブックマークを開く。インストール済みのアプリと一致しない起動コマンドは、run でなければ外して開き、知らせる
+fn open_bookmark(c: &mut Conn, path: &str, run: bool) -> Result<(), String> {
+    let mut r: BookmarkOpened = serde_json::from_value(c.call("bookmark.open", json!({ "path": path }))?).map_err(|e| e.to_string())?;
+    if run && !r.held.is_empty() {
+        // 外したコマンドも実行する: 開いたタブを閉じて、許して開き直す
+        c.call("tab.close", json!({ "tab": { "id": r.tab } }))?;
+        r = serde_json::from_value(c.call("bookmark.open", json!({ "path": path, "allow": r.held }))?).map_err(|e| e.to_string())?;
+    }
+    if !r.held.is_empty() {
+        eprintln!("Not run (does not match any installed app). Unless you made this file yourself, keep it so:");
+        for h in &r.held {
+            eprintln!("  {h}");
+        }
+        eprintln!("To run them: prelude open --run {path}");
+    }
+    Ok(())
+}
+
 /// open の対象を決める: .prelude のファイル → ブックマーク、フォルダ → フォルダのペイン、URL → Web、
 /// それ以外は今のスペースのブックマークの名前(同じ名前、なければ名前の始まり)
-fn open(c: &mut Conn, target: &str) -> Result<(), String> {
+fn open(c: &mut Conn, target: &str, run: bool) -> Result<(), String> {
     let p = Path::new(target);
     if target.ends_with(".prelude") && p.is_file() {
-        c.call("bookmark.open", json!({ "path": abs(target) }))?;
-        return Ok(());
+        return open_bookmark(c, &abs(target).to_string_lossy(), run);
     }
     if p.is_dir() {
         c.call("tab.open", json!({ "pane": { "type": "files", "path": abs(target) } }))?;
@@ -124,9 +146,7 @@ fn open(c: &mut Conn, target: &str) -> Result<(), String> {
     let hit =
         list.iter().find(|b| b.title.to_lowercase() == lower).or_else(|| list.iter().find(|b| b.title.to_lowercase().starts_with(&lower)));
     match hit {
-        Some(b) if !url_like || b.title.to_lowercase() == lower => {
-            c.call("bookmark.open", json!({ "path": b.path }))?;
-        }
+        Some(b) if !url_like || b.title.to_lowercase() == lower => open_bookmark(c, &b.path.clone(), run)?,
         _ if url_like => {
             let url = if target.contains("://") { target.to_string() } else { format!("https://{target}") };
             c.call("tab.open", json!({ "pane": { "type": "web", "url": url } }))?;
@@ -134,6 +154,32 @@ fn open(c: &mut Conn, target: &str) -> Result<(), String> {
         _ => return Err(format!("Nothing to open: {target}")),
     }
     Ok(())
+}
+
+/// ペインを 1 行ずつ: タブの番号・ペインの id・種類・中身
+fn print_panes(num: u32, l: &Value) {
+    if l["k"] == "split" {
+        print_panes(num, &l["a"]);
+        print_panes(num, &l["b"]);
+        return;
+    }
+    let what = ["url", "path", "cmd"].iter().find_map(|k| l[*k].as_str()).unwrap_or("");
+    let state = if l["stopped"] == true { "  (stopped)" } else { "" };
+    let title = l["window_title"].as_str().map(|t| format!("  \"{t}\"")).unwrap_or_default();
+    println!("{num:>3}  {:>4}  {:<8} {}{title}{state}", l["id"], l["type"].as_str().unwrap_or(""), short(what));
+}
+
+/// `place` で知らせた場所の控え(コアは場所を送り返さないので、続けて使えるように手元に置く)
+fn places_file() -> PathBuf {
+    let mut p = prelude_proto::socket_path();
+    p.set_extension("places.json");
+    p
+}
+fn places() -> Vec<Value> {
+    std::fs::read_to_string(places_file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+fn save_places(v: &[Value]) {
+    let _ = std::fs::write(places_file(), serde_json::to_string(v).unwrap_or_default());
 }
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -155,7 +201,42 @@ fn run(args: &[String]) -> Result<(), String> {
         ["close", n] => {
             Conn::open(false)?.call("tab.close", json!({ "tab": num_arg(n)? }))?;
         }
-        ["open", rest @ ..] if !rest.is_empty() => open(&mut Conn::open(false)?, &rest.join(" "))?,
+        ["open", "--run", rest @ ..] if !rest.is_empty() => open(&mut Conn::open(false)?, &rest.join(" "), true)?,
+        ["open", rest @ ..] if !rest.is_empty() => open(&mut Conn::open(false)?, &rest.join(" "), false)?,
+        ["new", kind, rest @ ..] => {
+            let mut pane = serde_json::Map::new();
+            pane.insert("type".into(), json!(kind));
+            for kv in rest {
+                let (k, v) = kv.split_once('=').ok_or_else(|| format!("Not key=value: {kv}"))?;
+                pane.insert(k.into(), json!(v));
+            }
+            Conn::open(false)?.call("tab.open", json!({ "pane": pane }))?;
+        }
+        ["panes"] => {
+            let s = Conn::open(false)?.state()?;
+            for t in &s.tabs {
+                print_panes(t.num, &t.layout);
+            }
+        }
+        ["place", pane, x, y, w, h] => {
+            let n = |v: &str| v.parse::<i64>().map_err(|_| format!("Not a number: {v}"));
+            let mut c = Conn::open(false)?;
+            // 今の場所の一覧に足す(UI は見えているペインを全部送るので、ここでも今の分に重ねる)
+            let rect = json!({ "pane": n(pane)?, "x": n(x)?, "y": n(y)?, "width": n(w)?, "height": n(h)? });
+            let mut rects: Vec<Value> = places().into_iter().filter(|r| r["pane"] != rect["pane"]).collect();
+            if rect["width"].as_i64() > Some(0) {
+                rects.push(rect);
+            }
+            c.call("pane.place", json!({ "rects": rects }))?;
+            save_places(&rects);
+        }
+        ["recipes"] => {
+            let list: Vec<RecipeInfo> =
+                serde_json::from_value(Conn::open(false)?.call("recipe.list", json!({}))?).map_err(|e| e.to_string())?;
+            for r in list {
+                println!("  {:<12} {}", r.kind, r.name);
+            }
+        }
         ["spaces"] => {
             let mut c = Conn::open(false)?;
             let cur = c.state()?.space;

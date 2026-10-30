@@ -16,7 +16,14 @@ fn dir(name: &str) -> PathBuf {
 }
 
 fn opts(d: &std::path::Path) -> Options {
-    Options { socket: d.join("s.sock"), state_file: d.join("state/core.json"), home: "/home/u".into(), spaces_root: d.join("spaces") }
+    Options {
+        socket: d.join("s.sock"),
+        state_file: d.join("state/core.json"),
+        home: "/home/u".into(),
+        spaces_root: d.join("spaces"),
+        recipes_dir: d.join("recipes"),
+        embed: false,
+    }
 }
 
 /// コアを動かす。返す送り口に送ると止まる

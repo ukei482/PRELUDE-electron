@@ -4,11 +4,13 @@
 //! - タブはスペースごと。切り替えると今のスペースのタブはしまい、切り替え先のタブを出す(取り込んだ窓を閉じるのは段階 3)
 //! - ペインの id・タブの id はコアの中で一意(スペースをまたいでも重ならない)。タブの番号はスペースの中で 1 から、空いた番号を使う
 //! - 残すもの(スペース・タブ・分割・開いているブックマーク)は [`Saved`] にして書き出す。ペインの場所(UI から来る)は残さない
+use crate::embed::Want;
+use crate::recipes::{self, Recipe};
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
-use prelude_proto::{BookmarkInfo, Command, Dir, ErrorCode, PaneRect, PaneSpec, State, TabInfo, TabRef};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, PaneRect, PaneSpec, RecipeInfo, State, TabInfo, TabRef};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as Json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// 既定のスペース(スペースが 1 つも無いときに作る)
@@ -264,6 +266,14 @@ pub struct Core {
     last_id: u64,
     /// UI が知らせたペインの場所。残さない
     places: HashMap<u64, PaneRect>,
+    /// ペインのレシピ(窓を取り込むペインの種類)
+    recipes: Vec<Recipe>,
+    /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
+    stopped: HashSet<u64>,
+    /// 取り込んだ窓の題名。残さない
+    titles: HashMap<u64, String>,
+    /// 起動コマンドがインストール済みのアプリのものか(テストで差し替える)
+    installed: fn(&str) -> bool,
 }
 
 /// コマンドの結果。changed なら状態が変わった(イベントを配り、書き出す)
@@ -283,6 +293,10 @@ impl Core {
             others: BTreeMap::new(),
             last_id: 0,
             places: HashMap::new(),
+            recipes: vec![],
+            stopped: HashSet::new(),
+            titles: HashMap::new(),
+            installed: crate::apps::is_installed,
         };
         let names = c.space_names();
         if let Some(s) = saved {
@@ -372,10 +386,85 @@ impl Core {
                     title: t.title(),
                     bookmark: t.bookmark.as_ref().map(|(p, _)| p.clone()),
                     active_pane: t.active_pane,
-                    layout: t.layout.to_json(),
+                    layout: self.live(t.layout.to_json()),
                 })
                 .collect(),
         }
+    }
+
+    /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか)を付ける
+    fn live(&self, mut v: Json) -> Json {
+        if let Some(o) = v.as_object_mut() {
+            if o.get("k").and_then(Json::as_str) == Some("split") {
+                for k in ["a", "b"] {
+                    if let Some(c) = o.remove(k) {
+                        o.insert(k.into(), self.live(c));
+                    }
+                }
+            } else if let Some(id) = o.get("id").and_then(Json::as_u64) {
+                if let Some(t) = self.titles.get(&id) {
+                    o.insert("window_title".into(), json!(t));
+                }
+                if self.stopped.contains(&id) {
+                    o.insert("stopped".into(), json!(true));
+                }
+            }
+        }
+        v
+    }
+
+    pub fn set_recipes(&mut self, r: Vec<Recipe>) {
+        self.recipes = r;
+    }
+
+    /// 起動コマンドを確かめる関数を差し替える(テスト用)
+    pub fn set_installed(&mut self, f: fn(&str) -> bool) {
+        self.installed = f;
+    }
+
+    /// 窓を取り込むペイン(今のスペースのもの)。アプリのペインは起動コマンド、レシピのペインはレシピのコマンド。
+    /// 止まったペイン・コマンドの無いペインは入れない。Web のペインは段階 3-b
+    pub fn wants(&self) -> Vec<Want> {
+        let mut out = vec![];
+        for t in &self.tabs.tabs {
+            let mut paths: Option<Map<String, Json>> = None;
+            for (id, l) in t.layout.panes() {
+                if self.stopped.contains(&id) {
+                    continue;
+                }
+                let (cmd, cls) = if l.kind == "app" && l.str("webUrl").is_empty() {
+                    (l.str("cmd").to_string(), l.str("cls").to_string())
+                } else if let Some(r) = self.recipes.iter().find(|r| r.kind == l.kind) {
+                    let p = paths.get_or_insert_with(|| self.paths(Some(t)));
+                    let get = |k: &str| p.get(k).and_then(Json::as_str).unwrap_or(&self.home).to_string();
+                    (recipes::command(r, &get), r.class.clone())
+                } else {
+                    continue;
+                };
+                if cmd.trim().is_empty() {
+                    continue;
+                }
+                let p = paths.get_or_insert_with(|| self.paths(Some(t)));
+                let cwd = p.get("terminal").and_then(Json::as_str).unwrap_or(&self.home).to_string();
+                out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied() });
+            }
+        }
+        out
+    }
+
+    /// 取り込んだ窓が無くなった。ペインは残して止まったものにする。変われば true
+    pub fn note_exited(&mut self, pane: u64) -> bool {
+        self.titles.remove(&pane);
+        self.find_pane(pane).is_ok() && self.stopped.insert(pane)
+    }
+
+    /// 取り込んだ窓の題名。変われば true
+    pub fn note_title(&mut self, pane: u64, title: String) -> bool {
+        if self.find_pane(pane).is_err() || self.titles.get(&pane) == Some(&title) {
+            return false;
+        }
+        self.titles.insert(pane, title);
+        true
     }
 
     /// UI が知らせたペインの場所(見えているペインだけ)
@@ -401,7 +490,10 @@ impl Core {
             Command::SpaceSwitch { name } => self.space_switch(&name),
             Command::SpaceCreate { name } => self.space_create(&name),
             Command::BookmarkList {} => Ok(json!(self.bookmarks())),
-            Command::BookmarkOpen { path } => self.bookmark_open(&path),
+            Command::BookmarkOpen { path, allow } => self.bookmark_open(&path, &allow),
+            Command::RecipeList {} => {
+                Ok(json!(self.recipes.iter().map(|r| RecipeInfo { kind: r.kind.clone(), name: r.name.clone() }).collect::<Vec<_>>()))
+            }
             Command::TabOpen { pane, index } => {
                 let leaf = leaf_of(&pane)?;
                 let id = self.insert_tab(Layout::Pane { id: 0, leaf }, None, index);
@@ -415,6 +507,10 @@ impl Core {
             Command::TabActivate { tab } => {
                 let i = self.tab_index(Some(tab))?;
                 self.tabs.active = Some(self.tabs.tabs[i].id);
+                // 止まっていたペインは起動し直す
+                for (id, _) in self.tabs.tabs[i].layout.panes() {
+                    self.stopped.remove(&id);
+                }
                 Ok(Json::Null)
             }
             Command::TabMove { tab, index } => {
@@ -495,6 +591,8 @@ impl Core {
         let t = self.tabs.tabs.remove(i);
         for (id, _) in t.layout.panes() {
             self.places.remove(&id);
+            self.stopped.remove(&id);
+            self.titles.remove(&id);
         }
         if self.tabs.active == Some(t.id) {
             let n = self.tabs.tabs.len();
@@ -642,11 +740,11 @@ impl Core {
     }
 
     /// ブックマークを開く。もう開いていればそのタブにする。パスの無いフォルダのペインは paths の files で開く。
-    /// 起動コマンドはまだ実行しない(取り込みは段階 3。そのときに、人からもらったファイルのコマンドを確かめる)
-    fn bookmark_open(&mut self, path: &str) -> Reply {
+    /// ファイルは人からもらうこともあるので、インストール済みのアプリと一致しない起動コマンドは、allow に無ければ外す(そのペインは起動しない)
+    fn bookmark_open(&mut self, path: &str, allow: &[String]) -> Reply {
         if let Some(t) = self.tabs.tabs.iter().find(|t| t.bookmark.as_ref().is_some_and(|(p, _)| p == path)) {
             self.tabs.active = Some(t.id);
-            return Ok(json!(t.id));
+            return Ok(json!(BookmarkOpened { tab: t.id, held: vec![] }));
         }
         let bm = self.read_bookmark(path)?;
         let dir = parent(path);
@@ -663,8 +761,26 @@ impl Core {
                 }
             }
         }
+        let mut held = vec![];
+        for (id, l) in layout.panes().into_iter().map(|(id, l)| (id, l.clone())).collect::<Vec<_>>() {
+            let cmd = l.str("cmd").trim().to_string();
+            if l.kind == "app"
+                && l.str("webUrl").is_empty()
+                && !cmd.is_empty()
+                && !(self.installed)(&cmd)
+                && !allow.iter().any(|a| a.trim() == cmd)
+            {
+                if let Some(l) = layout.leaf_mut(id) {
+                    l.fields.remove("cmd");
+                }
+                if !held.contains(&cmd) {
+                    held.push(cmd);
+                }
+            }
+        }
         let title = if bm.title.is_empty() { stem(path) } else { bm.title };
-        Ok(json!(self.insert_tab(layout, Some((path.to_string(), title)), None)))
+        let tab = self.insert_tab(layout, Some((path.to_string(), title)), None);
+        Ok(json!(BookmarkOpened { tab, held }))
     }
 
     /// タブで使うフォルダ。スペースの既定(`space.toml`)の上に、タブが開いたブックマークの paths を重ねる。
