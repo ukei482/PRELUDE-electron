@@ -211,7 +211,8 @@ impl Node {
         out
     }
 
-    fn parse(v: &Value, home: &str) -> Result<Node, Error> {
+    /// `[layout]` の値 → 配置(`.prelude` を読むときと同じく形を確かめ、`path` はホームを戻す)
+    pub fn from_value(v: &Value, home: &str) -> Result<Node, Error> {
         let mut count = 0;
         Node::walk(v, home, 0, &mut count)
     }
@@ -306,7 +307,7 @@ impl Bookmark {
             Some(_) => return Err(Error::NotBookmark),
         }
         let layout = t.remove("layout").ok_or(Error::NotBookmark)?;
-        let layout = Node::parse(&layout, home)?;
+        let layout = Node::from_value(&layout, home)?;
         let title = t.remove("title").and_then(|v| v.as_str().map(|s| cut(s, 256))).unwrap_or_default();
         let paths = Paths::from_value(t.remove("paths").as_ref());
         Ok(Bookmark { title, paths, layout, rest: t })
@@ -323,7 +324,7 @@ impl Bookmark {
         let root = d.get("root").and_then(json_to_toml).ok_or(Error::NotBookmark)?;
         let title = d.get("title").and_then(|v| v.as_str()).map(|s| cut(s, 256)).unwrap_or_default();
         let paths = Paths::from_value(d.get("paths").and_then(json_to_toml).as_ref());
-        Ok(Bookmark { title, paths, layout: Node::parse(&root, home)?, rest: Table::new() })
+        Ok(Bookmark { title, paths, layout: Node::from_value(&root, home)?, rest: Table::new() })
     }
 
     /// ファイルに書く文字列(TOML)

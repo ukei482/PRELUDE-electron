@@ -280,12 +280,27 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 1 | スペースと `.prelude` の TOML(判断 5)。Rust 側は `prelude-format` クレートとテスト。**Electron 版も TOML を読み書きする**(判断 8)。PR #66・#71 をこの形に合わせる | 今の PRELUDE で新しい形式・paths が使える |
 | | ↳ 済: `.prelude` の TOML(Electron・Rust。PR #72)、`prelude-format`、スペース(PR #66)の TOML と `space.toml` | |
 | 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)、ソケットの約束(版つき)、`prelude` コマンド | `prelude` コマンドで状態を見られる |
+| | ↳ 済: `prelude-proto`(約束の版 1)・`prelude-core`・`prelude-cli`。判断 8 の前の「ソケットの約束(版 1)」 | |
 | 3 | KWin の取り込み(`appembed.js` の移植)、Chromium の Web ペイン(CDP)、ペインのレシピ(判断 7 の段階 1) | Rust 版で Web・アプリ・コンソールのペインが開く |
 | 4 | 既定の UI(Slint): バー・ナビ・タブ・ペインの枠、`ui.toml`・`theme.toml` | Rust 版を日常で試せる |
 | 5 | ファイラ(`fileops.js`・`files.js`・`field.js` の移植。フォルダ・フィールドの部品) | |
 | 6 | システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植 | plasmashell の代わりになる |
 | 7 | FileChooser のポータル(判断 5-a) | アプリのダイアログが PRELUDE になる |
 | 8 | 設定の引き継ぎ、GitHub Actions でのビルドと配布、更新の仕組み(判断 8)。Rust 版をリリースにし、Electron 版を消す | 切り替え |
+
+### ソケットの約束(版 1。段階 2 で作ったもの)
+
+型は `crates/prelude-proto` が正。ここは見取り図。
+
+- 場所: `$PRELUDE_CORE_SOCK` → `$XDG_RUNTIME_DIR/prelude/core.sock`。フォルダは 0700、ソケットは 0600
+- 1 行 1 つの JSON(1 行は 1MB まで)。送る: `{"id": 1, "cmd": "tab.open", "args": {...}}`(`args` は省ける)。返る: `{"id": 1, "result": …}` か `{"id": 1, "error": {"code", "message"}}`
+- 最初に `hello {protocol, name, subscribe}`。版が合わなければ `protocol` のエラー。`subscribe` すると、すぐに今の状態、その後は変わるたびに `{"event": "state", "data": State}`
+- コマンド: `state.get`、`space.list / switch / create`、`bookmark.list / open`、`tab.open / close / activate / move`、`pane.split / close / update / focus / place`、`split.ratio`、`paths.get`
+- 配置は `.prelude` の `[layout]` と同じ形で、ペインに `id` が付く。タブは `{"id"}` か画面の番号 `{"num"}` で指し、省くと今のタブ
+- エラーの種類: `bad_request`・`unknown_command`・`protocol`・`not_found`・`conflict`・`io`
+- 版の決まり: コマンド・項目・イベントを **足すだけなら版は上げない**(受け取る側は知らないものを無視する)。意味を変える・消すときは版を上げ、コアは古い版も話し続ける(`SUPPORTED`)
+
+段階 2 でまだしていないこと: 取り込んだ窓・Chromium(段階 3。ペインはまだ状態だけ)、ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること
 
 ---
 

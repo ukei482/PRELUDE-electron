@@ -17,7 +17,10 @@
 - `theme/` — ロック画面(kscreenlocker のシェルのパッケージ)と SDDM のテーマ。QML。見た目は `theme/common/Prompt.qml` で共通。入れる/外すのは `scripts/theme.sh`
 - `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)
 - `test/` — `npm test`(Node の `node:test`)。DOM・Electron なしで動く計算だけをテストする
-- `crates/` — Rust 版(`docs/redesign-rust.md`)。`prelude-format`(`.prelude`・`space.toml`)。`cargo test`。`test/fixtures/format/` は JS と Rust の両方のテストが読む
+- `crates/` — Rust 版(`docs/redesign-rust.md`)。`cargo test`(Rust は `~/.cargo/bin`)
+  - `prelude-format`(`.prelude`・`space.toml`)。`test/fixtures/format/` は JS と Rust の両方のテストが読む
+  - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット)、`prelude-cli`(`prelude` コマンド)
+  - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
 - `docs/release.md` — リリースと更新の詳しい手順
 
 ## 開発版を試す

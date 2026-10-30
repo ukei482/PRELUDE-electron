@@ -1,0 +1,13 @@
+[package]
+name = "prelude-cli"
+version = "0.1.0"
+description = "prelude コマンド(コアのソケットにつないで、状態を見る・操作する)"
+edition.workspace = true
+
+[[bin]]
+name = "prelude"
+path = "src/main.rs"
+
+[dependencies]
+prelude-proto = { path = "../prelude-proto" }
+serde_json = "1"
