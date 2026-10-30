@@ -1,0 +1,9 @@
+{
+  "title": "0.11 までの形",
+  "paths": { "terminal": "~/src" },
+  "root": {
+    "k": "split", "dir": "col", "ratio": 0.3,
+    "a": { "k": "leaf", "type": "files", "path": "/home/u/文書" },
+    "b": { "k": "leaf", "type": "web", "url": "https://example.org/" }
+  }
+}

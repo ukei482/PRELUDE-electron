@@ -1,0 +1,7 @@
+# Rust 版 PRELUDE のワークスペース(docs/redesign-rust.md)。Electron 版と同じリポジトリに置き、段階ごとにクレートを足す
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
