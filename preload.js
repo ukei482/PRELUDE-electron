@@ -109,10 +109,10 @@ contextBridge.exposeInMainWorld('preludeApi', {
     open: (p) => ipcRenderer.invoke('fs:open', p),
     openWith: (p) => ipcRenderer.invoke('fs:open-with', p),
     home: () => ipcRenderer.invoke('fs:home'),
-    // ブックマークのファイル(.prelude)。{ path } / { text } か { error }
-    bmSave: (dir, name, text) => ipcRenderer.invoke('fs:bm-save', dir, name, text),
+    // ブックマークのファイル(.prelude)。中身はオブジェクト(src/bmfile.js の bmFileData の形)で渡し、ファイルは TOML。{ path } / { data } か { error }
+    bmSave: (dir, name, data) => ipcRenderer.invoke('fs:bm-save', dir, name, data),
     bmMkdir: (dir) => ipcRenderer.invoke('fs:bm-mkdir', dir),
-    bmWrite: (full, text) => ipcRenderer.invoke('fs:bm-write', full, text),
+    bmWrite: (full, data) => ipcRenderer.invoke('fs:bm-write', full, data),
     bmRead: (full) => ipcRenderer.invoke('fs:bm-read', full),
     drives: () => ipcRenderer.invoke('fs:drives'),
     mkdir: (dir, name) => ipcRenderer.invoke('fs:mkdir', dir, name),

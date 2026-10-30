@@ -12,6 +12,7 @@ const { spawn } = require('child_process');
 const { pathToFileURL, fileURLToPath } = require('url');
 const { shell, clipboard, ClipboardItem, nativeImage } = require('electron');
 const { cleanShell } = require('./sys/util');
+const { bmDecode, bmEncode } = require('./bmcodec');
 
 const isWin = process.platform === 'win32';
 const BAD_NAME = isWin ? /[\\/:*?"<>|]/ : /\//;
@@ -258,19 +259,19 @@ async function dirSize(paths, limitMs = 4000) {
 }
 
 // ---------------------------------------------------------------- ブックマークのファイル(.prelude)
-// 中身の形は画面側(src/bmfile.js)が決める。ここでは .prelude のファイルだけを読み書きする
+// 中身の形は画面側(src/bmfile.js)が決める。ここでは .prelude のファイルだけを、中身(オブジェクト)⇔ TOML にして読み書きする(bmcodec.js)
 const BM_EXT = '.prelude';
 const BM_MAX = 256 * 1024;
 const isBm = (p) => path.isAbsolute(p) && p.toLowerCase().endsWith(BM_EXT);
 
 // dir の中に新しく作る(同じ名前があれば「名前 (1).prelude」)。dir が無ければ作る
-async function bmSave(dir, name, text) {
+async function bmSave(dir, name, data) {
   const n = validName(name);
   if (!path.isAbsolute(dir) || !n || !n.toLowerCase().endsWith(BM_EXT)) return { error: 'Invalid save location' };
   try {
     await fsp.mkdir(dir, { recursive: true });
     const p = await freePath(dir, n, false);
-    await fsp.writeFile(p, String(text), { flag: 'wx' });
+    await fsp.writeFile(p, bmEncode(data), { flag: 'wx' });
     return { path: p };
   } catch (e) { return { error: e.message }; }
 }
@@ -278,15 +279,15 @@ async function bmMkdir(dir) {
   if (!path.isAbsolute(dir)) return { error: 'Invalid save location' };
   try { await fsp.mkdir(dir, { recursive: true }); return { path: dir }; } catch (e) { return { error: e.message }; }
 }
-async function bmWrite(full, text) {
+async function bmWrite(full, data) {
   if (!isBm(full)) return { error: 'Not a bookmark file' };
-  try { await fsp.writeFile(full, String(text)); return { path: full }; } catch (e) { return { error: e.message }; }
+  try { await fsp.writeFile(full, bmEncode(data)); return { path: full }; } catch (e) { return { error: e.message }; }
 }
 async function bmRead(full) {
   if (!isBm(full)) return { error: 'Not a bookmark file' };
   try {
     if ((await fsp.stat(full)).size > BM_MAX) return { error: 'File is too large' };
-    return { text: await fsp.readFile(full, 'utf8') };
+    return { data: bmDecode(await fsp.readFile(full, 'utf8')) };
   } catch (e) { return { error: e.message }; }
 }
 
@@ -303,9 +304,9 @@ function init(o) {
   ipcMain.handle('fs:open', (_e, p) => shell.openPath(String(p)));
   ipcMain.handle('fs:open-with', (_e, p) => require('./sys/apps').forFile(String(p))); // 既定のアプリ(ペインに取り込んで開く用)
   ipcMain.handle('fs:home', () => os.homedir());
-  ipcMain.handle('fs:bm-save', (_e, dir, name, text) => bmSave(String(dir), name, text));
+  ipcMain.handle('fs:bm-save', (_e, dir, name, data) => bmSave(String(dir), name, data));
   ipcMain.handle('fs:bm-mkdir', (_e, dir) => bmMkdir(String(dir)));
-  ipcMain.handle('fs:bm-write', (_e, full, text) => bmWrite(String(full), text));
+  ipcMain.handle('fs:bm-write', (_e, full, data) => bmWrite(String(full), data));
   ipcMain.handle('fs:bm-read', (_e, full) => bmRead(String(full)));
   ipcMain.handle('fs:mkdir', (_e, dir, name) => mkdir(String(dir), name));
   ipcMain.handle('fs:rename', (_e, full, name) => rename(String(full), name));

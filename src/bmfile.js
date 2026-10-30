@@ -1,17 +1,24 @@
 'use strict';
 // ブックマークのファイル(.prelude)の読み書き(計算だけの部分。DOM・IPC には触らない)。
-// 中身は JSON: { prelude: 'bookmark', version: 1, title, paths, root }。root はタブの配置(app.js の serNode の形)で、
+// ファイルは TOML: version = 2, title, [paths], [layout](docs/redesign-rust.md の判断 5)。layout はタブの配置(app.js の serNode の形)で、
 // 1つのペインだけのブックマーク(Web・フォルダ・アプリ)も、ペイン1つの配置として書く。
+// 文字列 ⇔ 中身はメインプロセス(bmcodec.js)が受け持ち、ここは中身(オブジェクト)だけを扱う。Rust 版(crates/prelude-format)も同じ形。
+// 0.11 までの JSON の形 { prelude: 'bookmark', version: 1, title, paths, root } も読める(書き直すと TOML になる)。
 // ホームの下のパスは「~/…」で書き、読むときに今の PC のホームへ戻す(別の PC へ持っていっても開ける)。
-// paths(省略できる)はこの作業空間のフォルダ: files = ファイラの最初のフォルダ、save = 保存先、terminal = コンソール・アプリの作業フォルダ。
+// paths(省略できる)はこの作業空間のフォルダ: files = ファイラの最初のフォルダ、open・save = アプリの「開く」「保存」の最初のフォルダ、
+// download = ダウンロードの保存先、terminal = コンソール・アプリの作業フォルダ。項目は自由で、知らない項目も残す。
 // 「~/…」のほか、相対パスは .prelude があるフォルダから数える。paths はファイルに書いたままの形で持ち、使うときに bmFilePaths で決める。
-// ファイルは人からもらうこともあるので、読むときは形を確かめ、知らない項目は捨てる。
+// ファイルは人からもらうこともあるので、読むときは形を確かめる。配置の知らない項目は捨てる。
+// 配置・title・paths 以外の項目([ui.<部品名>] など)は rest として持ち、書き直すときにそのまま残す。
 // アプリのペインの起動コマンドは、そのまま実行されると危ないので、bmFileCommands で取り出して開く側で確かめる。
 // 画面では app.js より先に読み込まれ、関数をそのまま共通の名前として出す。テスト(test/bmfile.test.js)では require で読む。
 (function (root) {
   const BMFILE_EXT = 'prelude';
   const TYPES = ['web', 'files', 'field', 'app', 'home', 'settings'];
-  const PATH_KEYS = ['files', 'save', 'terminal'];
+  const VERSION = 2; // これより新しい版のファイルは読まない
+  const PATH_KEYS = ['files', 'open', 'save', 'download', 'terminal']; // bmFilePaths で決める項目
+  const PATH_FALLBACK = { files: null, download: 'save' }; // 無いときの代わりの項目(ほかは files)
+  const MAX_PATHS = 64;
   const MAX_DEPTH = 8; // 分割の深さと、ペインの数の上限(壊れた・悪意のあるファイルで固まらないように)
   const MAX_LEAVES = 16;
 
@@ -31,12 +38,18 @@
     return '/' + out.join('/');
   }
 
-  // 書いたままの paths → 使うフォルダ { files, save, terminal }。
-  // 無いものは files → .prelude があるフォルダ → ホーム の順で決める(save と terminal は files に従う)
-  function bmFilePaths(paths, home, dir) {
-    const p = paths || {};
-    const files = p.files ? absPath(p.files, home, dir) : dir || home || '';
-    return { files, save: p.save ? absPath(p.save, home, dir) : files, terminal: p.terminal ? absPath(p.terminal, home, dir) : files };
+  // 書いたままの paths → 使うフォルダ { files, open, save, download, terminal }。
+  // 項目ごとに ブックマーク → スペース(space = { paths, dir }。省略できる) → 代わりの項目 の順で決める。
+  // 代わりの項目は download → save → files、open・save・terminal → files。相対パスは、それぞれのファイルがあるフォルダから。
+  // どこにも無い項目は入れない(使う側の既定 = ホーム・ダウンロードのフォルダなどになる)
+  function bmFilePaths(paths, home, dir, space) {
+    const srcs = [[paths || {}, dir], space ? [space.paths || {}, space.dir] : null].filter(Boolean);
+    const one = (k) => {
+      for (const [p, d] of srcs) if (typeof p[k] === 'string' && p[k]) return absPath(p[k], home, d);
+      const f = k in PATH_FALLBACK ? PATH_FALLBACK[k] : 'files';
+      return f ? one(f) : undefined;
+    };
+    return Object.fromEntries(PATH_KEYS.map((k) => [k, one(k)]).filter(([, v]) => v));
   }
 
   // 配置の中のパスの無いフォルダ・フィールドのペインを、files のフォルダにした写し
@@ -55,26 +68,30 @@
   const mapLeaves = (n, f) => (n.k === 'split' ? { ...n, a: mapLeaves(n.a, f), b: mapLeaves(n.b, f) } : f(n));
   const leavesOf = (n) => (n.k === 'split' ? [...leavesOf(n.a), ...leavesOf(n.b)] : [n]);
 
-  // ファイルに書く文字列。paths は書いたままの形(bmFileParse が返すもの)を渡す
-  function bmFileText(title, layout, home, paths) {
+  // ファイルに書く中身(bmcodec.js が TOML にする)。paths と rest は書いたままの形(bmFileParse が返すもの)を渡す
+  function bmFileData(title, layout, home, paths, rest) {
     const r = mapLeaves(layout, (l) => {
       const o = { k: 'leaf', type: l.type };
       for (const k of ['url', 'path', 'cmd', 'cls', 'name', 'webUrl', 'sort']) if (l[k]) o[k] = k === 'path' ? toHome(l[k], home) : l[k];
       return o;
     });
     const ps = {};
-    for (const k of PATH_KEYS) if (paths && paths[k]) ps[k] = toHome(paths[k], home);
-    const d = { prelude: 'bookmark', version: 1, title: String(title || '') };
+    for (const [k, v] of Object.entries(paths || {})) if (typeof v === 'string' && v) ps[k] = toHome(v, home);
+    const d = { version: VERSION, title: String(title || '') };
     if (Object.keys(ps).length) d.paths = ps;
-    return JSON.stringify({ ...d, root: r }, null, 2) + '\n';
+    return { ...d, layout: r, ...restOf(rest) };
   }
+  // rest から、決まった項目と同じ名前のものを除く
+  const restOf = (rest) => Object.fromEntries(Object.entries(rest && typeof rest === 'object' ? rest : {}).filter(([k]) => !['version', 'title', 'paths', 'layout', 'prelude', 'root'].includes(k)));
 
-  // ファイルの中身 → { title, paths, root }(paths は書いたままの形。無ければ {})。形がおかしければ Error(message は画面に出す)
-  function bmFileParse(text, home) {
-    let d;
-    try { d = JSON.parse(text); } catch { throw new Error('Not a bookmark file'); }
-    if (!d || d.prelude !== 'bookmark' || !d.root) throw new Error('Not a bookmark file');
-    if (Number(d.version) > 1) throw new Error('This file was made by a newer version of PRELUDE');
+  // ファイルの中身(bmcodec.js が文字列から戻したもの)→ { title, paths, root, rest }。
+  // paths は書いたままの形(無ければ {})。rest はそれ以外の項目。形がおかしければ Error(message は画面に出す)
+  function bmFileParse(d, home) {
+    if (!d || typeof d !== 'object') throw new Error('Not a bookmark file');
+    const legacy = d.prelude === 'bookmark'; // 0.11 までの JSON
+    const layout = legacy ? d.root : d.layout;
+    if (!layout || typeof layout !== 'object' || (d.version != null && typeof d.version !== 'number')) throw new Error('Not a bookmark file');
+    if (Number(d.version) > (legacy ? 1 : VERSION)) throw new Error('This file was made by a newer version of PRELUDE');
     let count = 0;
     const walk = (n, depth) => {
       if (!n || typeof n !== 'object' || depth > MAX_DEPTH) throw new Error('Layout is corrupted');
@@ -89,8 +106,8 @@
       return l;
     };
     const paths = {};
-    if (d.paths && typeof d.paths === 'object') for (const k of PATH_KEYS) if (str(d.paths[k])) paths[k] = str(d.paths[k]);
-    return { title: str(d.title, 256), paths, root: walk(d.root, 0) };
+    if (d.paths && typeof d.paths === 'object') for (const [k, v] of Object.entries(d.paths).slice(0, MAX_PATHS)) if (str(v)) paths[k] = str(v);
+    return { title: str(d.title, 256), paths, root: walk(layout, 0), rest: legacy ? {} : restOf(d) };
   }
 
   // 配置の中で起動されるコマンド(重なりなし)。実ブラウザのペイン(webUrl)は URL だけで、コマンドは PRELUDE が作るので含めない
@@ -114,7 +131,7 @@
     return (base || 'ブックマーク') + '.' + BMFILE_EXT;
   }
 
-  const exported = { BMFILE_EXT, bmFileRoot, bmFileText, bmFileParse, bmFilePaths, bmFileFillPaths, bmFileCommands, bmFileStripCommands, bmFileToBookmark, bmFileName };
+  const exported = { BMFILE_EXT, bmFileRoot, bmFileData, bmFileParse, bmFilePaths, bmFileFillPaths, bmFileCommands, bmFileStripCommands, bmFileToBookmark, bmFileName };
   if (typeof module === 'object' && module.exports) module.exports = exported;
   else Object.assign(root, exported);
 })(this);

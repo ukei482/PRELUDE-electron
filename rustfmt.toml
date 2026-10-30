@@ -1,0 +1,3 @@
+# JS と同じく長めの行にする
+max_width = 140
+use_small_heuristics = "Max"

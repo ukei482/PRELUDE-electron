@@ -642,7 +642,7 @@ async function bmFileDir() {
 }
 const bmFileShort = (p) => baseName(p).replace(/\.prelude$/i, '');
 async function saveBmFile(title, root) {
-  const r = await api.fs.bmSave(await bmFileDir(), bmFileName(title), bmFileText(title, root, await api.fs.home()));
+  const r = await api.fs.bmSave(await bmFileDir(), bmFileName(title), bmFileData(title, root, await api.fs.home()));
   if (r.error) toast(`Cannot save (${r.error})`);
   return r.path || null;
 }
@@ -669,14 +669,15 @@ async function saveTabToFile(tab) {
   scheduleSave();
   toast(`Saved to file: ${bmFileShort(p)}`);
 }
-// ファイルから開いたタブの今の配置で、そのファイルを書き直す(タイトルはファイルのものを残す)
+// ファイルから開いたタブの今の配置で、そのファイルを書き直す(タイトル・paths・知らない項目はファイルのものを残す)
 async function overwriteBmFile(tab) {
   const home = await api.fs.home();
   const r = await api.fs.bmRead(tab.bmFile);
   let title = bmFileShort(tab.bmFile);
   let paths = {};
-  try { ({ title = title, paths } = bmFileParse(r.text, home)); title ||= bmFileShort(tab.bmFile); } catch {}
-  const w = await api.fs.bmWrite(tab.bmFile, bmFileText(title, serNode(tab.root), home, paths));
+  let rest = {};
+  try { ({ title = title, paths, rest } = bmFileParse(r.data, home)); title ||= bmFileShort(tab.bmFile); } catch {}
+  const w = await api.fs.bmWrite(tab.bmFile, bmFileData(title, serNode(tab.root), home, paths, rest));
   toast(w.error ? `Cannot save (${w.error})` : 'Overwritten with current layout');
 }
 // ファイルを読んで、起動コマンドを確かめた配置 { title, root, paths } にする。開かない時は null。
@@ -687,7 +688,7 @@ async function readBmFile(full) {
   const home = await api.fs.home();
   try {
     if (r.error) throw new Error(r.error);
-    d = bmFileParse(r.text, home);
+    d = bmFileParse(r.data, home);
   } catch (e) { toast(`Cannot open: ${baseName(full)} (${e.message})`); return null; }
   const paths = bmFilePaths(d.paths, home, parentDir(full));
   const root = await checkBmCommands(bmFileFillPaths(d.root, paths.files), baseName(full));
@@ -697,7 +698,7 @@ async function readBmFile(full) {
 async function refreshTabPaths(tab) {
   const r = await api.fs.bmRead(tab.bmFile);
   const home = await api.fs.home();
-  try { if (!r.error) tab.paths = bmFilePaths(bmFileParse(r.text, home).paths, home, parentDir(tab.bmFile)); } catch {}
+  try { if (!r.error) tab.paths = bmFilePaths(bmFileParse(r.data, home).paths, home, parentDir(tab.bmFile)); } catch {}
 }
 // ファイルは人からもらうこともあるので、インストール済みのアプリ(.desktop の Exec)と同じでない起動コマンドは、黙って起動しない。
 // 既定は「起動しないで開く」(そのペインは「アプリを取り込む」の画面になる)
@@ -1234,7 +1235,7 @@ api.dl.onStart(({ id, filename, fromPaneId, defaultDir, total }) => {
   const src = f ? f.leaf : activeLeaf(tab);
   const w = src.el?.pane.getBoundingClientRect().width || 0;
   // 元のペインが狭ければ下に、広ければ右に保存先ペインを出す
-  splitLeaf(tab, src, w && w < 640 ? 'col' : 'row', 'files', { path: tab.paths?.save || defaultDir, mode: 'save', dlId: id, filename });
+  splitLeaf(tab, src, w && w < 640 ? 'col' : 'row', 'files', { path: tab.paths?.download || defaultDir, mode: 'save', dlId: id, filename });
 });
 api.dl.onProgress(({ id, received, total }) => {
   Object.assign(S.dl[id] ||= {}, { received, total });

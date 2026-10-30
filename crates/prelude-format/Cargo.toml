@@ -1,0 +1,9 @@
+[package]
+name = "prelude-format"
+version = "0.1.0"
+description = "ブックマーク(.prelude)とスペース(space.toml)の読み書き"
+edition.workspace = true
+
+[dependencies]
+serde_json = "1"
+toml = { version = "0.9", features = ["preserve_order"] }
