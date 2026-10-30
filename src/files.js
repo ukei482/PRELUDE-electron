@@ -162,6 +162,7 @@ function initFiles() {
   S.fileClip = null; // { paths:Set, cut } 切り取り中の項目を薄く出す
   api.fs.onChanged(({ id, dir }) => {
     if (id.startsWith('field:')) { fieldOnChanged(id, dir); return; }
+    if (id.startsWith('space:')) { spaceOnChanged(); return; }
     const f = findLeaf(id);
     if (!f || f.leaf.type !== 'files') { api.fs.unwatch(id); return; }
     if (f.leaf.path === dir) reloadDir(f.leaf);
@@ -573,7 +574,7 @@ function fileMenu(tab, leaf, x, y, kb = false) {
     has && !t.some((e) => e.isDir) ? { label: 'Open in new tab', icon: 'plus', run: () => openEntries(tab, leaf, t, 'tab') } : null,
     one && !one.isDir ? { label: 'Open in split right', icon: 'split-h', key: 'Ctrl+Enter', run: () => openEntries(tab, leaf, t, 'split') } : null,
     has && !t.some((e) => e.isDir) ? { label: 'Open in separate window', icon: 'window', run: () => openEntries(tab, leaf, t, 'window') } : null,
-    one?.ext === BMFILE_EXT ? { label: 'Add to sidebar bookmarks', icon: 'bookmark', run: () => importBmFile(one.full) } : null,
+    one?.ext === BMFILE_EXT ? { label: 'Add to space', icon: 'bookmark', run: () => importBmFile(one.full) } : null,
     { sep: true },
     { label: 'Cut', key: 'Ctrl+X', run: () => doCopy(leaf, true) },
     { label: 'Copy', key: 'Ctrl+C', run: () => doCopy(leaf, false) },

@@ -645,7 +645,7 @@ function fieldItemMenu(leaf, x, y) {
     en.isDir ? null : { label: 'Open in new tab', icon: 'plus', run: () => fieldEnter(leaf, 'tab') },
     en.isDir || !tab ? null : { label: 'Open in split right', icon: 'split-h', key: 'Ctrl+Enter', run: () => fieldEnter(leaf, 'split') },
     en.isDir ? null : { label: 'Open in separate window', icon: 'window', run: () => fieldEnter(leaf, 'window') },
-    en.ext === BMFILE_EXT ? { label: 'Add to sidebar bookmarks', icon: 'bookmark', run: () => importBmFile(en.full) } : null,
+    en.ext === BMFILE_EXT ? { label: 'Add to space', icon: 'bookmark', run: () => importBmFile(en.full) } : null,
     en.isDir ? { label: 'Open in new tab', icon: 'field', key: 'Middle click', run: () => openTab('field', { path: en.full }) } : null,
     en.isDir && tab ? { label: 'Open as folder view on the right', icon: 'split-h', run: () => splitLeaf(tab, leaf, 'row', 'files', { path: en.full }) } : null,
     { sep: true },

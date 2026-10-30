@@ -278,7 +278,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 |---|---|---|
 | 0 | Rust の開発環境(rustup)。**Slint の試作**: 日本語入力・フォント、ファイル 1 万件の一覧、`.slint` の実行時の差し替え、layer-shell(判断 2) | Slint で行けるかが分かる |
 | 1 | スペースと `.prelude` の TOML(判断 5)。Rust 側は `prelude-format` クレートとテスト。**Electron 版も TOML を読み書きする**(判断 8)。PR #66・#71 をこの形に合わせる | 今の PRELUDE で新しい形式・paths が使える |
-| | ↳ 済: `.prelude` の TOML(Electron・Rust)、`prelude-format`(`space.toml` の読み書きと paths の決め方を含む)。残り: PR #66(スペース)を TOML と `space.toml` に合わせる | |
+| | ↳ 済: `.prelude` の TOML(Electron・Rust。PR #72)、`prelude-format`、スペース(PR #66)の TOML と `space.toml` | |
 | 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)、ソケットの約束(版つき)、`prelude` コマンド | `prelude` コマンドで状態を見られる |
 | | ↳ 済: `prelude-proto`(約束の版 1)・`prelude-core`・`prelude-cli`。判断 8 の前の「ソケットの約束(版 1)」 | |
 | 3 | KWin の取り込み(`appembed.js` の移植)、Chromium の Web ペイン(CDP)、ペインのレシピ(判断 7 の段階 1) | Rust 版で Web・アプリ・コンソールのペインが開く |
