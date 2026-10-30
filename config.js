@@ -55,7 +55,7 @@ const SCHEMA = [
       { path: 'behavior.searchEngine', label: 'Search engine (%s = query)', type: 'text' },
       { path: 'behavior.chromiumSites', label: 'Sites to open in Chromium (space separated, includes subdomains, shares Google sign-in)', type: 'text' },
       { path: 'behavior.startPath', label: 'Folder start path (empty = home)', type: 'text' },
-      { path: 'behavior.bookmarkDir', label: 'Bookmark file folder (empty = ~/ブックマーク)', type: 'text' },
+      { path: 'behavior.spaceDir', label: 'Space folder (each folder inside is a space, empty = ~/スペース)', type: 'text' },
       { path: 'behavior.downloadDir', label: 'Download start folder (empty = Downloads)', type: 'text' },
       { path: 'behavior.showHidden', label: 'Show hidden files (starting with .)', type: 'bool' },
       { path: 'behavior.terminal', label: 'Terminal command (%d = folder, empty = Konsole / Windows Terminal)', type: 'text' },
@@ -102,7 +102,7 @@ function defaults() {
       // 検索(www.google.com)は含めない(新しいタブや検索のたびに Chromium になり、アドレス欄などが使えなくなるため)
       chromiumSites: 'mail.google.com drive.google.com docs.google.com sheets.google.com slides.google.com calendar.google.com photos.google.com keep.google.com meet.google.com chat.google.com contacts.google.com myaccount.google.com gemini.google.com notebooklm.google.com youtube.com',
       startPath: '',
-      bookmarkDir: '',
+      spaceDir: '',
       downloadDir: '',
       showHidden: false,
       terminal: '',

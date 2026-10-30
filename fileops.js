@@ -291,6 +291,40 @@ async function bmRead(full) {
   } catch (e) { return { error: e.message }; }
 }
 
+// ---------------------------------------------------------------- スペース
+// スペースのフォルダ(root)の下のフォルダがスペース。無ければ既定のスペース(fallback)を作る
+const isHidden = (n) => n.startsWith('.');
+async function spaceList(root, fallback) {
+  if (!path.isAbsolute(root)) return { error: 'Invalid space folder' };
+  try {
+    await fsp.mkdir(root, { recursive: true });
+    let names = (await fsp.readdir(root, { withFileTypes: true })).filter((d) => d.isDirectory() && !isHidden(d.name)).map((d) => d.name);
+    if (!names.length && validName(fallback)) { await fsp.mkdir(path.join(root, fallback), { recursive: true }); names = [fallback]; }
+    return { names };
+  } catch (e) { return { error: e.message }; }
+}
+// スペース1つの中身。直下の .prelude と、サブフォルダ(1段だけ)の中の .prelude を読む
+async function spaceRead(dir) {
+  if (!path.isAbsolute(dir)) return { error: 'Invalid space folder' };
+  const files = [];
+  const folders = [];
+  const readIn = async (d, folder) => {
+    for (const en of await fsp.readdir(d, { withFileTypes: true })) {
+      if (isHidden(en.name)) continue;
+      const full = path.join(d, en.name);
+      if (en.isDirectory()) { if (!folder) { folders.push(en.name); await readIn(full, en.name).catch(() => {}); } continue; }
+      if (!isBm(full) || files.length >= 1000) continue;
+      const r = await bmRead(full);
+      files.push({ path: full, folder, ...r });
+    }
+  };
+  try { await fsp.mkdir(dir, { recursive: true }); await readIn(dir, ''); } catch (e) { return { error: e.message }; }
+  // スペースの設定(space.toml)。無い・読めないときは空
+  let conf = {};
+  try { conf = bmDecode(await fsp.readFile(path.join(dir, 'space.toml'), 'utf8')); } catch {}
+  return { files, folders, conf: conf && typeof conf === 'object' ? conf : {} };
+}
+
 // ---------------------------------------------------------------- IPC
 const strs = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string' && x) : []);
 
@@ -308,6 +342,8 @@ function init(o) {
   ipcMain.handle('fs:bm-mkdir', (_e, dir) => bmMkdir(String(dir)));
   ipcMain.handle('fs:bm-write', (_e, full, data) => bmWrite(String(full), data));
   ipcMain.handle('fs:bm-read', (_e, full) => bmRead(String(full)));
+  ipcMain.handle('fs:space-list', (_e, root, fallback) => spaceList(String(root), String(fallback || '')));
+  ipcMain.handle('fs:space-read', (_e, dir) => spaceRead(String(dir)));
   ipcMain.handle('fs:mkdir', (_e, dir, name) => mkdir(String(dir), name));
   ipcMain.handle('fs:rename', (_e, full, name) => rename(String(full), name));
   ipcMain.handle('fs:remove', (_e, paths, permanent) => remove(strs(paths), !!permanent));
