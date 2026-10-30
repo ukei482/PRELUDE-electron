@@ -1,4 +1,5 @@
 // コアの状態(タブ・分割・スペース・ブックマーク・書き出し)のテスト。cargo test で動かす
+use prelude_core::recipes::Recipe;
 use prelude_core::state::{Core, SPACE_DEFAULT};
 use prelude_proto::{Command, Dir, ErrorCode, PaneSpec, State, TabRef};
 use serde_json::{json, Value};
@@ -155,14 +156,14 @@ fn ブックマークを開く_paths_は_ブックマーク_スペースの順()
     assert_eq!(names, vec![("".into(), "壊れた".into()), ("執筆".into(), "本文".into())]);
 
     let path = dir.join("執筆/本文.prelude").to_string_lossy().into_owned();
-    let id = ok(&mut c, Command::BookmarkOpen { path: path.clone() });
+    let id = ok(&mut c, Command::BookmarkOpen { path: path.clone(), allow: vec![] })["tab"].clone();
     let s = state(&c);
     assert_eq!((s.tabs[0].title.as_str(), s.tabs[0].bookmark.as_deref()), ("本文", Some(path.as_str())));
     // パスの無いフォルダのペインは files(ここではスペースの既定)で開く
     assert_eq!(s.tabs[0].layout["a"]["path"], json!("/data/論文"));
     // もう開いていれば同じタブ(1 ブックマーク = 最大 1 タブ)
     ok(&mut c, Command::TabOpen { pane: web("https://other/"), index: None });
-    assert_eq!(ok(&mut c, Command::BookmarkOpen { path: path.clone() }), id);
+    assert_eq!(ok(&mut c, Command::BookmarkOpen { path: path.clone(), allow: vec![] })["tab"], id);
     assert_eq!(state(&c).active, id.as_u64());
 
     let p = ok(&mut c, Command::PathsGet { tab: None });
@@ -176,8 +177,11 @@ fn ブックマークを開く_paths_は_ブックマーク_スペースの順()
     assert_eq!(p["save"], json!("/data/論文"));
 
     let bad = dir.join("壊れた.prelude").to_string_lossy().into_owned();
-    assert_eq!(c.handle(Command::BookmarkOpen { path: bad }).reply.unwrap_err().0, ErrorCode::BadRequest);
-    assert_eq!(c.handle(Command::BookmarkOpen { path: "relative.prelude".into() }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    assert_eq!(c.handle(Command::BookmarkOpen { path: bad, allow: vec![] }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    assert_eq!(
+        c.handle(Command::BookmarkOpen { path: "relative.prelude".into(), allow: vec![] }).reply.unwrap_err().0,
+        ErrorCode::BadRequest
+    );
 }
 
 #[test]
@@ -213,4 +217,83 @@ fn 書き出して戻す() {
     // 前のスペースが無くなっていたら既定のスペースにする
     std::fs::remove_dir_all(root.join("Work")).unwrap();
     assert_eq!(Core::new(HOME, &root, Some(saved)).state().space, SPACE_DEFAULT);
+}
+
+#[test]
+fn インストール済みでない起動コマンドは外して開く() {
+    let root = spaces("trust");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("もらった.prelude");
+    std::fs::write(
+        &path,
+        "[layout]\nk = \"split\"\n[layout.a]\nk = \"leaf\"\ntype = \"app\"\ncmd = \"kate\"\n[layout.b]\nk = \"leaf\"\ntype = \"app\"\ncmd = \"sh -c evil\"\n",
+    )
+    .unwrap();
+    let path = path.to_string_lossy().into_owned();
+    let mut c = Core::new(HOME, &root, None);
+    c.set_installed(|cmd| cmd == "kate");
+    let r = ok(&mut c, Command::BookmarkOpen { path: path.clone(), allow: vec![] });
+    assert_eq!(r["held"], json!(["sh -c evil"]));
+    let cmds: Vec<String> = c.wants().into_iter().map(|w| w.cmd).collect();
+    assert_eq!(cmds, vec!["kate"]); // 外したペインは起動しない
+                                    // 許せば外さない
+    ok(&mut c, Command::TabClose { tab: None });
+    let r = ok(&mut c, Command::BookmarkOpen { path, allow: vec!["sh -c evil".into()] });
+    assert_eq!(r["held"], json!([]));
+    assert_eq!(c.wants().len(), 2);
+}
+
+#[test]
+fn 取り込むペイン_レシピ_止まったペイン() {
+    let root = spaces("wants");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("space.toml"), "[paths]\nterminal = \"/work/src\"\n").unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    c.set_recipes(vec![Recipe {
+        kind: "console".into(),
+        name: "Console".into(),
+        run: "konsole --workdir {paths.terminal}".into(),
+        class: "org.kde.konsole".into(),
+    }]);
+    let spec = |v: Value| serde_json::from_value(v).unwrap();
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "console" })), index: None });
+    let console = pane_ids(&state(&c).tabs[0].layout)[0];
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "app", "cmd": "kate", "cls": "kate" })), index: None });
+    let kate = pane_ids(&state(&c).tabs[0].layout)[0];
+    // Web・フォルダ・知らない種類・コマンドの無いアプリは取り込まない
+    for v in
+        [json!({ "type": "web", "url": "https://a/" }), json!({ "type": "files" }), json!({ "type": "calendar" }), json!({ "type": "app" })]
+    {
+        ok(&mut c, Command::TabOpen { pane: spec(v), index: Some(99) });
+    }
+    let rects = serde_json::from_value(json!([{ "pane": kate, "x": 10, "y": 20, "width": 300, "height": 200 }])).unwrap();
+    ok(&mut c, Command::PanePlace { rects });
+
+    let w = c.wants();
+    let v: Vec<(u64, &str, &str, &str, bool)> =
+        w.iter().map(|w| (w.pane, w.cmd.as_str(), w.cls.as_str(), w.cwd.as_str(), w.rect.is_some())).collect();
+    assert_eq!(
+        v,
+        vec![(kate, "kate", "kate", "/work/src", true), (console, "konsole --workdir '/work/src'", "org.kde.konsole", "/work/src", false)]
+    );
+    assert_eq!(ok(&mut c, Command::RecipeList {}), json!([{ "type": "console", "name": "Console" }]));
+
+    // 窓が閉じたペインは残して止まったものにし、取り込まない。タブを開き直すと起動し直す
+    assert!(c.note_exited(kate));
+    assert!(!c.note_exited(kate));
+    assert!(!c.note_exited(999));
+    assert_eq!(state(&c).tabs[0].layout["stopped"], json!(true));
+    assert_eq!(c.wants().len(), 1);
+    assert!(c.note_title(console, "~ : bash".into()));
+    assert!(!c.note_title(console, "~ : bash".into()));
+    assert_eq!(state(&c).tabs[1].layout["window_title"], json!("~ : bash"));
+    let first = state(&c).tabs[0].id;
+    ok(&mut c, Command::TabActivate { tab: prelude_proto::TabRef::Id { id: first } });
+    assert_eq!(c.wants().len(), 2);
+    // スペースを切り替えると、前のスペースのペインは取り込まない(アプリは閉じる)
+    std::fs::create_dir_all(root.join("Other")).unwrap();
+    ok(&mut c, Command::SpaceSwitch { name: "Other".into() });
+    assert!(c.wants().is_empty());
 }

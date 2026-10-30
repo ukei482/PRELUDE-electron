@@ -282,6 +282,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)、ソケットの約束(版つき)、`prelude` コマンド | `prelude` コマンドで状態を見られる |
 | | ↳ 済: `prelude-proto`(約束の版 1)・`prelude-core`・`prelude-cli`。判断 8 の前の「ソケットの約束(版 1)」 | |
 | 3 | KWin の取り込み(`appembed.js` の移植)、Chromium の Web ペイン(CDP)、ペインのレシピ(判断 7 の段階 1) | Rust 版で Web・アプリ・コンソールのペインが開く |
+| | ↳ 済(3-a): KWin の取り込み(`embed.rs`・`embed.js`)、ペインのレシピ(`recipes.rs`。既定の `console`)、人からもらったブックマークの起動コマンドの確認(`bookmark.open` の `allow`)。残り(3-b): Chromium の Web ペイン | |
 | 4 | 既定の UI(Slint): バー・ナビ・タブ・ペインの枠、`ui.toml`・`theme.toml` | Rust 版を日常で試せる |
 | 5 | ファイラ(`fileops.js`・`files.js`・`field.js` の移植。フォルダ・フィールドの部品) | |
 | 6 | システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植 | plasmashell の代わりになる |
@@ -300,7 +301,9 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 - エラーの種類: `bad_request`・`unknown_command`・`protocol`・`not_found`・`conflict`・`io`
 - 版の決まり: コマンド・項目・イベントを **足すだけなら版は上げない**(受け取る側は知らないものを無視する)。意味を変える・消すときは版を上げ、コアは古い版も話し続ける(`SUPPORTED`)
 
-段階 2 でまだしていないこと: 取り込んだ窓・Chromium(段階 3。ペインはまだ状態だけ)、ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること
+段階 3-a で足したもの: `recipe.list`、`bookmark.open` の `allow` と返事の `held`(外した起動コマンド)、ペインの `window_title`・`stopped`。取り込みの D-Bus は `org.prelude.Core`(`/org/prelude/Core` の `Report`。KWin スクリプトが呼ぶ)
+
+まだしていないこと: Chromium の Web ペイン(段階 3-b)、ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
 
 ---
 

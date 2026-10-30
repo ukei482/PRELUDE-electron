@@ -18,11 +18,16 @@ pub const SUPPORTED: &[u32] = &[1];
 /// 1 行の長さの上限(これより長い行は読まずに切る)
 pub const MAX_LINE: usize = 1 << 20;
 
-/// コアのソケットの場所。`PRELUDE_CORE_SOCK` → `$XDG_RUNTIME_DIR/prelude/core.sock` → `/tmp/prelude-$USER/core.sock`
+/// コアのソケットの場所。`PRELUDE_CORE_SOCK` → [`default_socket_path`]
 pub fn socket_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("PRELUDE_CORE_SOCK").filter(|p| !p.is_empty()) {
-        return p.into();
+    match std::env::var_os("PRELUDE_CORE_SOCK").filter(|p| !p.is_empty()) {
+        Some(p) => p.into(),
+        None => default_socket_path(),
     }
+}
+
+/// ふだんのソケットの場所。`$XDG_RUNTIME_DIR/prelude/core.sock` → `/tmp/prelude-$USER/core.sock`
+pub fn default_socket_path() -> PathBuf {
     let dir = match std::env::var_os("XDG_RUNTIME_DIR").filter(|p| !p.is_empty()) {
         Some(d) => PathBuf::from(d).join("prelude"),
         None => PathBuf::from(format!("/tmp/prelude-{}", std::env::var("USER").unwrap_or_else(|_| "user".into()))),
@@ -81,9 +86,17 @@ pub enum Command {
     /// 今のスペースのブックマーク → `[`[`BookmarkInfo`]`]`
     #[serde(rename = "bookmark.list")]
     BookmarkList {},
-    /// ブックマーク(`.prelude` のパス)を開く。もう開いていればそのタブにする(1 ブックマーク = 最大 1 タブ) → タブの id
+    /// ブックマーク(`.prelude` のパス)を開く。もう開いていればそのタブにする(1 ブックマーク = 最大 1 タブ) → [`BookmarkOpened`]。
+    /// インストール済みのアプリと一致しない起動コマンドは、`allow` に無ければ外して開く(人からもらったファイルが勝手に実行しないように)
     #[serde(rename = "bookmark.open")]
-    BookmarkOpen { path: String },
+    BookmarkOpen {
+        path: String,
+        #[serde(default)]
+        allow: Vec<String>,
+    },
+    /// ペインのレシピ(窓を取り込むペインの種類) → `[`[`RecipeInfo`]`]`
+    #[serde(rename = "recipe.list")]
+    RecipeList {},
 
     /// ペイン 1 つの新しいタブ → タブの id。`index` を省くと一番上
     #[serde(rename = "tab.open")]
@@ -255,8 +268,24 @@ pub struct TabInfo {
     /// 開いたブックマーク(`.prelude` のパス)
     pub bookmark: Option<String>,
     pub active_pane: u64,
-    /// 配置。`.prelude` の `[layout]` と同じ形で、ペインに `id` が付く
+    /// 配置。`.prelude` の `[layout]` と同じ形で、ペインに `id` が付く。
+    /// 窓を取り込むペインには、今の様子も付く: `window_title`(本体の窓の題名)、`stopped`(窓が閉じて止まっている。タブを開き直すと起動し直す)
     pub layout: Value,
+}
+
+/// `bookmark.open` の返事
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BookmarkOpened {
+    pub tab: u64,
+    /// 外した起動コマンド(インストール済みのアプリと一致しないもの)。そのペインは起動しない
+    pub held: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecipeInfo {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
