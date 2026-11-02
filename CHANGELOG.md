@@ -32,6 +32,8 @@
   - 0.11 までのサイドバーのブックマークは、最初の起動でスペース `Main` のファイルに移す(フォルダはサブフォルダに)。元のブックマークは設定の `bookmarksBackup` に残す
 
 ### 変更
+- アプリ・アイコン・端末(Konsole)・Chromium を、決め打ちのパス(`/usr/bin`・`/usr/share`・`/snap/bin`)ではなく `PATH` と `XDG_DATA_DIRS` から探すようにした(`sys/xdg.js`。Rust 版のコアも同じ)。NixOS など、ほかの配置の OS でも動くようにするため。`XDG_DATA_DIRS` の中では先に書かれたフォルダの `.desktop` を優先する(決まりどおり。今までは逆だった)
+- 乗る先の OS を NixOS にする設計(`docs/redesign-rust.md` の判断 9)
 - **ブックマークのファイル(`.prelude`)を TOML にした** **[互換性]**。`version = 2`・`title`・`[paths]`・`[layout]`(タブの配置)を持つ
   - 0.11 までの JSON のファイルもそのまま開ける。「今の配置で上書き」すると TOML で書き直す。**TOML で保存したファイルは 0.11 までの版では開けない**
   - 配置・`title`・`paths` 以外の項目(UI の部品が使う `[ui.<部品名>]` や、自分で書いたメモなど)は、上書きしても消さずに残す

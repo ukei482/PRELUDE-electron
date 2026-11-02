@@ -1,6 +1,6 @@
 # PRELUDE 再設計: Rust への移行(設計判断の記録)
 
-状態: **設計の論点は一通り決まった**。決まったもの: 1-a(同じリポジトリ)、1-b(コアと UI は別プロセス、ペインの場所は UI)、3-a・3-c(Chromium 1 つ + CDP、タブは PRELUDE が戻す、プロファイル 1 つ)、5(スペース = フォルダ、`.prelude` = ブックマーク 1 つで paths を持つ、スペースは既定の paths)、5-a(ポータルを実装)、2(Slint)、4-a(部品ごとに付け替え・3 つの深さ・約束に版)、7(ペインの種類はレシピ → Slint の部品 → プラグインの 3 段階)、8(試す間は同じデータ、GitHub でビルドして配る)。
+状態: **設計の論点は一通り決まった**。決まったもの: 1-a(同じリポジトリ)、1-b(コアと UI は別プロセス、ペインの場所は UI)、3-a・3-c(Chromium 1 つ + CDP、タブは PRELUDE が戻す、プロファイル 1 つ)、5(スペース = フォルダ、`.prelude` = ブックマーク 1 つで paths を持つ、スペースは既定の paths)、5-a(ポータルを実装)、2(Slint)、4-a(部品ごとに付け替え・3 つの深さ・約束に版)、7(ペインの種類はレシピ → Slint の部品 → プラグインの 3 段階)、8(試す間は同じデータ、GitHub でビルドして配る)、9(乗る先の OS は NixOS)。
 判断 2(UI の技術)は Slint に決定。
 
 ## 0. 目的
@@ -326,6 +326,52 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 ### 配布
 - **GitHub Actions でビルドし、タグのリリースに添付する**。各 PC の「アップデート」はそれをダウンロードするだけ(各 PC に Rust は要らない)
 - 今と同じく `release.sh switch` で前の版(Electron 版も含む)に戻せる
+
+---
+
+## 判断 9: 乗る先の OS — NixOS(決定)
+
+PRELUDE が頼っているのは **KDE Plasma 6 + Wayland(KWin)** で、Ubuntu そのものではない。Ubuntu に固有なのは snap 版の Chromium の扱いと、SDDM の設定ファイルの名前くらいで、どれも得をしていない。
+そこで、乗る先を PRELUDE の思想に照らして選び直し、**NixOS** にする。ディストリビューションを自分で作ることはしない(カーネル・ドライバ・KDE の保守まで持つことになる)。
+
+### 思想と照らす
+
+| 思想 | 出どころ | NixOS では |
+|---|---|---|
+| 任せられるものは任せる。PRELUDE は自分の層だけを持つ | shell-design.md 1章、判断 3 | KDE・Chromium・カーネルは nixpkgs が保守する。PRELUDE はモジュール 1 つ |
+| ファイルには使用者が決めたことだけを書く。PRELUDE が変えるものは別に置く | 判断 5 | OS 全体を 1 つの設定で宣言する。`.prelude` と同じ考え方 |
+| 落ちても・失敗しても戻れる | 判断 1-b、release.md | 前の世代へ戻せる(起動の画面でも選べる)。`release.sh switch` が OS ごとになる |
+| 土台と付け替える部分を分ける | 判断 1・4 | 読み取り専用の `/nix/store` と、使用者の設定 |
+| ミニマル | 判断 0・2 | 書いたものしか入らない |
+
+比べた候補: Kubuntu(手で積み重ねる・snap・Plasma が遅れる)、Fedora KDE、Arch(戻せない)、Fedora Kinoite + bootc(思想にはよく合い、移行中の Electron 版も普通に動く。NixOS が合わなかったときの次の候補)。
+
+### PRELUDE 側で変えること
+
+| 今 | NixOS では |
+|---|---|
+| `/usr/bin/konsole`・`/snap/bin/chromium`・`/usr/share/icons` などの決め打ち | `PATH` と `XDG_DATA_DIRS` から探す(`sys/xdg.js`・`crates/prelude-core/src/xdg.rs`)。**済** |
+| npm の `electron`(`node_modules/electron/dist/electron`) | NixOS では動かない(普通のファイルの配置が無い)。nixpkgs の `electron`(版を合わせる)で `electron .`。ネイティブモジュールは無いので、ほかの依存はそのまま |
+| `scripts/theme.sh`(sudo で SDDM・ロック画面のテーマを置く、`quiet splash`) | NixOS のモジュールに書く(SDDM のテーマ・`boot.kernelParams` など) |
+| `systemd/prelude-shell*.service`、`scripts/shell-mode.sh` | モジュールの `systemd.user.services` |
+| `release.sh` + `sys/update.js`(タグから作って切り替え・前の版に戻す) | flake の入力をタグに合わせて `nixos-rebuild switch`。戻すのは NixOS の世代 |
+| 「Kubuntu に戻る」 | 「plasmashell に戻る」(中身は同じ) |
+| 判断 8 の配布(GitHub Actions でビルドしてリリースに添付) | このリポジトリの `flake.nix` と NixOS のモジュール(`services.prelude.enable`)。ビルドの結果は Nix のキャッシュで配れる |
+
+### 確かめること(NixOS を試すとき)
+
+- nixpkgs の `electron` で今の Electron 版が動くか(版の違い)
+- 日本語入力(`i18n.inputMethod` で fcitx5)、Iris Xe
+- アプリの取り込み: NixOS では包まれたプログラムのプロセス名が `.konsole-wrapped` のようになる。`/proc` で窓の持ち主を見分ける所(`appembed.js`・`embed.rs`・`procs.rs`)が合うか
+- KWin スクリプト・シェルモード・ロック画面と SDDM のテーマ
+- `.desktop` の `Exec` が `/nix/store/…` の絶対パスになるアプリで、人からもらったブックマークの起動コマンドの確かめが働くか
+
+### 順番
+
+1. 今の Kubuntu のまま準備する: 決め打ちのパスを無くす(済)、この判断を書く(済)
+2. NixOS を別の区画か USB に入れて、上の「確かめること」を試す。`flake.nix`(Electron 版・Rust 版のパッケージ、`nix develop`)はここで作る(NixOS の上で確かめないと動くか分からないため)
+3. NixOS のモジュールを書き、シェルとして常用する。更新の仕組みを世代に置き換える
+4. 移る。データ(`~/スペース`、Chromium のプロファイル)はホームごと持っていく。移る時期は段階 8(Electron 版を消す)に合わせるのが一番無理がない
 
 ---
 

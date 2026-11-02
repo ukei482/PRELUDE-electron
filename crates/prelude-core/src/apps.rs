@@ -17,25 +17,30 @@ pub struct App {
     pub id: String,
 }
 
+/// .desktop を探すフォルダ。後のフォルダほど優先(同じ名前の .desktop は後のもので上書き)。
+/// XDG_DATA_DIRS は先が優先なので逆にする
 fn dirs() -> Vec<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_default();
-    let data = std::env::var("XDG_DATA_DIRS").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/usr/local/share:/usr/share".into());
-    let data_home = std::env::var("XDG_DATA_HOME").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| format!("{home}/.local/share"));
-    let mut out: Vec<String> = data.split(':').filter(|s| !s.is_empty()).map(String::from).collect();
-    out.extend([data_home, "/var/lib/flatpak/exports/share".into(), format!("{home}/.local/share/flatpak/exports/share")]);
+    let mut out: Vec<PathBuf> = crate::xdg::data_dirs().into_iter().rev().collect();
+    out.extend([
+        crate::xdg::data_home(),
+        "/var/lib/flatpak/exports/share".into(),
+        Path::new(&home).join(".local/share/flatpak/exports/share"),
+    ]);
     let mut seen = Vec::new();
     for d in out {
         if !seen.contains(&d) {
             seen.push(d);
         }
     }
-    seen.into_iter().map(|d| Path::new(&d).join("applications")).collect()
+    seen.into_iter().map(|d| d.join("applications")).collect()
 }
 
-/// 端末で動くアプリ(htop など)を包むコマンド
+/// 端末で動くアプリ(htop など)を包むコマンド。PATH から探し、見つからなければ x-terminal-emulator に任せる
 fn terminal_cmd(exec: &str) -> String {
-    let term =
-        ["/usr/bin/konsole", "/usr/bin/x-terminal-emulator"].into_iter().find(|p| Path::new(p).exists()).unwrap_or("x-terminal-emulator");
+    let term = crate::xdg::which(&["konsole", "x-terminal-emulator"], &[])
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "x-terminal-emulator".into());
     format!("{term} -e {exec}")
 }
 
@@ -66,6 +71,11 @@ fn entry(text: &str) -> BTreeMap<String, String> {
     m
 }
 
+/// 何もしない項目(snap の補助エントリなど)。`true`・`false` か、どこかのフォルダのそれ
+fn is_noop(exec: &str) -> bool {
+    !exec.contains(char::is_whitespace) && matches!(exec.rsplit('/').next(), Some("true" | "false"))
+}
+
 pub fn list() -> Vec<App> {
     let mut map: BTreeMap<String, App> = BTreeMap::new();
     for dir in dirs() {
@@ -82,7 +92,7 @@ pub fn list() -> Vec<App> {
                 continue;
             }
             let mut exec = clean_exec(get("Exec"));
-            if exec.is_empty() || matches!(exec.as_str(), "false" | "true" | "/usr/bin/false" | "/usr/bin/true") {
+            if exec.is_empty() || is_noop(&exec) {
                 continue;
             }
             if get("Terminal") == "true" {
@@ -121,6 +131,15 @@ pub fn is_installed(cmd: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn noop_entries_in_any_folder() {
+        assert!(is_noop("true"));
+        assert!(is_noop("/usr/bin/false"));
+        assert!(is_noop("/run/current-system/sw/bin/true"));
+        assert!(!is_noop("true --x"));
+        assert!(!is_noop("/usr/bin/trueish"));
+    }
 
     #[test]
     fn フィールドコードを除く() {
