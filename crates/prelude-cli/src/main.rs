@@ -1,9 +1,8 @@
 //! prelude コマンド。コアのソケット(prelude-proto)につないで、状態を見る・操作する。
 //! 画面の文は Electron 版に合わせて英語。外のスクリプトからは `prelude raw` と `prelude watch` で JSON をそのまま使える。
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Incoming, Item, RecipeInfo, State, PROTOCOL};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Client, Incoming, Item, RecipeInfo, State};
 use serde_json::{json, Value};
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const HELP: &str = "\
@@ -34,51 +33,12 @@ usage: prelude <command> [args]
 
 The core socket is $PRELUDE_CORE_SOCK or $XDG_RUNTIME_DIR/prelude/core.sock.";
 
-struct Conn {
-    w: UnixStream,
-    r: BufReader<UnixStream>,
-    next: u64,
-}
+/// コアとのつながり(prelude-proto のクライアント)
+struct Conn;
 
 impl Conn {
-    fn open(subscribe: bool) -> Result<Conn, String> {
-        let path = prelude_proto::socket_path();
-        let w = UnixStream::connect(&path).map_err(|e| format!("Cannot connect to prelude-core at {} ({e})", path.display()))?;
-        let r = BufReader::new(w.try_clone().map_err(|e| e.to_string())?);
-        let mut c = Conn { w, r, next: 0 };
-        c.call("hello", json!({ "protocol": PROTOCOL, "name": "prelude", "subscribe": subscribe }))?;
-        Ok(c)
-    }
-
-    fn read(&mut self) -> Result<Incoming, String> {
-        let mut l = String::new();
-        if self.r.read_line(&mut l).map_err(|e| e.to_string())? == 0 {
-            return Err("prelude-core closed the connection".into());
-        }
-        serde_json::from_str(&l).map_err(|e| format!("Bad answer from prelude-core ({e})"))
-    }
-
-    /// コマンドを送り、返事の result を返す(途中に来たイベントは捨てる)
-    fn call(&mut self, cmd: &str, args: Value) -> Result<Value, String> {
-        self.next += 1;
-        let id = self.next;
-        let req = json!({ "id": id, "cmd": cmd, "args": args });
-        writeln!(self.w, "{req}").map_err(|e| e.to_string())?;
-        loop {
-            match self.read()? {
-                Incoming::Response(r) if r.id == id || r.id == 0 => {
-                    return match r.error {
-                        Some(e) => Err(e.message),
-                        None => Ok(r.result.unwrap_or(Value::Null)),
-                    }
-                }
-                _ => continue,
-            }
-        }
-    }
-
-    fn state(&mut self) -> Result<State, String> {
-        serde_json::from_value(self.call("state.get", json!({}))?).map_err(|e| e.to_string())
+    fn open(subscribe: bool) -> Result<Client, String> {
+        Client::connect("prelude", subscribe)
     }
 }
 
@@ -117,7 +77,7 @@ fn abs(p: &str) -> PathBuf {
 }
 
 /// ブックマークを開く。インストール済みのアプリと一致しない起動コマンドは、run でなければ外して開き、知らせる
-fn open_bookmark(c: &mut Conn, path: &str, run: bool) -> Result<(), String> {
+fn open_bookmark(c: &mut Client, path: &str, run: bool) -> Result<(), String> {
     let mut r: BookmarkOpened = serde_json::from_value(c.call("bookmark.open", json!({ "path": path }))?).map_err(|e| e.to_string())?;
     if run && !r.held.is_empty() {
         // 外したコマンドも実行する: 開いたタブを閉じて、許して開き直す
@@ -136,7 +96,7 @@ fn open_bookmark(c: &mut Conn, path: &str, run: bool) -> Result<(), String> {
 
 /// open の対象を決める: .prelude のファイル → ブックマーク、フォルダ → フォルダのペイン、URL → Web、
 /// それ以外は今のスペースのブックマークの名前(同じ名前、なければ名前の始まり)
-fn open(c: &mut Conn, target: &str, run: bool) -> Result<(), String> {
+fn open(c: &mut Client, target: &str, run: bool) -> Result<(), String> {
     let p = Path::new(target);
     if target.ends_with(".prelude") && p.is_file() {
         return open_bookmark(c, &abs(target).to_string_lossy(), run);
@@ -174,7 +134,7 @@ fn item_line(i: &Item) -> String {
     format!("{}  ·  {kind}", i.label.replace(['\n', '\t'], " "))
 }
 
-fn items(c: &mut Conn) -> Result<Vec<Item>, String> {
+fn items(c: &mut Client) -> Result<Vec<Item>, String> {
     serde_json::from_value(c.call("item.list", json!({}))?).map_err(|e| e.to_string())
 }
 

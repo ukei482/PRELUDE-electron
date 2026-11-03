@@ -1,0 +1,22 @@
+# Rust 版 PRELUDE の UI(GPUI。docs/redesign-rust.md の判断 10・11、移行の段階 4)。
+# GPUI のビルドが重いので、ルートのワークスペース(コア・コマンド)とは分け、`cargo test` に巻き込まない
+[workspace]
+resolver = "2"
+members = ["prelude-ui", "prelude-sidebar"]
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+# Zed の main を固定する(crates.io の gpui には layer-shell が無い。proto/gpui と同じコミット)
+gpui = { git = "https://github.com/zed-industries/zed", rev = "504abf602a09edc3c7d5a4f4f60958aee335274f" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "504abf602a09edc3c7d5a4f4f60958aee335274f", features = ["wayland", "x11"] }
+prelude-proto = { path = "../crates/prelude-proto" }
+prelude-ui = { path = "prelude-ui" }
+futures = "0.3"
+serde_json = "1"
+env_logger = "0.11"
+log = "0.4"
+
+[profile.dev]
+opt-level = 1

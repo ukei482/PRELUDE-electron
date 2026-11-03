@@ -305,6 +305,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | | ↳ 済: `Compositor` のトレイト(`compositor.rs`)。コアは窓を出すペインとタブごとの配置の木(`Scene`)を渡す。裏側は環境から決め(`PRELUDE_COMPOSITOR` で指定もできる)、今あるのは KWin(`embed.rs`。木は使わず、場所に重ねる)だけ。残り: sway・Hyprland の裏側(NixOS で試すとき) | |
 | | ↳ 済: ランチャーの候補 `prelude items`(`item.list`・`item.open`)。タブが先、ブックマーク・アプリ・ほかのスペースは点数(最近 + よく使う。半減期 14 日。`core.json` の `history`)の順。`prelude items \| fuzzel --dmenu \| prelude open` で使う | |
 | 4 | ~~既定の UI(Slint)~~ → **サイドバーとランチャー(GPUI)**、共通の見た目と部品のクレート(`prelude-ui`)(判断 10・11) | Rust 版を日常で試せる |
+| | ↳ 済(4-a): `ui/` のワークスペース(GPUI。ルートとは別)、`prelude-ui`(色・書体・行など。Electron 版の見た目に合わせる)、サイドバー `prelude-sidebar`(layer-shell で左端。スペース・ブックマーク・タブ。コアのソケットだけでつながる)、`prelude-proto` の型付きのクライアント(`Client`。`prelude` コマンドも使う)。残り(4-b): GPUI のランチャー | |
 | 5 | **ファイラの枠**(付け替えられる。判断 10)と `FilerView` のトレイト。一覧・フィールド表示を GPUI で(`fileops.js`・`files.js`・`field.js` の移植) | |
 | 6 | ~~システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植~~ → **rice に任せる**(判断 10)。PRELUDE は表示用の出口(`prelude watch` の JSON)と、NixOS のモジュールが出す設定の断片(キー・窓の決まり)を用意する | plasmashell が要らなくなる |
 | 7 | FileChooser のポータル(判断 5-a)。選ぶ画面はファイラの枠のもの | アプリのダイアログの最初のフォルダが paths になる |
