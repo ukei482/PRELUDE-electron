@@ -2,7 +2,7 @@
 # GPUI のビルドが重いので、ルートのワークスペース(コア・コマンド)とは分け、`cargo test` に巻き込まない
 [workspace]
 resolver = "2"
-members = ["prelude-ui", "prelude-sidebar", "prelude-launcher"]
+members = ["prelude-ui", "prelude-sidebar", "prelude-launcher", "prelude-filer"]
 
 [workspace.package]
 edition = "2024"

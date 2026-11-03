@@ -436,3 +436,34 @@ fn コンポジタに渡す配置の木() {
     assert_eq!(s.panes, c.wants());
     assert_eq!(s.panes.len(), 3);
 }
+
+#[test]
+fn ファイラの枠_ペインのフォルダか_paths_の_files() {
+    let root = spaces("filer");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("space.toml"), "[paths]\nfiles = \"/work/docs\"\n").unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    c.set_recipes(vec![Recipe {
+        kind: "files".into(),
+        name: "Files".into(),
+        run: "prelude-filer --pane {pane} {path}".into(),
+        class: "prelude-filer".into(),
+    }]);
+    let spec = |v: Value| serde_json::from_value(v).unwrap();
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "files" })), index: None });
+    let a = pane_ids(&state(&c).tabs[0].layout)[0];
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "files", "path": "/tmp/it's" })), index: Some(9) });
+    let b = pane_ids(&state(&c).tabs[1].layout)[0];
+    let w = c.wants();
+    let cmds: Vec<(u64, String)> = w.iter().map(|w| (w.pane, w.cmd.clone())).collect();
+    assert_eq!(
+        cmds,
+        vec![(a, format!("prelude-filer --pane '{a}' '/work/docs'")), (b, format!(r"prelude-filer --pane '{b}' '/tmp/it'\''s'")),]
+    );
+    // ファイラが移ったフォルダは pane.update で残す(開き直すとそのフォルダ)
+    let mut f = serde_json::Map::new();
+    f.insert("path".into(), json!("/work/src"));
+    ok(&mut c, Command::PaneUpdate { pane: a, fields: f });
+    assert!(c.wants()[0].cmd.ends_with("'/work/src'"));
+}

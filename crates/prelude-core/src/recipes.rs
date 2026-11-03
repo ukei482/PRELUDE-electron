@@ -8,6 +8,14 @@
 //! ```
 //! - `.prelude` には `type = "console"` のように種類の名前だけを書く。コマンドは自分の設定にしか無いので、人からもらったファイルが勝手なコマンドを実行できない
 //! - 既定で `console` を持つ。同じ名前のファイルを置くと置き換わる
+//! - **ファイラの枠**(判断 10): `files`(一覧)と `field`(フィールド表示)のペインもレシピで開く。既定は PRELUDE のファイラ(`prelude-filer`)で、
+//!   `files.toml` を置けば yazi・Dolphin などに替えられる。`{path}` はペインのフォルダ(無ければ paths の `files`)、`{pane}` はペインの id
+//!
+//!   ```toml
+//!   # ~/.config/prelude/panes/files.toml
+//!   run   = "dolphin --new-window {path}"
+//!   class = "org.kde.dolphin"
+//!   ```
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -23,8 +31,8 @@ pub struct Recipe {
     pub class: String,
 }
 
-/// UI が描く・コアが特別に扱う種類(レシピの名前にできない)
-const RESERVED: [&str; 7] = ["web", "files", "field", "app", "home", "settings", "split"];
+/// コアが特別に扱う種類(レシピの名前にできない)
+const RESERVED: [&str; 5] = ["web", "app", "home", "settings", "split"];
 
 pub fn dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
@@ -33,12 +41,17 @@ pub fn dir() -> PathBuf {
 }
 
 fn builtin() -> Vec<Recipe> {
-    vec![Recipe {
-        kind: "console".into(),
-        name: "Console".into(),
-        run: "konsole --workdir {paths.terminal}".into(),
-        class: "org.kde.konsole".into(),
-    }]
+    let r = |kind: &str, name: &str, run: &str, class: &str| Recipe {
+        kind: kind.into(),
+        name: name.into(),
+        run: run.into(),
+        class: class.into(),
+    };
+    vec![
+        r("console", "Console", "konsole --workdir {paths.terminal}", "org.kde.konsole"),
+        r("files", "Files", "prelude-filer --pane {pane} {path}", "prelude-filer"),
+        r("field", "Field", "prelude-filer --pane {pane} --view field {path}", "prelude-filer"),
+    ]
 }
 
 /// レシピの一覧(名前順)。読めないファイルは飛ばす
@@ -74,18 +87,28 @@ pub fn quote(s: &str) -> String {
 
 /// run の {paths.…} を置き換えたコマンド。paths は項目 → 使うフォルダ
 pub fn command(r: &Recipe, paths: &dyn Fn(&str) -> String) -> String {
+    expand(&r.run, &|name| name.strip_prefix("paths.").filter(|k| !k.is_empty()).map(paths))
+}
+
+/// run の `{名前}` を置き換える(引用符つき)。vars が None を返す名前・形の合わないものはそのまま残す。
+/// 名前: `paths.<項目>`(使うフォルダ)、`path`(ペインのフォルダ)、`pane`(ペインの id)
+pub fn expand(run: &str, vars: &dyn Fn(&str) -> Option<String>) -> String {
     let mut out = String::new();
-    let mut rest = r.run.as_str();
-    while let Some(i) = rest.find("{paths.") {
+    let mut rest = run;
+    while let Some(i) = rest.find('{') {
         out.push_str(&rest[..i]);
-        let after = &rest[i + 7..];
-        match after.find('}') {
-            Some(j) if j > 0 && after[..j].chars().all(|c| c.is_ascii_alphanumeric() || c == '_') => {
-                out.push_str(&quote(&paths(&after[..j])));
+        let after = &rest[i + 1..];
+        let value = after
+            .find('}')
+            .filter(|&j| j > 0 && after[..j].chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+            .and_then(|j| vars(&after[..j]).map(|v| (j, v)));
+        match value {
+            Some((j, v)) => {
+                out.push_str(&quote(&v));
                 rest = &after[j + 1..];
             }
-            _ => {
-                out.push_str("{paths.");
+            None => {
+                out.push('{');
                 rest = after;
             }
         }
@@ -110,6 +133,16 @@ mod tests {
     }
 
     #[test]
+    fn path_と_pane_を置き換える() {
+        let vars = |n: &str| match n {
+            "path" => Some("/a b".to_string()),
+            "pane" => Some("7".to_string()),
+            _ => None,
+        };
+        assert_eq!(expand("prelude-filer --pane {pane} {path} {nope} {", &vars), "prelude-filer --pane '7' '/a b' {nope} {");
+    }
+
+    #[test]
     fn ファイルで足す_置き換える() {
         let d = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-recipes");
         let _ = std::fs::remove_dir_all(&d);
@@ -120,6 +153,12 @@ mod tests {
         std::fs::write(d.join("bad.toml"), "run = = 1").unwrap();
         let list = load(&d);
         let v: Vec<(&str, &str, &str)> = list.iter().map(|r| (r.kind.as_str(), r.name.as_str(), r.run.as_str())).collect();
-        assert_eq!(v, vec![("console", "console", "xterm"), ("notes", "メモ", "kate")]);
+        assert_eq!(v[0], ("console", "console", "xterm"));
+        assert_eq!(v[3], ("notes", "メモ", "kate"));
+        // ファイラの枠は既定を持ち、置き換えられる
+        assert_eq!((v[1].0, v[2].0), ("field", "files"));
+        assert!(v[2].2.starts_with("prelude-filer"));
+        std::fs::write(d.join("files.toml"), "run = \"dolphin {path}\"\n").unwrap();
+        assert!(load(&d).iter().any(|r| r.kind == "files" && r.run == "dolphin {path}"));
     }
 }
