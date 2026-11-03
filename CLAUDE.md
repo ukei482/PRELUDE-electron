@@ -22,6 +22,7 @@
   - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`embed.rs` と `embed.js` がアプリの窓の取り込み、`recipes.rs` がペインのレシピ)、`prelude-cli`(`prelude` コマンド)
   - 別のソケットで動かしたコアは、D-Bus の名前(`org.prelude.Core.d…`)と KWin スクリプトの名前に印が付き、ふだんのコア・Electron 版と取り合わない。窓を出さずに試すなら `--no-embed`
   - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
+- `proto/gpui/` — GPUI の試作(段階 0)。ルートのワークスペースの外。ビルドには開発用のライブラリが要る(`docs/redesign-rust.md` の「GPUI の試作で分かったこと」)
 - `docs/release.md` — リリースと更新の詳しい手順
 
 ## 開発版を試す
