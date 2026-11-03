@@ -3,7 +3,7 @@
 //! - つないだら最初に `hello`。版がコアの話せるもの(`SUPPORTED`)でなければ断る
 //! - `hello` で `subscribe` したつなぎには、すぐに今の `state` を送り、その後は変わるたびに送る
 //! - ソケットは自分だけが使えるようにする(フォルダ 0700・ソケット 0600)
-use crate::embed::{self, Note};
+use crate::compositor::{self, Compositor, Note};
 use crate::state::{Core, Saved};
 use crate::{recipes, web};
 use prelude_proto::{Command, ErrorCode, Event, Hello, PaneSpec, Request, Response, WebAction, MAX_LINE, PROTOCOL, SUPPORTED};
@@ -53,15 +53,15 @@ struct Shared {
     core: Mutex<Core>,
     events: broadcast::Sender<Arc<str>>,
     save: Notify,
-    embed: Option<embed::Handle>,
+    compositor: Option<Box<dyn Compositor>>,
     web: Option<web::Handle>,
 }
 
 impl Shared {
     /// 取り込みと Web のペインに、今の状態を送る
     fn sync_embed(&self, core: &Core) {
-        if let Some(e) = &self.embed {
-            e.want(core.wants());
+        if let Some(c) = &self.compositor {
+            c.arrange(core.scene());
         }
         if let Some(w) = &self.web {
             let (wants, dl) = core.web_wants();
@@ -136,10 +136,10 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     core.set_tag(&tag);
     let (events, _) = broadcast::channel(64);
     let (notes_tx, mut notes) = tokio::sync::mpsc::unbounded_channel();
-    let embed = if opt.embed { embed::start(&tag, notes_tx.clone()).await } else { None };
+    let compositor = if opt.embed { compositor::start(&tag, notes_tx.clone()).await } else { None };
     // Web のペインは窓の取り込みがあるときだけ(窓をペインに置けないと、Chromium の窓がばらばらに出るだけになる)
-    let web = if embed.is_some() { web::start(&tag, notes_tx) } else { None };
-    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), embed, web });
+    let web = if compositor.is_some() { web::start(&tag, notes_tx) } else { None };
+    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), compositor, web });
     // 前回のタブのアプリを起動し直す
     shared.sync_embed(&shared.core.lock().unwrap());
 
@@ -224,8 +224,8 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     if let Some(w) = &shared.web {
         w.shutdown().await; // Chromium を閉じる
     }
-    if let Some(e) = &shared.embed {
-        e.shutdown().await; // 起動したアプリを閉じる
+    if let Some(c) = &shared.compositor {
+        c.shutdown().await; // 起動したアプリを閉じる
     }
     let s = shared.core.lock().unwrap().saved();
     let saved = write_saved(&opt.state_file, &s);

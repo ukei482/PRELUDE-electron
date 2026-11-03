@@ -7,7 +7,7 @@
 //! - URL・題名は CDP のイベント(Target.targetInfoChanged)で受けてコアに知らせる(コアはペインの url を書き換えて残す。起動し直すとその URL で開く)
 //! - 新しい窓: noopener のリンク(新しいタブで開く)は PRELUDE の新しいタブにする。opener のある小さな窓(ログインのポップアップなど)は取り込まずそのまま
 //! - ダウンロードの保存先は、今のタブのブックマークの paths の download
-use crate::embed::Note;
+use crate::compositor::Note;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd};
