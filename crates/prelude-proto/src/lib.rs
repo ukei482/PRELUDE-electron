@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::PathBuf;
 
+pub mod client;
+pub use client::Client;
+
 /// 今の約束の版
 pub const PROTOCOL: u32 = 1;
 /// コアが話せる版

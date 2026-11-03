@@ -1,0 +1,15 @@
+[package]
+name = "prelude-sidebar"
+version = "0.1.0"
+description = "PRELUDE のサイドバー(GPUI。画面の左端に貼り付き、スペース・ブックマーク・タブを出す)"
+edition.workspace = true
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+prelude-proto.workspace = true
+prelude-ui.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+env_logger.workspace = true
+log.workspace = true

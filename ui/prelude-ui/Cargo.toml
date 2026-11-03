@@ -1,0 +1,9 @@
+[package]
+name = "prelude-ui"
+version = "0.1.0"
+description = "PRELUDE の UI の共通の見た目と部品(色・書体・行など。GPUI)"
+edition.workspace = true
+
+[dependencies]
+gpui.workspace = true
+log.workspace = true
