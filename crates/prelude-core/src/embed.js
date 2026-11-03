@@ -29,6 +29,8 @@ function paneOf(w, activated) {
   if (!w.normalWindow || prelude(w)) return null;
   var id = wid(w), i, p;
   for (i = 0; i < STATE.panes.length; i++) if (STATE.panes[i].wids.indexOf(id) >= 0) return STATE.panes[i];
+  // Web のペイン: 題名が印の窓(web.rs が作ったアプリの窓。最初のページが題名を印にする)
+  for (i = 0; i < STATE.panes.length; i++) if (STATE.panes[i].marker && !STATE.panes[i].wids.length && w.caption === STATE.panes[i].marker) return claim(STATE.panes[i], w, 'marker');
   for (i = 0; i < STATE.panes.length; i++) if (STATE.panes[i].pids.indexOf(w.pid) >= 0) return claim(STATE.panes[i], w, 'pid');
   for (i = 0; i < STATE.panes.length; i++) {
     p = STATE.panes[i];
@@ -91,14 +93,16 @@ function report() {
   });
   send('windows', { counts: counts, titles: titles, all: all });
 }
+// 題名が変わったら: 取り込んだ窓なら知らせ直す。まだ取り込んでいない窓は、印の題名になったかもしれないので確かめる
 var hooked = {};
 function hook(w) {
   var id = wid(w);
   if (hooked[id] || !w.captionChanged) return;
   hooked[id] = true;
-  w.captionChanged.connect(function () { if (paneOf(w)) report(); });
+  w.captionChanged.connect(function () { if (paneOf(w)) { apply(w); report(); } });
 }
 workspace.windowAdded.connect(function (w) {
+  hook(w);
   w.windowShown && w.windowShown.connect(function () { apply(w); });
   apply(w);
   report();
@@ -120,5 +124,5 @@ workspace.windowList().forEach(function (w) {
     w.keepAbove = false; w.noBorder = false; w.skipTaskbar = false; w.skipPager = false; w.skipSwitcher = false; w.minimized = false;
   }
 });
-workspace.windowList().forEach(apply);
+workspace.windowList().forEach(function (w) { hook(w); apply(w); });
 report();

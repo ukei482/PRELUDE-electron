@@ -126,6 +126,14 @@ Rust の UI は Electron と違って Wayland の **layer-shell** が使える(�
 - 上の 「1 つの Chromium + CDP でアプリ窓」
 - 案: ペインごとに `chromium --app=URL` を別々に起動(今の方式。単純だが、URL やタイトルを PRELUDE が知れない)
 
+**Web のペインの作り方(段階 3-b で分かったこと。上の 3〜4 を具体的にしたもの)**
+- CDP の `Target.createTarget { newWindow: true }` で作る窓は、タブ・アドレスバーのある普通の窓になる(アプリの窓にする引数が無い)。そこで、動いている Chromium に同じプロファイルで `--app=<URL>` を頼む(頼んだプロセスはすぐ終わり、CDP の側に新しいページとして現れる)
+- `--app=` は `data:` や `about:blank` では窓にならない。そこで題名に印を出すだけのページ(`prelude-pane.html`。snap 版が読める `~/snap/chromium/common` に置く)を `file:///…/prelude-pane.html#<コアの印>:<ペイン>` で開く。題名が `PRELUDE-PANE:<コアの印>:<ペイン>` になるので、KWin スクリプトはその窓を取り込み、取り込んだら CDP で本当の URL へ移す
+- snap 版の Chromium には終了の合図(シグナル)を送れない(AppArmor)。終わらせるときは、窓を閉じてから CDP の通信の口を閉じる。snap 版は普通に閉じてもプロファイルに「落ちた」と記録されるので(CDP を使わなくても同じ。Electron 版の Chromium の窓も同じ)、起動するときに `--hide-crash-restore-bubble` を付ける
+- 新しいタブで開くリンク(noopener)と、ログインなどの小さな窓(opener のあるもの)は、CDP の `canAccessOpener` で見分ける
+- Chromium は `PATH` から探す(`xdg.rs`。判断 9)。snap 版かどうかは実体のパスで見分け、snap 版ならプロファイルと印のページを `~/snap/chromium/common` に置く
+- 判断 12 に合わせて: ログインなどの小さな窓(opener のあるもの)は「親のある窓」として浮かせたまま。戻る・進むはふだんは Chromium のキー(Alt+←/→)で、`web.go` は同じことをコマンドからするためのもの(判断 10 の「コマンドで完結する」)
+
 **判断 3-b: Chromium が無い PC(判断 12 で決定)**
 - NixOS のモジュールが Chromium を入れるので、無いときの扱いは作らない。Chromium は `PATH` から探す(`sys/xdg.js`・`xdg.rs`)
 
@@ -290,7 +298,8 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)、ソケットの約束(版つき)、`prelude` コマンド | `prelude` コマンドで状態を見られる |
 | | ↳ 済: `prelude-proto`(約束の版 1)・`prelude-core`・`prelude-cli`。判断 8 の前の「ソケットの約束(版 1)」 | |
 | 3 | KWin の取り込み(`appembed.js` の移植)、Chromium の Web ペイン(CDP)、ペインのレシピ(判断 7 の段階 1) | Rust 版で Web・アプリ・コンソールのペインが開く |
-| | ↳ 済(3-a): KWin の取り込み(`embed.rs`・`embed.js`)、ペインのレシピ(`recipes.rs`。既定の `console`)、人からもらったブックマークの起動コマンドの確認(`bookmark.open` の `allow`)。残り(3-b): Chromium の Web ペイン | |
+| | ↳ 済(3-a): KWin の取り込み(`embed.rs`・`embed.js`)、ペインのレシピ(`recipes.rs`。既定の `console`)、人からもらったブックマークの起動コマンドの確認(`bookmark.open` の `allow`) | |
+| | ↳ 済(3-b): Chromium の Web ペイン(`web.rs`)。上の「Web のペインの作り方(段階 3-b で分かったこと)」 | |
 | | ↳ 判断 10・11 で足したもの: 取り込みを `Compositor` のトレイトにする(裏側は KWin・sway(i3 の IPC)・Hyprland)。窓を重ねる形から、コンポジタに並べさせる形へ。ランチャーの候補 `prelude items`(fuzzel につないで使う) | |
 | | ↳ 済: ランチャーの候補 `prelude items`(`item.list`・`item.open`)。タブが先、ブックマーク・アプリ・ほかのスペースは点数(最近 + よく使う。半減期 14 日。`core.json` の `history`)の順。`prelude items \| fuzzel --dmenu \| prelude open` で使う | |
 | 4 | ~~既定の UI(Slint)~~ → **サイドバーとランチャー(GPUI)**、共通の見た目と部品のクレート(`prelude-ui`)(判断 10・11) | Rust 版を日常で試せる |
@@ -315,7 +324,9 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 
 段階 3-a で足したもの: `recipe.list`、`bookmark.open` の `allow` と返事の `held`(外した起動コマンド)、ペインの `window_title`・`stopped`。取り込みの D-Bus は `org.prelude.Core`(`/org/prelude/Core` の `Report`。KWin スクリプトが呼ぶ)
 
-まだしていないこと: Chromium の Web ペイン(段階 3-b)、ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
+段階 3-b で足したもの: `web.go`、`download` のイベント
+
+まだしていないこと: ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
 
 ---
 

@@ -22,6 +22,14 @@
   - **ペインのレシピ**: `~/.config/prelude/panes/<種類>.toml` に `run`(`{paths.terminal}` などは今のブックマークの paths に置き換わる)を書くと、その種類のペインが増える。既定で `console`(Konsole)を持つ
   - 人からもらったブックマークの、インストール済みのアプリと一致しない起動コマンドは、外して開く(`bookmark.open` の `allow` で許したものだけ実行する)
   - `prelude` コマンド: `new <種類> [項目=値…]`・`panes`・`place <ペイン> <x> <y> <幅> <高さ>`(UI の代わりに場所を知らせる。試す用)・`recipes`・`open --run`
+- Rust 版のコアの Web のペイン(移行の段階 3 の後半)。Web は Chromium そのもので、コアは Web のエンジンを持たない
+  - Chromium は `PATH` から探す。PRELUDE 専用のプロファイル(snap 版は `~/snap/chromium/common/prelude-profile`。Electron 版の Chromium の窓と同じ)で 1 つだけ動かし、CDP を `--remote-debugging-pipe` で使う(ポートを開けない)。コアが落ちると Chromium も終わる
+  - Web のペイン 1 つ = アドレスバー・タブの無いアプリの窓 1 つ。KWin で取り込んで、ほかのアプリと同じくペインの場所に置く
+  - ページの中で移った URL と題名をコアに知らせ、URL は残す(起動し直すとその URL で開く)。URL を開く(`pane.update` の `url`)・戻る・進む・読み直す(`web.go`)
+  - 新しいタブで開くリンクは PRELUDE の新しいタブにする。ログインなどの小さな窓(opener のあるもの)は取り込まずにそのまま出す
+  - ダウンロードは今のタブの paths の `download` に保存し、進み具合を `download` のイベントで知らせる
+  - Electron 版の「実ブラウザのペイン」(アプリのペインの `webUrl`)も Web のペインとして開く
+  - `prelude` コマンド: `url <ペイン> <URL>`・`go <ペイン> back|forward|reload`
 - Rust 版のランチャーの候補(判断 11)。`prelude items` がタブ・ブックマーク・アプリ・スペースを 1 行ずつ出し(タブが先、残りは最近 + よく使う順)、`prelude open` は標準入力のその 1 行を開く。`prelude items | fuzzel --dmenu | prelude open` の形で使う。ランチャーで打った URL などもそのまま開く。点数はコアが付けて `core.json` に残す(`--json` で JSON の行)
 - **スペース**。ブックマークの入ったフォルダ1つが1つのスペースで、スペースごとにブックマークとタブを持つ **[互換性]**
   - スペースは「スペースのフォルダ」(設定。既定は `~/スペース`)の下のフォルダ。中の `.prelude` がそのスペースのブックマークで、サブフォルダ(1段だけ)がブックマークのフォルダになる。ファイラでファイルを足す・消すと、サイドバーにもすぐ反映する
@@ -33,6 +41,7 @@
   - 0.11 までのサイドバーのブックマークは、最初の起動でスペース `Main` のファイルに移す(フォルダはサブフォルダに)。元のブックマークは設定の `bookmarksBackup` に残す
 
 ### 変更
+- 取り込んだアプリの窓を、ペインより 1px 内側に置くようにした。窓の周りに 1px の白い線が見える
 - アプリ・アイコン・端末(Konsole)・Chromium を、決め打ちのパス(`/usr/bin`・`/usr/share`・`/snap/bin`)ではなく `PATH` と `XDG_DATA_DIRS` から探すようにした(`sys/xdg.js`。Rust 版のコアも同じ)。NixOS など、ほかの配置の OS でも動くようにするため。`XDG_DATA_DIRS` の中では先に書かれたフォルダの `.desktop` を優先する(決まりどおり。今までは逆だった)
 - 乗る先の OS を NixOS にする設計(`docs/redesign-rust.md` の判断 9)
 - Rust 版の UI の方針を変えた(判断 10)。UI はコマンドとランチャーだけにし、サイドバーは GPUI で外付け、ウィジェット類は rice に任せる。ファイラは付け替えられる枠にする
