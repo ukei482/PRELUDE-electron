@@ -3,6 +3,9 @@
 use gpui::{App, Div, ElementId, FontFallbacks, Hsla, Pixels, SharedString, Stateful, div, font, prelude::*, px, rgb};
 use std::borrow::Cow;
 
+pub mod input;
+pub use input::TextInput;
+
 /// 色(Electron 版の --bg・--panel などと同じ)
 pub mod color {
     use gpui::{Hsla, rgb};
@@ -65,7 +68,7 @@ pub fn section_title(text: impl Into<SharedString>) -> Div {
 
 /// 一覧の 1 行。active なら反転(白地に青い文字)、そうでなければ乗せると明るくなる
 pub fn row(id: impl Into<ElementId>, active: bool) -> Stateful<Div> {
-    let d = div().id(id.into()).flex().items_center().gap(px(8.)).h(ROW_HEIGHT).px(px(6.)).cursor_pointer().overflow_hidden();
+    let d = div().id(id.into()).flex().items_center().gap(px(8.)).h(ROW_HEIGHT).flex_none().px(px(6.)).cursor_pointer().overflow_hidden();
     if active { d.bg(color::accent()).text_color(color::bg()) } else { d.hover(|s| s.bg(color::panel2())) }
 }
 
