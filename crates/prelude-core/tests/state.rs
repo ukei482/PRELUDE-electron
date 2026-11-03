@@ -298,6 +298,74 @@ fn 取り込むペイン_レシピ_止まったペイン() {
 }
 
 #[test]
+fn ランチャーの候補_開くと点数が上がる() {
+    use prelude_core::apps::App;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NOW: AtomicU64 = AtomicU64::new(1_000_000);
+    const DAY: u64 = 24 * 3600 * 1000;
+    let root = spaces("items");
+    let main = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(main.join("研究")).unwrap();
+    std::fs::create_dir_all(root.join("Work")).unwrap();
+    let bm = |p: &std::path::Path| std::fs::write(p, "[layout]\ntype = \"web\"\nurl = \"https://a/\"\n").unwrap();
+    bm(&main.join("Alpha.prelude"));
+    bm(&main.join("研究/論文.prelude"));
+    let mut c = Core::new(HOME, &root, None);
+    c.set_clock(|| NOW.load(Ordering::Relaxed));
+    c.set_apps(|| {
+        let app = |id: &str, name: &str| App { name: name.into(), exec: id.into(), cls: String::new(), id: id.into() };
+        vec![app("kate", "Kate"), app("org.kde.konsole", "Konsole"), app("kate", "Kate (dup)")]
+    });
+    let keys = |c: &Core| c.items().into_iter().map(|i| i.key).collect::<Vec<_>>();
+    let alpha = format!("bookmark:{}", main.join("Alpha.prelude").display());
+    let paper = format!("bookmark:{}", main.join("研究/論文.prelude").display());
+    // 点数が無ければ種類(ブックマーク・アプリ・スペース)と名前の順。今のスペースは出さない。同じ id のアプリは 1 つ
+    assert_eq!(keys(&c), vec![alpha.clone(), paper.clone(), "app:kate".into(), "app:org.kde.konsole".into(), "space:Work".into()]);
+    assert_eq!(c.items()[1].detail, "研究");
+
+    // アプリを開くとタブになり、タブが先に出る。開いたものは点数が上がって前に出る
+    let tab = ok(&mut c, Command::ItemOpen { key: "app:org.kde.konsole".into(), allow: vec![] }).as_u64().unwrap();
+    let w = c.wants();
+    assert_eq!((w.len(), w[0].cmd.as_str()), (1, "org.kde.konsole"));
+    let it = c.items();
+    assert_eq!((it[0].key.clone(), it[0].kind.as_str(), it[0].detail.as_str()), (format!("tab:{tab}"), "tab", "1"));
+    assert_eq!(it[1].key, "app:org.kde.konsole");
+    // 2 回開いたものは、後で 1 回開いたものより上。ただし古くなると減る
+    ok(&mut c, Command::ItemOpen { key: paper.clone(), allow: vec![] });
+    ok(&mut c, Command::TabClose { tab: None });
+    ok(&mut c, Command::BookmarkOpen { path: paper.trim_start_matches("bookmark:").into(), allow: vec![] });
+    NOW.fetch_add(DAY, Ordering::Relaxed);
+    ok(&mut c, Command::ItemOpen { key: alpha.clone(), allow: vec![] });
+    // タブで開いているブックマークはタブとして出すので、閉じてから比べる
+    ok(&mut c, Command::TabClose { tab: None });
+    ok(&mut c, Command::TabClose { tab: None });
+    let rest: Vec<String> = c.items().into_iter().filter(|i| i.kind != "tab").map(|i| i.key).collect();
+    assert_eq!(&rest[..3], &[paper.clone(), alpha.clone(), "app:org.kde.konsole".into()]);
+    NOW.fetch_add(60 * DAY, Ordering::Relaxed); // 2 の点も 60 日で 1 より小さくなる
+    ok(&mut c, Command::ItemOpen { key: "app:kate".into(), allow: vec![] });
+    assert_eq!(c.items().into_iter().find(|i| i.kind != "tab").unwrap().key, "app:kate");
+
+    // タブを指して開く・スペースを切り替える
+    ok(&mut c, Command::ItemOpen { key: format!("tab:{tab}"), allow: vec![] });
+    assert_eq!(state(&c).active, Some(tab));
+    ok(&mut c, Command::ItemOpen { key: "space:Work".into(), allow: vec![] });
+    assert_eq!(state(&c).space, "Work");
+    assert!(c.items().iter().any(|i| i.key == format!("space:{SPACE_DEFAULT}")));
+
+    // 点数は書き出して戻す
+    let saved = c.saved();
+    assert_eq!(saved.history.len(), 5);
+    let mut back = Core::new(HOME, &root, Some(saved.clone()));
+    back.set_clock(|| NOW.load(Ordering::Relaxed));
+    assert_eq!(back.saved().history, saved.history);
+
+    // 知らない key
+    for k in ["nope", "tab:x", "what:1", "app:none"] {
+        assert!(c.handle(Command::ItemOpen { key: k.into(), allow: vec![] }).reply.is_err(), "{k}");
+    }
+}
+
+#[test]
 fn web_のペイン_印_url_の知らせ_戻る() {
     let mut c = Core::new(HOME, spaces("web"), None);
     c.set_tag(".dtest");
@@ -345,4 +413,26 @@ fn web_のペイン_印_url_の知らせ_戻る() {
     // 止まった Web のペインは開かない
     c.note_exited(web);
     assert_eq!(c.web_wants().0.len(), 1);
+}
+
+#[test]
+fn コンポジタに渡す配置の木() {
+    use prelude_core::compositor::Tree;
+    use prelude_format::Dir as FDir;
+    let mut c = Core::new(HOME, spaces("scene"), None);
+    ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
+    let first = pane_ids(&state(&c).tabs[0].layout)[0];
+    let p2 = ok(&mut c, Command::PaneSplit { pane: first, dir: Dir::Row, new: web("https://b/") }).as_u64().unwrap();
+    ok(&mut c, Command::SplitRatio { pane: first, ratio: 0.3 });
+    ok(&mut c, Command::TabOpen { pane: web("https://c/"), index: None });
+    let s = c.scene();
+    assert_eq!(s.tabs.len(), 2);
+    let split = s.tabs.iter().find(|t| matches!(t.tree, Tree::Split { .. })).unwrap();
+    let single = s.tabs.iter().find(|t| matches!(t.tree, Tree::Pane(_))).unwrap();
+    assert_eq!(s.active, Some(single.id)); // 後で開いたタブが今のタブ
+    assert_eq!(split.tree, Tree::Split { dir: FDir::Row, ratio: 0.3, a: Box::new(Tree::Pane(first)), b: Box::new(Tree::Pane(p2)) });
+    assert_eq!(split.active_pane, p2);
+    // 窓を出すペインは wants と同じ
+    assert_eq!(s.panes, c.wants());
+    assert_eq!(s.panes.len(), 3);
 }

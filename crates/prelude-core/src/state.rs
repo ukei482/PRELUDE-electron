@@ -4,11 +4,11 @@
 //! - タブはスペースごと。切り替えると今のスペースのタブはしまい、切り替え先のタブを出す(取り込んだ窓を閉じるのは段階 3)
 //! - ペインの id・タブの id はコアの中で一意(スペースをまたいでも重ならない)。タブの番号はスペースの中で 1 から、空いた番号を使う
 //! - 残すもの(スペース・タブ・分割・開いているブックマーク)は [`Saved`] にして書き出す。ペインの場所(UI から来る)は残さない
-use crate::embed::Want;
+use crate::compositor::{Scene, TabScene, Tree, Want};
 use crate::recipes::{self, Recipe};
 use crate::web::WebWant;
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, PaneRect, PaneSpec, RecipeInfo, State, TabInfo, TabRef};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, State, TabInfo, TabRef};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as Json};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -60,6 +60,14 @@ impl Layout {
                 Node::Split { dir: *dir, ratio: *ratio, a: Box::new(a.to_node()), b: Box::new(b.to_node()) }
             }
             Layout::Pane { leaf, .. } => Node::Leaf(leaf.clone()),
+        }
+    }
+
+    /// ペインの id だけの木(コンポジタに渡す)
+    pub fn tree(&self) -> Tree {
+        match self {
+            Layout::Split { dir, ratio, a, b } => Tree::Split { dir: *dir, ratio: *ratio, a: Box::new(a.tree()), b: Box::new(b.tree()) },
+            Layout::Pane { id, .. } => Tree::Pane(*id),
         }
     }
 
@@ -231,6 +239,21 @@ pub struct Tabs {
 pub struct Saved {
     pub space: String,
     pub spaces: BTreeMap<String, SavedTabs>,
+    /// ランチャーの候補の点数。候補の key → [点数, 時刻(ミリ秒)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub history: BTreeMap<String, (f64, u64)>,
+}
+
+/// 点数の半減期(Electron 版の history.js と同じ 14 日)と、残す数
+const HIST_HALF_MS: f64 = 14.0 * 24.0 * 3600e3;
+const HIST_MAX: usize = 500;
+
+fn decay(score: f64, at: u64, now: u64) -> f64 {
+    score * 0.5f64.powf(now.saturating_sub(at) as f64 / HIST_HALF_MS)
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -277,6 +300,12 @@ pub struct Core {
     installed: fn(&str) -> bool,
     /// このコアの印(Web のペインの窓の題名の印に入れる)
     tag: String,
+    /// インストール済みのアプリの一覧(ランチャーの候補。テストで差し替える)
+    apps: fn() -> Vec<crate::apps::App>,
+    /// 今の時刻(ミリ秒。テストで差し替える)
+    now: fn() -> u64,
+    /// ランチャーの候補の点数(最近 + よく使う)
+    history: BTreeMap<String, (f64, u64)>,
 }
 
 /// コマンドの結果。changed なら状態が変わった(イベントを配り、書き出す)
@@ -301,6 +330,9 @@ impl Core {
             titles: HashMap::new(),
             installed: crate::apps::is_installed,
             tag: String::new(),
+            apps: crate::apps::cached,
+            now: now_ms,
+            history: BTreeMap::new(),
         };
         let names = c.space_names();
         if let Some(s) = saved {
@@ -309,6 +341,7 @@ impl Core {
                 c.others.insert(name.clone(), tabs);
             }
             c.space = s.space.clone();
+            c.history = s.history;
         }
         // 前のスペースが無くなっていたら(フォルダを消した・名前を変えた)、既定か最初のスペースにする
         if !names.contains(&c.space) {
@@ -338,7 +371,7 @@ impl Core {
         for (name, t) in self.others.iter().chain([(&self.space, &self.tabs)]) {
             spaces.insert(name.clone(), self.save_tabs(t));
         }
-        Saved { space: self.space.clone(), spaces }
+        Saved { space: self.space.clone(), spaces, history: self.history.clone() }
     }
 
     fn save_tabs(&self, t: &Tabs) -> SavedTabs {
@@ -422,6 +455,14 @@ impl Core {
     }
 
     /// 起動コマンドを確かめる関数を差し替える(テスト用)
+    pub fn set_apps(&mut self, f: fn() -> Vec<crate::apps::App>) {
+        self.apps = f;
+    }
+
+    pub fn set_clock(&mut self, f: fn() -> u64) {
+        self.now = f;
+    }
+
     pub fn set_installed(&mut self, f: fn(&str) -> bool) {
         self.installed = f;
     }
@@ -511,6 +552,13 @@ impl Core {
         out
     }
 
+    /// コンポジタに渡すもの: 窓を出すペイン([`Core::wants`])と、タブごとの配置の木
+    pub fn scene(&self) -> Scene {
+        let tabs =
+            self.tabs.tabs.iter().map(|t| TabScene { id: t.id, num: t.num, tree: t.layout.tree(), active_pane: t.active_pane }).collect();
+        Scene { panes: self.wants(), tabs, active: self.tabs.active }
+    }
+
     /// 取り込んだ窓が無くなった。ペインは残して止まったものにする。変われば true
     pub fn note_exited(&mut self, pane: u64) -> bool {
         self.titles.remove(&pane);
@@ -550,6 +598,8 @@ impl Core {
             Command::SpaceCreate { name } => self.space_create(&name),
             Command::BookmarkList {} => Ok(json!(self.bookmarks())),
             Command::BookmarkOpen { path, allow } => self.bookmark_open(&path, &allow),
+            Command::ItemList {} => Ok(json!(self.items())),
+            Command::ItemOpen { key, allow } => self.item_open(&key, &allow),
             Command::RecipeList {} => {
                 Ok(json!(self.recipes.iter().map(|r| RecipeInfo { kind: r.kind.clone(), name: r.name.clone() }).collect::<Vec<_>>()))
             }
@@ -740,6 +790,7 @@ impl Core {
         self.others.insert(std::mem::replace(&mut self.space, name.to_string()), cur);
         self.tabs = self.others.remove(name).unwrap_or_default();
         self.places.clear(); // 前のスペースのペインはもう見えない
+        self.record(&format!("space:{name}"));
         Ok(Json::Null)
     }
 
@@ -809,6 +860,14 @@ impl Core {
     /// ブックマークを開く。もう開いていればそのタブにする。パスの無いフォルダのペインは paths の files で開く。
     /// ファイルは人からもらうこともあるので、インストール済みのアプリと一致しない起動コマンドは、allow に無ければ外す(そのペインは起動しない)
     fn bookmark_open(&mut self, path: &str, allow: &[String]) -> Reply {
+        let r = self.bookmark_open_inner(path, allow);
+        if r.is_ok() {
+            self.record(&format!("bookmark:{path}"));
+        }
+        r
+    }
+
+    fn bookmark_open_inner(&mut self, path: &str, allow: &[String]) -> Reply {
         if let Some(t) = self.tabs.tabs.iter().find(|t| t.bookmark.as_ref().is_some_and(|(p, _)| p == path)) {
             self.tabs.active = Some(t.id);
             return Ok(json!(BookmarkOpened { tab: t.id, held: vec![] }));
@@ -848,6 +907,88 @@ impl Core {
         let title = if bm.title.is_empty() { stem(path) } else { bm.title };
         let tab = self.insert_tab(layout, Some((path.to_string(), title)), None);
         Ok(json!(BookmarkOpened { tab, held }))
+    }
+
+    // -------------------------------------------------------------- ランチャーの候補
+
+    /// 開いたものの点数を足す。古いものは減らして、多すぎれば点の低いものから捨てる
+    fn record(&mut self, key: &str) {
+        let now = (self.now)();
+        let old = self.history.get(key).map(|&(s, t)| decay(s, t, now)).unwrap_or(0.0);
+        self.history.insert(key.to_string(), (old + 1.0, now));
+        if self.history.len() > HIST_MAX {
+            let mut v: Vec<(String, f64)> = self.history.iter().map(|(k, &(s, t))| (k.clone(), decay(s, t, now))).collect();
+            v.sort_by(|a, b| b.1.total_cmp(&a.1));
+            for (k, _) in v.into_iter().skip(HIST_MAX) {
+                self.history.remove(&k);
+            }
+        }
+    }
+
+    fn score(&self, key: &str, now: u64) -> f64 {
+        self.history.get(key).map(|&(s, t)| decay(s, t, now)).unwrap_or(0.0)
+    }
+
+    /// ランチャーの候補。今のスペースのタブ(タブの順)が先、残り(ブックマーク・アプリ・ほかのスペース)は点数の高い順、同じなら種類・名前の順。
+    /// タブで開いているブックマークは、タブとして出す
+    pub fn items(&self) -> Vec<Item> {
+        let now = (self.now)();
+        let mut out: Vec<Item> = self
+            .tabs
+            .tabs
+            .iter()
+            .map(|t| Item { key: format!("tab:{}", t.id), kind: "tab".into(), label: t.title(), detail: t.num.to_string(), score: 0.0 })
+            .collect();
+        let mut rest: Vec<Item> = vec![];
+        let open: HashSet<&str> = self.tabs.tabs.iter().filter_map(|t| t.bookmark.as_ref().map(|(p, _)| p.as_str())).collect();
+        for b in self.bookmarks().into_iter().filter(|b| !open.contains(b.path.as_str())) {
+            let key = format!("bookmark:{}", b.path);
+            rest.push(Item { score: self.score(&key, now), key, kind: "bookmark".into(), label: b.title, detail: b.folder });
+        }
+        let mut seen = HashSet::new();
+        for a in (self.apps)() {
+            if a.name.is_empty() || !seen.insert(a.id.clone()) {
+                continue;
+            }
+            let key = format!("app:{}", a.id);
+            rest.push(Item { score: self.score(&key, now), key, kind: "app".into(), label: a.name, detail: String::new() });
+        }
+        for n in self.space_names().into_iter().filter(|n| *n != self.space) {
+            let key = format!("space:{n}");
+            rest.push(Item { score: self.score(&key, now), key, kind: "space".into(), label: n, detail: String::new() });
+        }
+        let order = |k: &str| ["bookmark", "app", "space"].iter().position(|x| *x == k).unwrap_or(9);
+        rest.sort_by(|a, b| {
+            b.score.total_cmp(&a.score).then_with(|| order(&a.kind).cmp(&order(&b.kind))).then_with(|| a.label.cmp(&b.label))
+        });
+        out.extend(rest);
+        out
+    }
+
+    /// 候補を開く。開いたものは点数に足す(タブは足さない。いつも先に出る)
+    fn item_open(&mut self, key: &str, allow: &[String]) -> Reply {
+        let (kind, rest) = key.split_once(':').ok_or_else(|| fail(ErrorCode::BadRequest, "Not an item key"))?;
+        match kind {
+            "tab" => {
+                let id = rest.parse().map_err(|_| fail(ErrorCode::BadRequest, "Not a tab id"))?;
+                self.run(Command::TabActivate { tab: TabRef::Id { id } })
+            }
+            "bookmark" => self.bookmark_open(rest, allow),
+            "space" => self.space_switch(rest),
+            "app" => {
+                let a = (self.apps)().into_iter().find(|a| a.id == rest).ok_or_else(|| not_found("app"))?;
+                let mut leaf = Leaf { kind: "app".into(), fields: Table::new() };
+                leaf.fields.insert("cmd".into(), a.exec.into());
+                leaf.fields.insert("name".into(), a.name.into());
+                if !a.cls.is_empty() {
+                    leaf.fields.insert("cls".into(), a.cls.into());
+                }
+                let id = self.insert_tab(Layout::Pane { id: 0, leaf }, None, None);
+                self.record(key);
+                Ok(json!(id))
+            }
+            _ => Err(fail(ErrorCode::BadRequest, "Unknown item kind")),
+        }
     }
 
     /// タブで使うフォルダ。スペースの既定(`space.toml`)の上に、タブが開いたブックマークの paths を重ねる。

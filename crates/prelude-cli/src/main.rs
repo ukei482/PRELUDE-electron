@@ -1,6 +1,6 @@
 //! prelude コマンド。コアのソケット(prelude-proto)につないで、状態を見る・操作する。
 //! 画面の文は Electron 版に合わせて英語。外のスクリプトからは `prelude raw` と `prelude watch` で JSON をそのまま使える。
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Incoming, RecipeInfo, State, PROTOCOL};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Incoming, Item, RecipeInfo, State, PROTOCOL};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -15,6 +15,9 @@ usage: prelude <command> [args]
   close [n]              Close tab n (default: current)
   open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name
                          (--run: also run commands that do not match an installed app)
+  open [--run]           Read one line from stdin: a line of `prelude items`, or a target as above
+  items [--json]         Launcher items: tabs, then bookmarks, apps and spaces by score
+                         e.g.  prelude items | fuzzel --dmenu | prelude open
   new <type> [key=value...]  Open a pane in a new tab (e.g. new console, new app cmd=kate)
   panes                  List panes of all tabs (id, type, place)
   place <pane> <x> <y> <w> <h>  Tell where a pane is on screen (what the UI does; for testing)
@@ -158,6 +161,41 @@ fn open(c: &mut Conn, target: &str, run: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// 候補の 1 行(ランチャーに見せる形。`prelude open` はこの行を受け取って開く)
+fn item_line(i: &Item) -> String {
+    let kind = match i.kind.as_str() {
+        "tab" => format!("Tab {}", i.detail),
+        "bookmark" if !i.detail.is_empty() => format!("Bookmark ({})", i.detail),
+        "bookmark" => "Bookmark".into(),
+        "app" => "App".into(),
+        "space" => "Space".into(),
+        k => k.to_string(),
+    };
+    format!("{}  ·  {kind}", i.label.replace(['\n', '\t'], " "))
+}
+
+fn items(c: &mut Conn) -> Result<Vec<Item>, String> {
+    serde_json::from_value(c.call("item.list", json!({}))?).map_err(|e| e.to_string())
+}
+
+/// 標準入力の 1 行を開く。`prelude items` の行ならその候補、違えば open の対象(ランチャーで打った URL など)。空なら何もしない
+fn open_stdin(run: bool) -> Result<(), String> {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).map_err(|e| e.to_string())?;
+    let line = line.trim_end_matches(['\n', '\r']);
+    if line.trim().is_empty() {
+        return Ok(());
+    }
+    let mut c = Conn::open(false)?;
+    match items(&mut c)?.into_iter().find(|i| item_line(i) == line) {
+        Some(i) => match i.key.strip_prefix("bookmark:") {
+            Some(path) => open_bookmark(&mut c, path, run), // 外した起動コマンドの知らせは open と同じ
+            None => c.call("item.open", json!({ "key": i.key })).map(|_| ()),
+        },
+        None => open(&mut c, line.trim(), run),
+    }
+}
+
 /// ペインを 1 行ずつ: タブの番号・ペインの id・種類・中身
 fn print_panes(num: u32, l: &Value) {
     if l["k"] == "split" {
@@ -202,6 +240,18 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         ["close", n] => {
             Conn::open(false)?.call("tab.close", json!({ "tab": num_arg(n)? }))?;
+        }
+        ["open"] => open_stdin(false)?,
+        ["open", "--run"] => open_stdin(true)?,
+        ["items"] | ["items", "--json"] => {
+            let json = a.len() == 2;
+            let mut out = std::io::stdout().lock();
+            for i in items(&mut Conn::open(false)?)? {
+                let line = if json { serde_json::to_string(&i).unwrap_or_default() } else { item_line(&i) };
+                if writeln!(out, "{line}").is_err() {
+                    break; // 読む側が先に終わった(head・ランチャーを閉じたなど)
+                }
+            }
         }
         ["open", "--run", rest @ ..] if !rest.is_empty() => open(&mut Conn::open(false)?, &rest.join(" "), true)?,
         ["open", rest @ ..] if !rest.is_empty() => open(&mut Conn::open(false)?, &rest.join(" "), false)?,
