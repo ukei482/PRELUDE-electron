@@ -1,0 +1,15 @@
+[package]
+name = "prelude-filer"
+version = "0.1.0"
+description = "PRELUDE のファイラ(GPUI。ファイラの枠と、見せ方の部品 FilerView)"
+edition.workspace = true
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+prelude-proto.workspace = true
+prelude-ui.workspace = true
+serde_json.workspace = true
+env_logger.workspace = true
+log.workspace = true
+libc = "0.2"
