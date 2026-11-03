@@ -969,7 +969,8 @@ function syncViews() {
         const send = isWeb ? api.web.bounds : api.app.bounds;
         if (tab === at && !homeTerm.on && l.slot && l.slot.isConnected) { // ホームを出している間は隠す
           const r = l.slot.getBoundingClientRect();
-          send(l.id, { x: r.left, y: r.top, width: r.width, height: r.height });
+          const m = isWeb ? 0 : 1; // 取り込んだアプリの窓は 1px 内側に置いて、周りに白い線(ペインの白地)を見せる
+          send(l.id, { x: r.left + m, y: r.top + m, width: r.width - 2 * m, height: r.height - 2 * m });
         } else send(l.id, null);
       }
     }
