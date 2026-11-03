@@ -262,10 +262,8 @@ fn 取り込むペイン_レシピ_止まったペイン() {
     let console = pane_ids(&state(&c).tabs[0].layout)[0];
     ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "app", "cmd": "kate", "cls": "kate" })), index: None });
     let kate = pane_ids(&state(&c).tabs[0].layout)[0];
-    // Web・フォルダ・知らない種類・コマンドの無いアプリは取り込まない
-    for v in
-        [json!({ "type": "web", "url": "https://a/" }), json!({ "type": "files" }), json!({ "type": "calendar" }), json!({ "type": "app" })]
-    {
+    // フォルダ・知らない種類・コマンドの無いアプリは取り込まない
+    for v in [json!({ "type": "files" }), json!({ "type": "calendar" }), json!({ "type": "app" })] {
         ok(&mut c, Command::TabOpen { pane: spec(v), index: Some(99) });
     }
     let rects = serde_json::from_value(json!([{ "pane": kate, "x": 10, "y": 20, "width": 300, "height": 200 }])).unwrap();
@@ -278,6 +276,7 @@ fn 取り込むペイン_レシピ_止まったペイン() {
         v,
         vec![(kate, "kate", "kate", "/work/src", true), (console, "konsole --workdir '/work/src'", "org.kde.konsole", "/work/src", false)]
     );
+    assert!(w.iter().all(|w| w.marker.is_empty()));
     assert_eq!(ok(&mut c, Command::RecipeList {}), json!([{ "type": "console", "name": "Console" }]));
 
     // 窓が閉じたペインは残して止まったものにし、取り込まない。タブを開き直すと起動し直す
@@ -296,4 +295,54 @@ fn 取り込むペイン_レシピ_止まったペイン() {
     std::fs::create_dir_all(root.join("Other")).unwrap();
     ok(&mut c, Command::SpaceSwitch { name: "Other".into() });
     assert!(c.wants().is_empty());
+}
+
+#[test]
+fn web_のペイン_印_url_の知らせ_戻る() {
+    let mut c = Core::new(HOME, spaces("web"), None);
+    c.set_tag(".dtest");
+    let spec = |v: Value| serde_json::from_value(v).unwrap();
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "web", "url": "https://a.example/" })), index: None });
+    let web = pane_ids(&state(&c).tabs[0].layout)[0];
+    // Electron 版の実ブラウザのペイン(アプリのペインの webUrl)も Web のペインとして開く
+    ok(
+        &mut c,
+        Command::TabOpen { pane: spec(json!({ "type": "app", "cmd": "chromium --app=x", "webUrl": "https://b.example/" })), index: None },
+    );
+    let old = pane_ids(&state(&c).tabs[0].layout)[0];
+
+    let w = c.wants();
+    let m: Vec<(u64, &str, &str)> = w.iter().map(|w| (w.pane, w.marker.as_str(), w.cmd.as_str())).collect();
+    let (mw, mo) = (format!("PRELUDE-PANE:.dtest:{web}"), format!("PRELUDE-PANE:.dtest:{old}"));
+    assert_eq!(m, vec![(old, mo.as_str(), ""), (web, mw.as_str(), "")]); // 起動コマンドは使わない
+    let (ww, dl) = c.web_wants();
+    assert_eq!(
+        ww.iter().map(|w| (w.pane, w.url.as_str())).collect::<Vec<_>>(),
+        vec![(old, "https://b.example/"), (web, "https://a.example/")]
+    );
+    assert_eq!(dl, HOME); // ダウンロードの保存先(paths の download。どこにも無ければホーム)
+
+    // ページの中で移った URL は残し、題名は今の様子として出す
+    assert_eq!(c.note_web(web, "https://a.example/next".into(), "Next".into()), (true, true));
+    assert_eq!(c.note_web(web, "https://a.example/next".into(), "Next".into()), (false, false));
+    assert_eq!(c.note_web(old, "https://b.example/2".into(), String::new()), (true, true));
+    let s = state(&c);
+    assert_eq!(
+        (s.tabs[1].layout["url"].as_str(), s.tabs[1].layout["window_title"].as_str()),
+        (Some("https://a.example/next"), Some("Next"))
+    );
+    assert_eq!(s.tabs[0].layout["webUrl"], json!("https://b.example/2"));
+    assert!(c.saved().spaces[SPACE_DEFAULT].tabs.iter().any(|t| t.layout["url"] == "https://a.example/next"));
+
+    // 戻る・進むは Web のペインだけ
+    ok(&mut c, Command::WebGo { pane: web, action: prelude_proto::WebAction::Back });
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "files", "path": "/x" })), index: None });
+    let files = pane_ids(&state(&c).tabs[0].layout)[0];
+    assert_eq!(
+        c.handle(Command::WebGo { pane: files, action: prelude_proto::WebAction::Reload }).reply.unwrap_err().0,
+        ErrorCode::BadRequest
+    );
+    // 止まった Web のペインは開かない
+    c.note_exited(web);
+    assert_eq!(c.web_wants().0.len(), 1);
 }
