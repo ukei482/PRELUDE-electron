@@ -23,7 +23,7 @@
   - 人からもらったブックマークの、インストール済みのアプリと一致しない起動コマンドは、外して開く(`bookmark.open` の `allow` で許したものだけ実行する)
   - `prelude` コマンド: `new <種類> [項目=値…]`・`panes`・`place <ペイン> <x> <y> <幅> <高さ>`(UI の代わりに場所を知らせる。試す用)・`recipes`・`open --run`
 - Rust 版のコアの Web のペイン(移行の段階 3 の後半)。Web は Chromium そのもので、コアは Web のエンジンを持たない
-  - Chromium を PRELUDE 専用のプロファイル(snap 版は `~/snap/chromium/common/prelude-profile`。Electron 版の Chromium の窓と同じ)で 1 つだけ動かし、CDP を `--remote-debugging-pipe` で使う(ポートを開けない)。コアが落ちると Chromium も終わる
+  - Chromium は `PATH` から探す。PRELUDE 専用のプロファイル(snap 版は `~/snap/chromium/common/prelude-profile`。Electron 版の Chromium の窓と同じ)で 1 つだけ動かし、CDP を `--remote-debugging-pipe` で使う(ポートを開けない)。コアが落ちると Chromium も終わる
   - Web のペイン 1 つ = アドレスバー・タブの無いアプリの窓 1 つ。KWin で取り込んで、ほかのアプリと同じくペインの場所に置く
   - ページの中で移った URL と題名をコアに知らせ、URL は残す(起動し直すとその URL で開く)。URL を開く(`pane.update` の `url`)・戻る・進む・読み直す(`web.go`)
   - 新しいタブで開くリンクは PRELUDE の新しいタブにする。ログインなどの小さな窓(opener のあるもの)は取り込まずにそのまま出す

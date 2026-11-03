@@ -67,18 +67,24 @@ impl Handle {
     }
 }
 
-const BROWSERS: [&str; 5] =
-    ["/snap/bin/chromium", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"];
+/// Chromium 系のブラウザ(好きな順)。PATH から探す(Electron 版の appembed.js と同じ)
+const BROWSERS: [&str; 4] = ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"];
+
+/// snap 版か(/snap/bin/chromium か、その先が /snap/ の中)
+fn is_snap(bin: &Path) -> bool {
+    bin.starts_with("/snap/") || std::fs::canonicalize(bin).is_ok_and(|p| p.starts_with("/snap/"))
+}
 
 /// 使う Chromium と、プロファイル・印を出すページの置き場所。snap 版は ~/snap/chromium/common の外の隠しフォルダに書けないので、そこに置く。
-/// tag の付いたコア(試すとき)は、ふだんのプロファイルと取り合わないように別のプロファイルを使う
+/// tag の付いたコア(試すとき)は、ふだんのプロファイルと取り合わないように別のプロファイルを使う。
+/// /snap/bin は systemd のユーザーのサービスの PATH に無いことがあるので足して探す
 fn locate(tag: &str) -> Option<(String, PathBuf, PathBuf)> {
-    let bin = BROWSERS.iter().find(|p| Path::new(p).exists())?;
+    let bin = crate::xdg::which(&BROWSERS, &["/snap/bin"])?;
     let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
-    let base = if bin.starts_with("/snap/") { home.join("snap/chromium/common") } else { home.join(".config/PRELUDE-electron") };
-    let profile =
-        if bin.starts_with("/snap/") { base.join(format!("prelude-profile{tag}")) } else { base.join(format!("browser-profile{tag}")) };
-    Some((bin.to_string(), profile, base.join("prelude-pane.html")))
+    let snap = is_snap(&bin);
+    let base = if snap { home.join("snap/chromium/common") } else { home.join(".config/PRELUDE-electron") };
+    let profile = if snap { base.join(format!("prelude-profile{tag}")) } else { base.join(format!("browser-profile{tag}")) };
+    Some((bin.to_string_lossy().into_owned(), profile, base.join("prelude-pane.html")))
 }
 
 /// 題名に印を出すだけのページ。窓を取り込んだら本当の URL へ移るので、見えるのは一瞬
@@ -93,7 +99,7 @@ fn marker_key(tag: &str, pane: u64) -> String {
     format!("{tag}:{pane}")
 }
 
-/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる)
+/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる。Chromium は NixOS のモジュールが入れるので、それ以上の扱いはしない。判断 12)
 pub fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Handle> {
     let Some((bin, profile, page)) = locate(tag) else {
         eprintln!("prelude-core: Chromium is not installed. Web panes will not open");

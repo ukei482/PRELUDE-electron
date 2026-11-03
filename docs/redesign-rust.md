@@ -131,6 +131,8 @@ Rust の UI は Electron と違って Wayland の **layer-shell** が使える(�
 - `--app=` は `data:` や `about:blank` では窓にならない。そこで題名に印を出すだけのページ(`prelude-pane.html`。snap 版が読める `~/snap/chromium/common` に置く)を `file:///…/prelude-pane.html#<コアの印>:<ペイン>` で開く。題名が `PRELUDE-PANE:<コアの印>:<ペイン>` になるので、KWin スクリプトはその窓を取り込み、取り込んだら CDP で本当の URL へ移す
 - snap 版の Chromium には終了の合図(シグナル)を送れない(AppArmor)。終わらせるときは、窓を閉じてから CDP の通信の口を閉じる。snap 版は普通に閉じてもプロファイルに「落ちた」と記録されるので(CDP を使わなくても同じ。Electron 版の Chromium の窓も同じ)、起動するときに `--hide-crash-restore-bubble` を付ける
 - 新しいタブで開くリンク(noopener)と、ログインなどの小さな窓(opener のあるもの)は、CDP の `canAccessOpener` で見分ける
+- Chromium は `PATH` から探す(`xdg.rs`。判断 9)。snap 版かどうかは実体のパスで見分け、snap 版ならプロファイルと印のページを `~/snap/chromium/common` に置く
+- 判断 12 に合わせて: ログインなどの小さな窓(opener のあるもの)は「親のある窓」として浮かせたまま。戻る・進むはふだんは Chromium のキー(Alt+←/→)で、`web.go` は同じことをコマンドからするためのもの(判断 10 の「コマンドで完結する」)
 
 **判断 3-b: Chromium が無い PC(判断 12 で決定)**
 - NixOS のモジュールが Chromium を入れるので、無いときの扱いは作らない。Chromium は `PATH` から探す(`sys/xdg.js`・`xdg.rs`)
