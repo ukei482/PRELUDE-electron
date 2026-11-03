@@ -98,6 +98,17 @@ pub enum Command {
     #[serde(rename = "recipe.list")]
     RecipeList {},
 
+    /// ランチャーの候補(タブ・ブックマーク・アプリ・スペース) → `[`[`Item`]`]`。タブが先、残りは点数(最近 + よく使う)の高い順
+    #[serde(rename = "item.list")]
+    ItemList {},
+    /// 候補を開く(`key` は [`Item`] の key)。開いたものは点数に足す。ブックマークは `bookmark.open` と同じ(→ [`BookmarkOpened`])
+    #[serde(rename = "item.open")]
+    ItemOpen {
+        key: String,
+        #[serde(default)]
+        allow: Vec<String>,
+    },
+
     /// ペイン 1 つの新しいタブ → タブの id。`index` を省くと一番上
     #[serde(rename = "tab.open")]
     TabOpen {
@@ -286,6 +297,22 @@ pub struct RecipeInfo {
     #[serde(rename = "type")]
     pub kind: String,
     pub name: String,
+}
+
+/// ランチャーの候補
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Item {
+    /// 開くときに `item.open` へ渡すもの。`tab:<id>`・`bookmark:<パス>`・`app:<.desktop の id>`・`space:<名前>`
+    pub key: String,
+    /// `tab`・`bookmark`・`app`・`space`
+    pub kind: String,
+    pub label: String,
+    /// 補い(タブの番号・ブックマークのフォルダなど。無ければ空)
+    #[serde(default)]
+    pub detail: String,
+    /// 点数(最近 + よく使う)。タブは 0
+    #[serde(default)]
+    pub score: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -292,6 +292,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 3 | KWin の取り込み(`appembed.js` の移植)、Chromium の Web ペイン(CDP)、ペインのレシピ(判断 7 の段階 1) | Rust 版で Web・アプリ・コンソールのペインが開く |
 | | ↳ 済(3-a): KWin の取り込み(`embed.rs`・`embed.js`)、ペインのレシピ(`recipes.rs`。既定の `console`)、人からもらったブックマークの起動コマンドの確認(`bookmark.open` の `allow`)。残り(3-b): Chromium の Web ペイン | |
 | | ↳ 判断 10・11 で足したもの: 取り込みを `Compositor` のトレイトにする(裏側は KWin・sway(i3 の IPC)・Hyprland)。窓を重ねる形から、コンポジタに並べさせる形へ。ランチャーの候補 `prelude items`(fuzzel につないで使う) | |
+| | ↳ 済: ランチャーの候補 `prelude items`(`item.list`・`item.open`)。タブが先、ブックマーク・アプリ・ほかのスペースは点数(最近 + よく使う。半減期 14 日。`core.json` の `history`)の順。`prelude items \| fuzzel --dmenu \| prelude open` で使う | |
 | 4 | ~~既定の UI(Slint)~~ → **サイドバーとランチャー(GPUI)**、共通の見た目と部品のクレート(`prelude-ui`)(判断 10・11) | Rust 版を日常で試せる |
 | 5 | **ファイラの枠**(付け替えられる。判断 10)と `FilerView` のトレイト。一覧・フィールド表示を GPUI で(`fileops.js`・`files.js`・`field.js` の移植) | |
 | 6 | ~~システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植~~ → **rice に任せる**(判断 10)。PRELUDE は表示用の出口(`prelude watch` の JSON)と、NixOS のモジュールが出す設定の断片(キー・窓の決まり)を用意する | plasmashell が要らなくなる |
@@ -309,6 +310,8 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 - 配置は `.prelude` の `[layout]` と同じ形で、ペインに `id` が付く。タブは `{"id"}` か画面の番号 `{"num"}` で指し、省くと今のタブ
 - エラーの種類: `bad_request`・`unknown_command`・`protocol`・`not_found`・`conflict`・`io`
 - 版の決まり: コマンド・項目・イベントを **足すだけなら版は上げない**(受け取る側は知らないものを無視する)。意味を変える・消すときは版を上げ、コアは古い版も話し続ける(`SUPPORTED`)
+
+ランチャーの候補で足したもの: `item.list`(→ `Item { key, kind, label, detail, score }`)、`item.open { key, allow }`。key は `tab:<id>`・`bookmark:<パス>`・`app:<.desktop の id>`・`space:<名前>`。開いたもの(`bookmark.open`・`space.switch` も)は点数に足す
 
 段階 3-a で足したもの: `recipe.list`、`bookmark.open` の `allow` と返事の `held`(外した起動コマンド)、ペインの `window_title`・`stopped`。取り込みの D-Bus は `org.prelude.Core`(`/org/prelude/Core` の `Report`。KWin スクリプトが呼ぶ)
 

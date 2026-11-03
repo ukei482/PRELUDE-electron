@@ -297,3 +297,71 @@ fn 取り込むペイン_レシピ_止まったペイン() {
     ok(&mut c, Command::SpaceSwitch { name: "Other".into() });
     assert!(c.wants().is_empty());
 }
+
+#[test]
+fn ランチャーの候補_開くと点数が上がる() {
+    use prelude_core::apps::App;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NOW: AtomicU64 = AtomicU64::new(1_000_000);
+    const DAY: u64 = 24 * 3600 * 1000;
+    let root = spaces("items");
+    let main = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(main.join("研究")).unwrap();
+    std::fs::create_dir_all(root.join("Work")).unwrap();
+    let bm = |p: &std::path::Path| std::fs::write(p, "[layout]\ntype = \"web\"\nurl = \"https://a/\"\n").unwrap();
+    bm(&main.join("Alpha.prelude"));
+    bm(&main.join("研究/論文.prelude"));
+    let mut c = Core::new(HOME, &root, None);
+    c.set_clock(|| NOW.load(Ordering::Relaxed));
+    c.set_apps(|| {
+        let app = |id: &str, name: &str| App { name: name.into(), exec: id.into(), cls: String::new(), id: id.into() };
+        vec![app("kate", "Kate"), app("org.kde.konsole", "Konsole"), app("kate", "Kate (dup)")]
+    });
+    let keys = |c: &Core| c.items().into_iter().map(|i| i.key).collect::<Vec<_>>();
+    let alpha = format!("bookmark:{}", main.join("Alpha.prelude").display());
+    let paper = format!("bookmark:{}", main.join("研究/論文.prelude").display());
+    // 点数が無ければ種類(ブックマーク・アプリ・スペース)と名前の順。今のスペースは出さない。同じ id のアプリは 1 つ
+    assert_eq!(keys(&c), vec![alpha.clone(), paper.clone(), "app:kate".into(), "app:org.kde.konsole".into(), "space:Work".into()]);
+    assert_eq!(c.items()[1].detail, "研究");
+
+    // アプリを開くとタブになり、タブが先に出る。開いたものは点数が上がって前に出る
+    let tab = ok(&mut c, Command::ItemOpen { key: "app:org.kde.konsole".into(), allow: vec![] }).as_u64().unwrap();
+    let w = c.wants();
+    assert_eq!((w.len(), w[0].cmd.as_str()), (1, "org.kde.konsole"));
+    let it = c.items();
+    assert_eq!((it[0].key.clone(), it[0].kind.as_str(), it[0].detail.as_str()), (format!("tab:{tab}"), "tab", "1"));
+    assert_eq!(it[1].key, "app:org.kde.konsole");
+    // 2 回開いたものは、後で 1 回開いたものより上。ただし古くなると減る
+    ok(&mut c, Command::ItemOpen { key: paper.clone(), allow: vec![] });
+    ok(&mut c, Command::TabClose { tab: None });
+    ok(&mut c, Command::BookmarkOpen { path: paper.trim_start_matches("bookmark:").into(), allow: vec![] });
+    NOW.fetch_add(DAY, Ordering::Relaxed);
+    ok(&mut c, Command::ItemOpen { key: alpha.clone(), allow: vec![] });
+    // タブで開いているブックマークはタブとして出すので、閉じてから比べる
+    ok(&mut c, Command::TabClose { tab: None });
+    ok(&mut c, Command::TabClose { tab: None });
+    let rest: Vec<String> = c.items().into_iter().filter(|i| i.kind != "tab").map(|i| i.key).collect();
+    assert_eq!(&rest[..3], &[paper.clone(), alpha.clone(), "app:org.kde.konsole".into()]);
+    NOW.fetch_add(60 * DAY, Ordering::Relaxed); // 2 の点も 60 日で 1 より小さくなる
+    ok(&mut c, Command::ItemOpen { key: "app:kate".into(), allow: vec![] });
+    assert_eq!(c.items().into_iter().find(|i| i.kind != "tab").unwrap().key, "app:kate");
+
+    // タブを指して開く・スペースを切り替える
+    ok(&mut c, Command::ItemOpen { key: format!("tab:{tab}"), allow: vec![] });
+    assert_eq!(state(&c).active, Some(tab));
+    ok(&mut c, Command::ItemOpen { key: "space:Work".into(), allow: vec![] });
+    assert_eq!(state(&c).space, "Work");
+    assert!(c.items().iter().any(|i| i.key == format!("space:{SPACE_DEFAULT}")));
+
+    // 点数は書き出して戻す
+    let saved = c.saved();
+    assert_eq!(saved.history.len(), 5);
+    let mut back = Core::new(HOME, &root, Some(saved.clone()));
+    back.set_clock(|| NOW.load(Ordering::Relaxed));
+    assert_eq!(back.saved().history, saved.history);
+
+    // 知らない key
+    for k in ["nope", "tab:x", "what:1", "app:none"] {
+        assert!(c.handle(Command::ItemOpen { key: k.into(), allow: vec![] }).reply.is_err(), "{k}");
+    }
+}
