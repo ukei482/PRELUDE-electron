@@ -3,10 +3,11 @@
 //!
 //! - [`state`] — スペース・タブ・分割・開いているブックマークと、コマンドの処理
 //! - [`server`] — ソケット(1 行 1 つの JSON)、状態の書き出し
-//! - [`embed`] — アプリの窓の取り込み(KWin)。[`recipes`] はペインのレシピ、[`apps`] はインストール済みのアプリ、[`procs`] は /proc
+//! - [`embed`] — アプリの窓の取り込み(KWin)。[`recipes`] はペインのレシピ、[`apps`] はインストール済みのアプリ、[`procs`] は /proc、[`xdg`] はコマンド・データのフォルダの探し方
 pub mod apps;
 pub mod embed;
 pub mod procs;
 pub mod recipes;
 pub mod server;
 pub mod state;
+pub mod xdg;
