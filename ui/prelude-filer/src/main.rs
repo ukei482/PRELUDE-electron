@@ -3,23 +3,66 @@
 //! - 見せ方は `--view` で選ぶ部品([`FilerView`])。今あるのは `list`(`field` はまだ無いので `list` で出す)
 //! - キー: ↑↓ で選ぶ、Enter で開く(フォルダなら入る、ファイルはアプリで開く)、Backspace・Alt+↑ で上のフォルダ、Alt+←/→ で戻る・進む、
 //!   Ctrl+H で隠しファイル、F5 で読み直す
+//! - 操作: Ctrl+クリックで足す・外す、Shift+クリック・Shift+↑↓で範囲、Ctrl+A で全部。Ctrl+C / X / V でコピー・切り取り・貼り付け、
+//!   Delete でゴミ箱、Shift+Delete で完全に消す(確かめてから)、F2 で名前の変更、Ctrl+Shift+N で新しいフォルダ、Esc で選びを解く
 //! - 移ったフォルダはコアに知らせる(`pane.update` の `path`)。タブを開き直すとそのフォルダで開く
 //! - フォルダの中が変わったら(ほかのアプリでファイルを足したなど)、1 秒以内に読み直す
 //!
 //! 使い方: `prelude-filer [--pane <id>] [--view list|field] [フォルダ]`(フォルダを省くとホーム)
 use gpui::{
-    App, Bounds, Context, FocusHandle, Focusable, KeyBinding, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px, size,
+    App, Bounds, ClipboardItem, Context, Entity, FocusHandle, Focusable, KeyBinding, Window, WindowBounds, WindowOptions, actions, div,
+    prelude::*, px, size,
 };
 use gpui_platform::application;
+use prelude_filer::ops::{self, Mode};
 use prelude_filer::{DirState, FilerCommand, FilerView, views};
 use prelude_proto::Client;
-use prelude_ui::{badge, color};
+use prelude_ui::{TextInput, badge, color};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-actions!(filer, [Up, Down, PageUp, PageDown, First, Last, Open, Parent, Back, Forward, ToggleHidden, Reload, Quit]);
+actions!(
+    filer,
+    [
+        Up,
+        Down,
+        ShiftUp,
+        ShiftDown,
+        PageUp,
+        PageDown,
+        First,
+        Last,
+        Open,
+        Parent,
+        Back,
+        Forward,
+        ToggleHidden,
+        Reload,
+        Quit,
+        SelectAll,
+        Unselect,
+        Copy,
+        Cut,
+        Paste,
+        Trash,
+        DeleteForever,
+        Rename,
+        NewFolder,
+        PromptConfirm,
+        PromptCancel
+    ]
+);
+
+/// 下の行で聞いていること
+enum Prompt {
+    /// 名前の変更(元のパス)
+    Rename(PathBuf),
+    NewFolder,
+    /// 完全に消してよいか
+    DeleteForever(Vec<PathBuf>),
+}
 
 struct Filer {
     dir: DirState,
@@ -30,6 +73,14 @@ struct Filer {
     back: Vec<PathBuf>,
     forward: Vec<PathBuf>,
     focus: FocusHandle,
+    prompt: Option<Prompt>,
+    /// 下の行の入力欄(名前の変更・新しいフォルダ)
+    input: Option<Entity<TextInput>>,
+    prompt_focus: FocusHandle,
+    /// 下の行の知らせ(失敗なら true)
+    status: Option<(String, bool)>,
+    /// コピー・移動・ゴミ箱の途中
+    busy: bool,
 }
 
 fn home() -> PathBuf {
@@ -99,7 +150,9 @@ impl Filer {
 
     fn command(&mut self, c: FilerCommand, window: &mut Window, cx: &mut Context<Self>) {
         match c {
-            FilerCommand::Select(i) => self.dir.selected = Some(i).filter(|i| *i < self.dir.entries.len()),
+            FilerCommand::Select(i) => self.dir.select_one(i),
+            FilerCommand::Toggle(i) => self.dir.toggle_mark(i),
+            FilerCommand::Range(i) => self.dir.mark_range(i),
             FilerCommand::Open(i) => self.open(i, window),
             FilerCommand::Go(p) => self.go(p, true, window),
         }
@@ -108,10 +161,18 @@ impl Filer {
 
     fn act(&mut self, a: &dyn gpui::Action, window: &mut Window, cx: &mut Context<Self>) {
         let any = a.as_any();
-        if any.is::<Up>() {
-            self.dir.move_by(-1);
-        } else if any.is::<Down>() {
-            self.dir.move_by(1);
+        if any.is::<Up>() || any.is::<Down>() {
+            self.dir.move_by(if any.is::<Up>() { -1 } else { 1 });
+            if let Some(i) = self.dir.selected {
+                self.dir.select_one(i);
+            }
+        } else if any.is::<ShiftUp>() || any.is::<ShiftDown>() {
+            let anchor = self.dir.anchor.or(self.dir.selected);
+            self.dir.move_by(if any.is::<ShiftUp>() { -1 } else { 1 });
+            self.dir.anchor = anchor;
+            if let Some(i) = self.dir.selected {
+                self.dir.mark_range(i);
+            }
         } else if any.is::<PageUp>() {
             self.dir.move_by(-20);
         } else if any.is::<PageDown>() {
@@ -145,8 +206,149 @@ impl Filer {
             self.dir.reload();
         } else if any.is::<Quit>() {
             cx.quit();
+        } else if any.is::<SelectAll>() {
+            self.dir.mark_all();
+        } else if any.is::<Unselect>() {
+            self.dir.marked.clear();
+            self.status = None;
+        } else if any.is::<Copy>() || any.is::<Cut>() {
+            let paths = self.dir.targets();
+            if !paths.is_empty() {
+                let cut = any.is::<Cut>();
+                cx.write_to_clipboard(ClipboardItem::new_string(ops::clip_text(&paths)));
+                ops::clip_note(&ops::clip_note_path(), &paths, cut);
+                self.status = Some((format!("{} {} item(s)", if cut { "Cut" } else { "Copied" }, paths.len()), false));
+            }
+        } else if any.is::<Paste>() {
+            self.paste(cx);
+        } else if any.is::<Trash>() {
+            let paths = self.dir.targets();
+            if !paths.is_empty() {
+                self.run(format!("Moving {} item(s) to the trash...", paths.len()), cx, move || (vec![], ops::trash(&paths)));
+            }
+        } else if any.is::<DeleteForever>() {
+            let paths = self.dir.targets();
+            if !paths.is_empty() {
+                self.ask(Prompt::DeleteForever(paths), None, window, cx);
+            }
+        } else if any.is::<Rename>() {
+            if let Some(e) = self.dir.selected_entry().cloned() {
+                let name = e.name.clone();
+                // 拡張子の前までを選ぶ(フォルダは全部)
+                let stem = if e.is_dir { name.len() } else { name.rfind('.').filter(|i| *i > 0).unwrap_or(name.len()) };
+                let input = cx.new(|cx| {
+                    let mut t = TextInput::new(cx, "name", name.clone());
+                    t.select(0..stem, cx);
+                    t
+                });
+                self.ask(Prompt::Rename(self.dir.path.join(&name)), Some(input), window, cx);
+            }
+        } else if any.is::<NewFolder>() {
+            let input = cx.new(|cx| {
+                let mut t = TextInput::new(cx, "name", "New folder");
+                t.select_everything(cx);
+                t
+            });
+            self.ask(Prompt::NewFolder, Some(input), window, cx);
         }
         cx.notify();
+    }
+
+    /// 下の行で聞く。入力欄があればそこへ、無ければ聞いている行へキーを向ける
+    fn ask(&mut self, p: Prompt, input: Option<Entity<TextInput>>, window: &mut Window, cx: &mut Context<Self>) {
+        match &input {
+            Some(i) => window.focus(&i.focus_handle(cx), cx),
+            None => window.focus(&self.prompt_focus, cx),
+        }
+        self.prompt = Some(p);
+        self.input = input;
+        self.status = None;
+    }
+
+    fn end_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.prompt = None;
+        self.input = None;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.input.as_ref().map(|i| i.read(cx).text().to_string()).unwrap_or_default();
+        let p = self.prompt.take();
+        let r = match &p {
+            Some(Prompt::Rename(full)) => ops::rename(full, &text).map(Some),
+            Some(Prompt::NewFolder) => ops::mkdir(&self.dir.path, &text).map(Some),
+            Some(Prompt::DeleteForever(paths)) => {
+                let paths = paths.clone();
+                self.run(format!("Deleting {} item(s)...", paths.len()), cx, move || (vec![], ops::remove(&paths)));
+                Ok(None)
+            }
+            None => Ok(None),
+        };
+        match r {
+            Ok(name) => {
+                self.dir.reload();
+                if let Some(n) = name {
+                    self.dir.select_name(&n);
+                    if let Some(i) = self.dir.selected {
+                        self.dir.select_one(i);
+                    }
+                }
+                self.end_prompt(window, cx);
+            }
+            Err(e) => {
+                // 打ち直せるように、聞いたままにする
+                self.status = Some((e, true));
+                self.prompt = p;
+                cx.notify();
+            }
+        }
+    }
+
+    /// クリップボードのファイルを、今のフォルダへコピーか移動(切り取りなら)
+    fn paste(&mut self, cx: &mut Context<Self>) {
+        let text = cx.read_from_clipboard().and_then(|c| c.text()).unwrap_or_default();
+        let paths = ops::clip_paths(&text);
+        if paths.is_empty() {
+            self.status = Some(("Nothing to paste".into(), true));
+            return;
+        }
+        let note = ops::clip_note_path();
+        let mode = if ops::clip_is_cut(&note, &paths) { Mode::Move } else { Mode::Copy };
+        let dest = self.dir.path.clone();
+        let what = if mode == Mode::Move { "Moving" } else { "Copying" };
+        self.run(format!("{what} {} item(s)...", paths.len()), cx, move || {
+            let r = ops::transfer(mode, &paths, &dest);
+            if mode == Mode::Move && r.1.is_empty() {
+                ops::clip_consumed(&note);
+            }
+            r
+        });
+    }
+
+    /// 時間のかかる操作を裏で動かす。終わったら読み直し、できたものを選び、失敗を知らせる
+    fn run(&mut self, msg: String, cx: &mut Context<Self>, job: impl FnOnce() -> (Vec<String>, Vec<String>) + Send + 'static) {
+        if self.busy {
+            self.status = Some(("Wait for the current operation".into(), true));
+            return;
+        }
+        self.busy = true;
+        self.status = Some((msg, false));
+        let task = cx.background_executor().spawn(async move { job() });
+        cx.spawn(async move |this, cx| {
+            let (names, errors) = task.await;
+            let _ = this.update(cx, |f, cx| {
+                f.busy = false;
+                f.dir.reload();
+                if !names.is_empty() {
+                    f.dir.marked = names.iter().cloned().collect();
+                    f.dir.select_name(&names[0]);
+                }
+                f.status = if errors.is_empty() { None } else { Some((errors.join(" / "), true)) };
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }
 
@@ -206,11 +408,60 @@ impl Render for Filer {
             .on_action(cx.listener(|f, a: &ToggleHidden, w, cx| f.act(a, w, cx)))
             .on_action(cx.listener(|f, a: &Reload, w, cx| f.act(a, w, cx)))
             .on_action(cx.listener(|f, a: &Quit, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &ShiftUp, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &ShiftDown, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &SelectAll, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &Unselect, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &Copy, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &Cut, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &Paste, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &Trash, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &DeleteForever, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &Rename, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &NewFolder, w, cx| f.act(a, w, cx)))
             .child(head)
             .child(div().flex().flex_col().flex_1().min_h(px(0.)).child(self.view.render(&self.dir, emit)));
-        // 開けなかったファイルなど(フォルダ自体が読めないときは、見せ方の部品が出す)
-        if let (Some(e), false) = (&self.dir.error, self.dir.entries.is_empty()) {
-            root = root.child(div().px(px(6.)).text_size(px(11.)).text_color(color::danger()).child(e.clone()));
+        // 下の行: 聞いていること・知らせ・開けなかったファイルなど(フォルダ自体が読めないときは、見せ方の部品が出す)
+        if let Some(p) = &self.prompt {
+            let q = match p {
+                Prompt::Rename(_) => "Rename:".to_string(),
+                Prompt::NewFolder => "New folder:".to_string(),
+                Prompt::DeleteForever(v) => format!("Delete {} item(s) permanently? Enter = delete, Esc = cancel", v.len()),
+            };
+            let mut bar = div()
+                .id("prompt")
+                .key_context("FilerPrompt")
+                .track_focus(&self.prompt_focus)
+                .on_action(cx.listener(|f, _: &PromptConfirm, w, cx| f.confirm(w, cx)))
+                .on_action(cx.listener(|f, _: &PromptCancel, w, cx| f.end_prompt(w, cx)))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .flex_none()
+                .px(px(6.))
+                .min_h(px(30.))
+                .border_t_1()
+                .border_color(color::line())
+                .child(div().flex_none().child(q));
+            if let Some(i) = &self.input {
+                bar = bar.child(div().flex_1().child(i.clone()));
+            }
+            root = root.child(bar);
+        }
+        let note = self.status.clone().or_else(|| self.dir.error.clone().filter(|_| !self.dir.entries.is_empty()).map(|e| (e, true)));
+        if let Some((msg, bad)) = note {
+            root = root.child(
+                div().flex_none().px(px(6.)).text_size(px(11.)).text_color(if bad { color::danger() } else { color::dim() }).child(msg),
+            );
+        } else if !self.dir.marked.is_empty() {
+            root = root.child(
+                div()
+                    .flex_none()
+                    .px(px(6.))
+                    .text_size(px(11.))
+                    .text_color(color::dim())
+                    .child(format!("{} selected", self.dir.marked.len())),
+            );
         }
         root
     }
@@ -260,7 +511,22 @@ fn main() {
             KeyBinding::new("ctrl-h", ToggleHidden, c),
             KeyBinding::new("f5", Reload, c),
             KeyBinding::new("ctrl-q", Quit, c),
+            KeyBinding::new("shift-up", ShiftUp, c),
+            KeyBinding::new("shift-down", ShiftDown, c),
+            KeyBinding::new("ctrl-a", SelectAll, c),
+            KeyBinding::new("escape", Unselect, c),
+            KeyBinding::new("ctrl-c", Copy, c),
+            KeyBinding::new("ctrl-x", Cut, c),
+            KeyBinding::new("ctrl-v", Paste, c),
+            KeyBinding::new("delete", Trash, c),
+            KeyBinding::new("shift-delete", DeleteForever, c),
+            KeyBinding::new("f2", Rename, c),
+            KeyBinding::new("ctrl-shift-n", NewFolder, c),
+            // 下の行で聞いている間(入力欄の中でも効く)
+            KeyBinding::new("enter", PromptConfirm, Some("FilerPrompt")),
+            KeyBinding::new("escape", PromptCancel, Some("FilerPrompt")),
         ]);
+        prelude_ui::input::bind_keys(cx);
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(720.), px(520.)), cx))),
@@ -277,6 +543,11 @@ fn main() {
                         back: vec![],
                         forward: vec![],
                         focus: cx.focus_handle(),
+                        prompt: None,
+                        input: None,
+                        prompt_focus: cx.focus_handle(),
+                        status: None,
+                        busy: false,
                     };
                     f.go(start, false, window);
                     f.pane = pane;

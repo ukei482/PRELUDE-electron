@@ -39,6 +39,7 @@ impl FilerView for ListView {
         }
         let entries = std::rc::Rc::new(dir.entries.clone());
         let selected = dir.selected;
+        let marked: std::collections::HashSet<usize> = (0..dir.entries.len()).filter(|i| dir.is_marked(*i)).collect();
         uniform_list("entries", entries.len(), move |range, _, _| {
             range
                 .map(|i| {
@@ -55,11 +56,22 @@ impl FilerView for ListView {
                         .child(label(e.name.clone()))
                         .child(dim(badge(size).w(px(72.)).text_right()))
                         .child(dim(badge(time).w(px(116.)).text_right()));
-                    r.when(e.hidden && !sel, |r| r.text_color(color::dim())).on_click(move |ev, w, cx| {
-                        // 1 回で選び、2 回で開く
-                        let c = if ev.click_count() >= 2 { FilerCommand::Open(i) } else { FilerCommand::Select(i) };
-                        emit(c, w, cx);
-                    })
+                    r.when(e.hidden && !sel, |r| r.text_color(color::dim()))
+                        .when(marked.contains(&i) && !sel, |r| r.bg(color::panel()))
+                        .on_click(move |ev, w, cx| {
+                            // 1 回で選び、2 回で開く。Ctrl で足す・外す、Shift で範囲
+                            let m = ev.modifiers();
+                            let c = if m.control {
+                                FilerCommand::Toggle(i)
+                            } else if m.shift {
+                                FilerCommand::Range(i)
+                            } else if ev.click_count() >= 2 {
+                                FilerCommand::Open(i)
+                            } else {
+                                FilerCommand::Select(i)
+                            };
+                            emit(c, w, cx);
+                        })
                 })
                 .collect::<Vec<_>>()
         })

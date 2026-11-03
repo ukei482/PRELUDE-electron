@@ -3,9 +3,11 @@
 //! - フォルダの中身は [`DirState`](読み方・並べ方はここ。GPUI に依らないのでテストできる)
 //! - 見せ方は [`FilerView`] のトレイトを満たす部品。一覧([`views::ListView`])のほか、フィールド表示・写真を大きく並べるものなどを足せる(判断 7 の段階 2)
 //! - 枠([`Filer`]、main.rs)はキー・移動・開く・コアへの知らせを受け持ち、見せ方を差し替えても同じに動く
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+pub mod ops;
 pub mod views;
 
 /// フォルダの中の 1 つ
@@ -33,12 +35,21 @@ pub struct DirState {
     pub error: Option<String>,
     /// 読んだときのフォルダの更新時刻(変わったら読み直す)
     pub stamp: Option<SystemTime>,
+    /// 複数選んでいるもの(名前。読み直しても残る)。空なら選んでいる 1 つ([`DirState::selected`])が操作の対象
+    pub marked: BTreeSet<String>,
+    /// Shift で範囲を選ぶときの起点
+    pub anchor: Option<usize>,
 }
 
 impl DirState {
     /// path を読む。選んでいたものは名前で選び直す(無ければ先頭)
     pub fn load(&mut self, path: &Path) {
-        let keep = self.selected_entry().map(|e| e.name.clone()).filter(|_| self.path == path);
+        let same = self.path == path;
+        let keep = self.selected_entry().map(|e| e.name.clone()).filter(|_| same);
+        if !same {
+            self.marked.clear();
+            self.anchor = None;
+        }
         self.path = path.to_path_buf();
         self.stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         match read_dir(path) {
@@ -52,6 +63,63 @@ impl DirState {
             }
         }
         self.selected = keep.and_then(|n| self.entries.iter().position(|e| e.name == n)).or((!self.entries.is_empty()).then_some(0));
+        // 無くなったものは選びから外す
+        let names: BTreeSet<&str> = self.entries.iter().map(|e| e.name.as_str()).collect();
+        self.marked.retain(|n| names.contains(n.as_str()));
+    }
+
+    /// i の選びを入れたり外したりする(Ctrl+クリック)。最初の 1 回は、それまで選んでいた 1 つも入れる
+    pub fn toggle_mark(&mut self, i: usize) {
+        let Some(name) = self.entries.get(i).map(|e| e.name.clone()) else { return };
+        if self.marked.is_empty()
+            && let Some(cur) = self.selected_entry().map(|e| e.name.clone())
+            && cur != name
+        {
+            self.marked.insert(cur);
+        }
+        if !self.marked.remove(&name) {
+            self.marked.insert(name);
+        }
+        self.selected = Some(i);
+        self.anchor = Some(i);
+    }
+
+    /// 起点から i までを選ぶ(Shift+クリック)
+    pub fn mark_range(&mut self, i: usize) {
+        if i >= self.entries.len() {
+            return;
+        }
+        let a = self.anchor.or(self.selected).unwrap_or(i).min(self.entries.len() - 1);
+        let (lo, hi) = if a <= i { (a, i) } else { (i, a) };
+        self.marked = self.entries[lo..=hi].iter().map(|e| e.name.clone()).collect();
+        self.selected = Some(i);
+        self.anchor = Some(a);
+    }
+
+    /// 1 つだけを選ぶ(普通のクリック・矢印)
+    pub fn select_one(&mut self, i: usize) {
+        if i < self.entries.len() {
+            self.selected = Some(i);
+            self.anchor = Some(i);
+            self.marked.clear();
+        }
+    }
+
+    pub fn mark_all(&mut self) {
+        self.marked = self.entries.iter().map(|e| e.name.clone()).collect();
+    }
+
+    /// 操作の対象: 複数選んでいればそれ、無ければ選んでいる 1 つ
+    pub fn targets(&self) -> Vec<PathBuf> {
+        if self.marked.is_empty() {
+            self.selected_entry().map(|e| vec![self.path.join(&e.name)]).unwrap_or_default()
+        } else {
+            self.entries.iter().filter(|e| self.marked.contains(&e.name)).map(|e| self.path.join(&e.name)).collect()
+        }
+    }
+
+    pub fn is_marked(&self, i: usize) -> bool {
+        self.entries.get(i).is_some_and(|e| self.marked.contains(&e.name))
     }
 
     /// 読み直す(隠しファイルの切り替え・フォルダが変わったとき)
@@ -193,8 +261,12 @@ pub trait FilerView: 'static {
 /// 見せ方から枠への頼みごと
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilerCommand {
-    /// その位置を選ぶ
+    /// その位置だけを選ぶ
     Select(usize),
+    /// その位置の選びを入れたり外したりする(Ctrl+クリック)
+    Toggle(usize),
+    /// 起点からその位置までを選ぶ(Shift+クリック)
+    Range(usize),
     /// その位置を開く(フォルダなら入る、ファイルならアプリで開く)
     Open(usize),
     /// フォルダへ移る
@@ -241,6 +313,23 @@ mod tests {
         assert_eq!(s.selected, Some(5));
         s.move_by(-100);
         assert_eq!(s.selected, Some(0));
+        // 複数選び: Ctrl で足す・外す、Shift で範囲。操作の対象
+        s.select_one(1);
+        s.toggle_mark(3);
+        assert_eq!(s.marked.len(), 2);
+        assert_eq!(s.targets().len(), 2);
+        s.toggle_mark(3);
+        assert_eq!(s.targets(), [d.join(&s.entries[1].name)]);
+        s.select_one(1);
+        s.mark_range(5); // z・.hidden・a2・a10・b(隠しファイルも出している)
+        assert_eq!(s.marked.len(), 5);
+        assert!(s.is_marked(2) && !s.is_marked(0));
+        // 消えたものは選びから外れる
+        std::fs::remove_file(d.join("b.txt")).unwrap();
+        s.reload();
+        assert_eq!(s.marked.len(), 4);
+        s.select_one(0);
+        assert!(s.marked.is_empty());
         // 読めないフォルダ
         s.load(&d.join("none"));
         assert!(s.error.is_some() && s.entries.is_empty() && s.selected.is_none());
