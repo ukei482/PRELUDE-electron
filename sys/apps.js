@@ -4,20 +4,20 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
+const xdg = require('./xdg');
 
 function dirs() {
-  const data = (process.env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':').filter(Boolean);
-  const home = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share');
+  // 後のフォルダほど優先(同じ名前の .desktop は後のもので上書き)。XDG_DATA_DIRS は先が優先なので逆にする
   return [...new Set([
-    ...data, home,
+    ...xdg.dataDirs().reverse(), xdg.dataHome(),
     '/var/lib/flatpak/exports/share',
     path.join(os.homedir(), '.local/share/flatpak/exports/share'),
   ])].map((d) => path.join(d, 'applications'));
 }
 
-// 端末アプリを包むコマンド。見つからなければ x-terminal-emulator に任せる
+// 端末アプリを包むコマンド。PATH から探し、見つからなければ x-terminal-emulator に任せる
 function terminalCmd(exec) {
-  const term = ['/usr/bin/konsole', '/usr/bin/x-terminal-emulator'].find((p) => fs.existsSync(p)) || 'x-terminal-emulator';
+  const term = xdg.which(['konsole', 'x-terminal-emulator']) || 'x-terminal-emulator';
   return `${term} -e ${exec}`;
 }
 
@@ -34,7 +34,7 @@ function list() {
         if (get('Type') !== 'Application' || get('NoDisplay') === 'true' || get('Hidden') === 'true') { map.delete(f); continue; }
         // フィールドコード(%f %u %i など)は引数なしで起動するので取り除く。--icon %i は --icon ごと
         let exec = (get('Exec') || '').replace(/--icon\s+%i/g, '').replace(/%[a-zA-Z]/g, '').replace(/\s+/g, ' ').trim();
-        if (!exec || /^(\/usr\/bin\/)?(false|true)$/.test(exec)) continue; // 何もしない項目(snap の補助エントリなど)
+        if (!exec || /^(\S*\/)?(false|true)$/.test(exec)) continue; // 何もしない項目(snap の補助エントリなど)
         // 端末で動くアプリ(htop など)は、そのままではウィンドウが出ないので端末の中で起動する
         if (get('Terminal') === 'true') exec = terminalCmd(exec);
         // id: .desktop のファイル名。Wayland のウィンドウの app_id(KWin の desktopFileName)と一致することが多い

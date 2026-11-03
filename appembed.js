@@ -11,6 +11,7 @@ const os = require('os');
 const path = require('path');
 
 const { instanceTag, cleanShell } = require('./sys/util');
+const xdg = require('./sys/xdg');
 const SCRIPT_NAME = 'prelude-embed' + instanceTag; // 別プロファイルの PRELUDE(デバッグ用)はシェルのスクリプトを上書きしない
 const supported = process.platform === 'linux' && /kde/i.test(process.env.XDG_CURRENT_DESKTOP || '');
 
@@ -667,14 +668,22 @@ function shutdown() {
   if (supported) gdbus('/Scripting', 'org.kde.kwin.Scripting.unloadScript', SCRIPT_NAME);
 }
 
-const BROWSERS = ['/snap/bin/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome'];
-const hasBrowser = () => BROWSERS.some((p) => fs.existsSync(p));
+// Chromium 系のブラウザを PATH から探す(好きな順)。/snap/bin は systemd のユーザーのサービスの PATH に無いことがあるので足す
+const BROWSERS = ['chromium', 'chromium-browser', 'google-chrome-stable', 'google-chrome'];
+const findBrowser = () => xdg.which(BROWSERS, { extra: ['/snap/bin'] });
+const hasBrowser = () => !!findBrowser();
+
+// snap 版か(/snap/bin/chromium か、その先が /snap/ の中)
+function isSnap(bin) {
+  if (bin.startsWith('/snap/')) return true;
+  try { return fs.realpathSync(bin).startsWith('/snap/'); } catch { return false; }
+}
 
 // 実ブラウザ(Chromium系)をアプリモードで開くコマンド。ペインごとにウィンドウクラスを付けて、取り込み時に見分ける
 function browserCmd(url, cls) {
-  const bin = BROWSERS.find((p) => fs.existsSync(p)) || 'chromium';
+  const bin = findBrowser() || 'chromium';
   // snap版は ~/snap/chromium/common 以外の隠しディレクトリに書けないので、そこに専用プロファイルを置く
-  const profile = bin.startsWith('/snap/') ? path.join(os.homedir(), 'snap/chromium/common/prelude-profile') : path.join(os.homedir(), '.config/PRELUDE-electron/browser-profile');
+  const profile = isSnap(bin) ? path.join(os.homedir(), 'snap/chromium/common/prelude-profile') : path.join(os.homedir(), '.config/PRELUDE-electron/browser-profile');
   const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
   // 既に同じプロファイルのChromiumが動いていると、新しいプロセスは作られず既存プロセスにウィンドウだけ増える。
   // PIDでは見つからないので、アプリモードのウィンドウクラス(chrome-<host>__<path>-Default)でも照合できるようにしておく

@@ -4,8 +4,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const xdg = require('./xdg');
 
-const ROOTS = [path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 'icons'), '/usr/share/icons', '/usr/local/share/icons'];
+// アイコンテーマを探すフォルダ(アイコンテーマの決まりの順): ~/.icons → $XDG_DATA_HOME/icons → $XDG_DATA_DIRS/icons
+const ROOTS = [path.join(os.homedir(), '.icons'), ...[xdg.dataHome(), ...xdg.dataDirs()].map((d) => path.join(d, 'icons'))];
+const PIXMAPS = xdg.dataDirs().map((d) => path.join(d, 'pixmaps'));
 const THEMES = ['breeze', 'hicolor', 'Adwaita'];
 const SIZES = ['scalable', '64', '64x64', '48', '48x48', '32', '32x32', '128x128', '128', '22', '22x22', '256x256', '16', '16x16'];
 const CONTEXTS = ['apps', 'status', 'devices', 'actions', 'places', 'mimetypes', 'categories', 'emblems'];
@@ -40,7 +43,7 @@ function findInTheme(name, extraRoots = []) {
       }
     }
   }
-  for (const dir of [...extraRoots, '/usr/share/pixmaps']) { // アプリ自身が持つアイコンのフォルダ(IconThemePath)は、直下も探す
+  for (const dir of [...extraRoots, ...PIXMAPS]) { // アプリ自身が持つアイコンのフォルダ(IconThemePath)は、直下も探す
     for (const ext of ['.png', '.svg']) {
       const f = path.join(dir, name + ext);
       if (fs.existsSync(f)) return f;
