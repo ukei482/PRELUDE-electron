@@ -1,0 +1,19 @@
+# GPUI の試作(docs/redesign-rust.md の段階 0)。ルートのワークスペースには入れない(GPUI のビルドが重いので、cargo test に巻き込まない)
+[package]
+name = "prelude-gpui-proto"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+# Zed の main を固定する(crates.io の gpui 0.2.2 には layer-shell が無い)
+gpui = { git = "https://github.com/zed-industries/zed", rev = "504abf602a09edc3c7d5a4f4f60958aee335274f" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "504abf602a09edc3c7d5a4f4f60958aee335274f", features = ["wayland", "x11"] }
+unicode-segmentation = "1"
+env_logger = "0.11"
+log = "0.4"
+
+[profile.dev]
+opt-level = 1

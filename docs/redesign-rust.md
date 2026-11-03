@@ -293,6 +293,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 段階 | 中身 | 見える成果 |
 |---|---|---|
 | 0 | Rust の開発環境(rustup)。~~Slint の試作~~ → **GPUI の試作**(判断 11): layer-shell、日本語入力(fcitx5)・フォント、ファイル 1 万件の一覧、GPU が不調なときの振る舞い | GPUI で行けるかが分かる |
+| | ↳ 試作: `proto/gpui`(判断 11 の「GPUI の試作で分かったこと」)。layer-shell・フォント・1 万件・GPU の切り替えは済。日本語入力は確かめ中 | |
 | 1 | スペースと `.prelude` の TOML(判断 5)。Rust 側は `prelude-format` クレートとテスト。**Electron 版も TOML を読み書きする**(判断 8)。PR #66・#71 をこの形に合わせる | 今の PRELUDE で新しい形式・paths が使える |
 | | ↳ 済: `.prelude` の TOML(Electron・Rust。PR #72)、`prelude-format`、スペース(PR #66)の TOML と `space.toml` | |
 | 2 | `prelude-core` の骨組み: 状態(スペース・タブ・分割)、ソケットの約束(版つき)、`prelude` コマンド | `prelude` コマンドで状態を見られる |
@@ -426,9 +427,10 @@ rice(コンポジタと小さな部品を組み合わせて自分のデスクト
 - **ウィジェット類は作らない。** バーなどは rice の部品に任せ、PRELUDE は表示用の出口(`prelude watch` の JSON のイベントなど)を出す
 
 ### サイドバーで確かめること(試作)
-- layer-shell(画面の端に場所を予約する)を GPUI で使えるか。だめなら、コンポジタの決まりで浮いた窓を端に固定する
-- 日本語入力(fcitx5。名前の変更など)
-- GPU が不調なときの振る舞い(GPUI はソフトウェアでの描画を持たない)
+結果は判断 11 の「GPUI の試作で分かったこと」。
+- layer-shell(画面の端に場所を予約する)を GPUI で使えるか。だめなら、コンポジタの決まりで浮いた窓を端に固定する → **使える**(場所の予約でほかの窓が寄るかは、全画面でない環境で確かめる)
+- 日本語入力(fcitx5。名前の変更など) → 確かめ中
+- GPU が不調なときの振る舞い → **wgpu の GL(ソフトウェア描画の llvmpipe も)へ自分で切り替わる**
 
 ### 対応付け(判断 12 で決定)
 - **スペース = コンポジタの作業領域の組、タブ = 作業領域 1 つ、ペイン = 窓 1 つ**。窓と作業領域があるかどうかはコンポジタが持ち、それが何か(どのタブ・ブックマーク・スペースか)はコアが持つ。コアはコンポジタの IPC のイベントで対応表を合わせる
@@ -459,8 +461,19 @@ rice(コンポジタと小さな部品を組み合わせて自分のデスクト
 
   - ウィジェットを rice に任せたので、PRELUDE の UI は小さい。GPU が不調でも、コマンドと rice のバーは動き続ける
   - 技術を 1 つにすると、色・字・共通の部品を 1 つのクレート(`prelude-ui`)にまとめられ、サイドバー・ランチャー・ファイラの見た目がそろう
-- 引き受ける弱み: API が Zed と一緒に変わる、資料が少ない、ソフトウェアでの描画が無い
+- 引き受ける弱み: API が Zed と一緒に変わる、資料が少ない(ソフトウェアでの描画は、試作で wgpu の GL が使えると分かった。下の「GPUI の試作で分かったこと」)
 - 部品のトレイトには版を付けない(判断 12)
+
+### GPUI の試作で分かったこと(段階 0。`proto/gpui`)
+この PC(Kubuntu・KDE Plasma 6 の Wayland・Iris Xe)で、`proto/gpui`(サイドバーの形の試作)を動かして確かめた。
+
+- **GPUI の入手**: crates.io の `gpui` 0.2.2 には layer-shell が無い。Zed のリポジトリの `gpui`・`gpui_platform` をコミットで固定して使う(描画は wgpu)。ルートのワークスペースには入れず、`cargo test` に巻き込まない
+- **ビルド**: 開発用のライブラリが要る(Kubuntu では `pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev libx11-xcb-dev libvulkan-dev cmake clang`)。NixOS では flake の `nix develop` に書く。初回のビルドは Zed のリポジトリの取得を含めて 30 分ほど、実行ファイルは debug で 700MB
+- **layer-shell**: 使える(`WindowKind::LayerShell`)。左・上・下に貼り付け、高さ 0 を渡すと画面の高さいっぱいになる。場所の予約(`exclusive_zone`)は、PRELUDE(Electron 版)が全画面なので、ほかの窓が寄るかはまだ見ていない
+- **フォント**: 指定しなくても、漢字・かな・半角カナ・丸数字・絵文字が出る(fontconfig で代わりのフォントを探す)
+- **1 万件の一覧**: `uniform_list` で見える行だけを描く。作った 1 万件は 5ms、本物のフォルダ(ファイル 1 万件)の読み込みと並べ替えは 15ms で出る
+- **GPU が不調なとき**: 判断 11 で「ソフトウェアでの描画が無い」としていたが、**wgpu には GL があり、自分で切り替わる**。Vulkan(Iris Xe)→ Vulkan が無ければ GL(Mesa)→ さらに `LIBGL_ALWAYS_SOFTWARE=1` で llvmpipe(CPU)。どれも同じに描けた。使った GPU はログに出る
+- **日本語入力(fcitx5)**: 確かめ中
 
 ### ランチャー: 既定は GPUI の自前。最初は fuzzel をつなぐ
 - コアが `prelude items`(候補と点数。履歴の点数はコアが付ける)を出し、選んだものを `prelude open` で開く
