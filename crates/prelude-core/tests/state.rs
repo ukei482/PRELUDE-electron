@@ -414,3 +414,25 @@ fn web_のペイン_印_url_の知らせ_戻る() {
     c.note_exited(web);
     assert_eq!(c.web_wants().0.len(), 1);
 }
+
+#[test]
+fn コンポジタに渡す配置の木() {
+    use prelude_core::compositor::Tree;
+    use prelude_format::Dir as FDir;
+    let mut c = Core::new(HOME, spaces("scene"), None);
+    ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
+    let first = pane_ids(&state(&c).tabs[0].layout)[0];
+    let p2 = ok(&mut c, Command::PaneSplit { pane: first, dir: Dir::Row, new: web("https://b/") }).as_u64().unwrap();
+    ok(&mut c, Command::SplitRatio { pane: first, ratio: 0.3 });
+    ok(&mut c, Command::TabOpen { pane: web("https://c/"), index: None });
+    let s = c.scene();
+    assert_eq!(s.tabs.len(), 2);
+    let split = s.tabs.iter().find(|t| matches!(t.tree, Tree::Split { .. })).unwrap();
+    let single = s.tabs.iter().find(|t| matches!(t.tree, Tree::Pane(_))).unwrap();
+    assert_eq!(s.active, Some(single.id)); // 後で開いたタブが今のタブ
+    assert_eq!(split.tree, Tree::Split { dir: FDir::Row, ratio: 0.3, a: Box::new(Tree::Pane(first)), b: Box::new(Tree::Pane(p2)) });
+    assert_eq!(split.active_pane, p2);
+    // 窓を出すペインは wants と同じ
+    assert_eq!(s.panes, c.wants());
+    assert_eq!(s.panes.len(), 3);
+}

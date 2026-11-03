@@ -4,7 +4,7 @@
 //! - タブはスペースごと。切り替えると今のスペースのタブはしまい、切り替え先のタブを出す(取り込んだ窓を閉じるのは段階 3)
 //! - ペインの id・タブの id はコアの中で一意(スペースをまたいでも重ならない)。タブの番号はスペースの中で 1 から、空いた番号を使う
 //! - 残すもの(スペース・タブ・分割・開いているブックマーク)は [`Saved`] にして書き出す。ペインの場所(UI から来る)は残さない
-use crate::embed::Want;
+use crate::compositor::{Scene, TabScene, Tree, Want};
 use crate::recipes::{self, Recipe};
 use crate::web::WebWant;
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
@@ -60,6 +60,14 @@ impl Layout {
                 Node::Split { dir: *dir, ratio: *ratio, a: Box::new(a.to_node()), b: Box::new(b.to_node()) }
             }
             Layout::Pane { leaf, .. } => Node::Leaf(leaf.clone()),
+        }
+    }
+
+    /// ペインの id だけの木(コンポジタに渡す)
+    pub fn tree(&self) -> Tree {
+        match self {
+            Layout::Split { dir, ratio, a, b } => Tree::Split { dir: *dir, ratio: *ratio, a: Box::new(a.tree()), b: Box::new(b.tree()) },
+            Layout::Pane { id, .. } => Tree::Pane(*id),
         }
     }
 
@@ -542,6 +550,13 @@ impl Core {
             }
         }
         out
+    }
+
+    /// コンポジタに渡すもの: 窓を出すペイン([`Core::wants`])と、タブごとの配置の木
+    pub fn scene(&self) -> Scene {
+        let tabs =
+            self.tabs.tabs.iter().map(|t| TabScene { id: t.id, num: t.num, tree: t.layout.tree(), active_pane: t.active_pane }).collect();
+        Scene { panes: self.wants(), tabs, active: self.tabs.active }
     }
 
     /// 取り込んだ窓が無くなった。ペインは残して止まったものにする。変われば true

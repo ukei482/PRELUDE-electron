@@ -1,51 +1,19 @@
-//! アプリの窓の取り込み(KDE Plasma 6 の Wayland。Electron 版の appembed.js の移植)。
+//! アプリの窓の取り込み(KDE Plasma 6 の Wayland。Electron 版の appembed.js の移植)。[`Compositor`] の KWin の裏側。
+//! KWin には木構造の並べ方が無いので、配置の木は使わず、UI が知らせた場所に窓を重ねる。移行が終わったら外す(判断 12)
 //!
 //! - コアの状態から「取り込むペイン」([`Want`]: 起動コマンドと場所)を受け取り、今の取り込みとの差を埋める(起動する・閉じる・置き直す)
 //! - KWin スクリプト(embed.js)を、状態を埋め込んで読み直す。スクリプトからの報告(どの窓をどのペインのものにしたか・窓の数・題名)は
 //!   D-Bus の `org.prelude.Core`(印つき)の `Report` で受ける
 //! - 窓が無くなったペインは [`Note::Exited`] で知らせる(コアはペインを残して止まったものにする)
 //! - 終わるときは、起動したアプリに終了の合図を送り、閉じるのを少し待つ。落ちたときに備えて、取り込み中の窓の id をファイルに控え、次の起動で普通の窓に戻す
+use crate::compositor::{Compositor, Note, Scene, Want};
 use crate::{apps, procs};
-use prelude_proto::PaneRect;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
-
-/// 取り込むペイン(コアの状態から作る)
-#[derive(Debug, Clone, PartialEq)]
-pub struct Want {
-    pub pane: u64,
-    /// シェルのコマンド
-    pub cmd: String,
-    /// 窓を見分ける名前(省略できる)
-    pub cls: String,
-    /// 作業フォルダ
-    pub cwd: String,
-    /// 見えていれば場所
-    pub rect: Option<PaneRect>,
-    /// 窓の題名の印(Web のペイン)。あれば起動はせず、この題名の窓を取り込む(窓は web.rs が作る)
-    pub marker: String,
-}
-
-/// 取り込みからコアへの知らせ
-#[derive(Debug, Clone, PartialEq)]
-pub enum Note {
-    /// ペインの窓が無くなった(had_window: 一度は窓があった)
-    Exited { pane: u64, had_window: bool },
-    /// ペインの本体の窓の題名
-    Title { pane: u64, title: String },
-    /// ペインの窓を取り込んだ
-    Claimed { pane: u64 },
-    /// Web のペインの今の URL と題名(web.rs から)
-    Web { pane: u64, url: String, title: String },
-    /// Web のペインから新しいタブで開くリンク(web.rs から)
-    OpenTab { url: String, from: u64 },
-    /// ダウンロードの始まり・進み具合(CDP の Browser.downloadWillBegin / downloadProgress の params)
-    Download(serde_json::Value),
-}
 
 enum Msg {
     Want(Vec<Want>),
@@ -76,9 +44,16 @@ impl Handle {
     }
 }
 
-/// この環境で取り込めるか(KDE の Wayland)
-pub fn supported() -> bool {
-    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.to_lowercase().contains("kde")) && std::env::var_os("WAYLAND_DISPLAY").is_some()
+impl Compositor for Handle {
+    fn name(&self) -> &'static str {
+        "kwin"
+    }
+    fn arrange(&self, scene: Scene) {
+        self.want(scene.panes);
+    }
+    fn shutdown(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(Handle::shutdown(self))
+    }
 }
 
 struct Iface {
@@ -94,12 +69,8 @@ impl Iface {
 }
 
 /// 取り込みを始める。tag はこのコアの印(別のソケットで動かすコアと、D-Bus の名前・スクリプトの名前を取り合わないように)。
-/// できない環境(KDE でない・D-Bus に繋がらない)なら None
+/// D-Bus に繋がらなければ None。KDE かどうかは [`crate::compositor::detect`] が見る
 pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Handle> {
-    if !supported() {
-        eprintln!("prelude-core: window embedding needs KDE Plasma (Wayland). Panes will not show windows");
-        return None;
-    }
     let (tx, rx) = mpsc::unbounded_channel();
     let service = format!("org.prelude.Core{tag}");
     let conn = async {
