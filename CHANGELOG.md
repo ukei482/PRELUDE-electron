@@ -5,6 +5,8 @@
 
 ## [未リリース]
 
+## [0.12.0] - 2026-11-03
+
 ### 追加
 - ブックマークのファイル(`.prelude`)に `paths` を書けるようにした。`files`(ファイラの最初のフォルダ)・`open` / `save`(アプリの「開く」「保存」の最初のフォルダ。使うのは今後)・`download`(ダウンロードの保存先)・`terminal`(コンソール・アプリの作業フォルダ)。どれも省略でき、無いものは `download` → `save` → `files` の順(`open`・`save`・`terminal` は `files`)で決め、`files` も無ければ今までどおりの既定になる。`~/…` と、`.prelude` のフォルダからの相対パスが使える
   - そのファイルから開いたタブでは、パスの無いフォルダのペイン・分割で足すフォルダのペインが `files` で開き、ダウンロードの保存先の初期値が `download` になる。そのタブから起動したアプリ(Konsole など)は `terminal` のフォルダで起動する
@@ -450,7 +452,8 @@ PRELUDE を KDE Plasma 6（Wayland）のデスクトップシェルとして使�
 ### 既知の未対応
 - ~~plasmashell を止めている間、キーボードの音量キーが効かない~~ → 誤り。音量キーは kded6 の `audioshortcutsservice` が処理するので効く（0.3.1 以降の確認。`docs/shell-design.md` 6.5）
 
-[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.11.1...HEAD
+[未リリース]: https://github.com/ukei482/PRELUDE-electron/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/ukei482/PRELUDE-electron/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ukei482/PRELUDE-electron/compare/v0.9.0...v0.10.0
