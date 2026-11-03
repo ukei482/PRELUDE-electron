@@ -1,0 +1,14 @@
+[package]
+name = "prelude-launcher"
+version = "0.1.0"
+description = "PRELUDE のランチャー(GPUI。タブ・ブックマーク・アプリ・スペース・URL・検索を 1 つの入力欄で探して開く)"
+edition.workspace = true
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+prelude-proto.workspace = true
+prelude-ui.workspace = true
+serde_json.workspace = true
+env_logger.workspace = true
+log.workspace = true

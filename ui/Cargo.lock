@@ -3827,6 +3827,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "prelude-launcher"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "gpui",
+ "gpui_platform",
+ "log",
+ "prelude-proto",
+ "prelude-ui",
+ "serde_json",
+]
+
+[[package]]
 name = "prelude-proto"
 version = "0.1.0"
 dependencies = [
@@ -3854,6 +3867,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "log",
+ "unicode-segmentation",
 ]
 
 [[package]]
