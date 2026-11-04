@@ -34,6 +34,9 @@
   };
   fonts.packages = [ pkgs.noto-fonts-cjk-sans pkgs.noto-fonts-color-emoji ];
 
+  # GPU のドライバ(/run/opengl-driver)。GPUI・Electron が使う
+  hardware.graphics.enable = true;
+
   # 画面(今と同じ KDE Plasma の Wayland)
   services.desktopManager.plasma6.enable = true;
   services.displayManager.sddm.enable = true;

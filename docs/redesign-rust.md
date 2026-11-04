@@ -403,6 +403,9 @@ PRELUDE の開発を止めても Ubuntu を使い続ける利点は薄いので�
 - メモリの節約にはならない(この PC で使っているのはアプリで、減るのは Discover と snapd の 130MB ほど)。スワップの不足は zram で補う
 - この PC では仮想マシンを使わない(メモリ 7.6GB に 3.5GB を割り当てて、OOM で落ちた)
 - 確かめること: Claude のデスクトップアプリ(`.deb`。nixpkgs の `by-name` には無かった)、pCloud(AppImage)、open-pdf-studio(snap)
+- nixos-26.05 の既定は rustc 1.95・electron 43 で、PRELUDE には古い。`flake.nix` で `rust-overlay` の配布済みの 1.98.1(GPUI の指定に合わせる)と `electron_44` を選ぶ
+- Kubuntu の上の Nix で確かめた(`nix develop`。2026-11-04): コアとコマンドのテスト、`npm test`(47)、GPUI の 3 つのビルド(2 並列で 8 分半)が通り、ファイラは Nix の Mesa を `VK_DRIVER_FILES` で指定すると Iris Xe の Vulkan で動く。Electron 44 は PRELUDE の画面まで読み込む。Kubuntu の上では GL のドライバが見つからないエラーが出る(`/run/opengl-driver` が無いため。NixOS で確かめる)
+- `nix-daemon` のビルドには `systemd-run` の上限が効かない。手元で Rust をコンパイルさせると OOM になるので、実行前に `nix build --dry-run` でビルドするものを見る
 - `nix/hardware-configuration.nix` は入れる PC で作る。EFI 区画が 300MB なので、カーネルをルートの `/boot` に置く GRUB にする
 
 ### 順番
