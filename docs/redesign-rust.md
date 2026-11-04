@@ -313,6 +313,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | | ↳ 5-c は後回し(判断 13)。カードをファイラに包含する形で作る。それまで `--view field` は一覧で出す | |
 | 6 | ~~システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植~~ → **rice に任せる**(判断 10)。PRELUDE は表示用の出口(`prelude watch` の JSON)と、NixOS のモジュールが出す設定の断片(キー・窓の決まり)を用意する | plasmashell が要らなくなる |
 | 7 | FileChooser のポータル(判断 5-a)。選ぶ画面はファイラの枠のもの | アプリのダイアログの最初のフォルダが paths になる |
+| | ↳ 済: `portal.rs`(`org.freedesktop.impl.portal.FileChooser`。`OpenFile`・`SaveFile`、`Request.Close`)。最初のフォルダは今のタブの paths の `open` / `save`。ただし `current_file`(保存し直し)を渡されたらそのフォルダ。選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる(既定は `prelude-filer --choose`、結果は `{output}` のファイル)。切り替えは `scripts/portal.sh on|off`。まだ: `filters`・`choices`、`SaveFiles`、D-Bus でのコアの自動起動 | |
 | 8 | 設定の引き継ぎ、GitHub Actions でのビルドと配布、更新の仕組み(判断 8)。Rust 版をリリースにし、Electron 版を消す | 切り替え |
 
 ### ソケットの約束(版 1。段階 2 で作ったもの)

@@ -15,11 +15,11 @@
 - `src/` — レンダラ。`app.js`(タブ・分割・ペイン)、`files.js`(フォルダ)、`field.js`(フィールド表示)、`fieldlayout.js`(フィールドのカードの配置の計算)、`bmfile.js`(ブックマークのファイル `.prelude` の読み書き)、`space.js`(スペース。ブックマークの並び・旧ブックマークの移し方・タブの保存の形)、`history.js`(開いた履歴と点数)、`term.js`(ホーム = 起動直後の白い端末)、`cli.js`(PRELUDE コマンドの命令)、ほか
   - `app.js` 以外は `app.js` より先に読み込まれ、共通関数(`h`、`ico`、`api` など)は呼び出し時に使う
 - `theme/` — ロック画面(kscreenlocker のシェルのパッケージ)と SDDM のテーマ。QML。見た目は `theme/common/Prompt.qml` で共通。入れる/外すのは `scripts/theme.sh`
-- `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)
+- `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)、`portal.sh`(アプリのダイアログを PRELUDE にする/戻す)
 - `test/` — `npm test`(Node の `node:test`)。DOM・Electron なしで動く計算だけをテストする
 - `crates/` — Rust 版(`docs/redesign-rust.md`)。`cargo test`(Rust は `~/.cargo/bin`)
   - `prelude-format`(`.prelude`・`space.toml`)。`test/fixtures/format/` は JS と Rust の両方のテストが読む
-  - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`embed.rs` と `embed.js` がアプリの窓の取り込み、`recipes.rs` がペインのレシピ)、`prelude-cli`(`prelude` コマンド)
+  - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`embed.rs` と `embed.js` がアプリの窓の取り込み、`recipes.rs` がペインのレシピ、`portal.rs` がアプリのダイアログのポータル)、`prelude-cli`(`prelude` コマンド)
   - 別のソケットで動かしたコアは、D-Bus の名前(`org.prelude.Core.d…`)と KWin スクリプトの名前に印が付き、ふだんのコア・Electron 版と取り合わない。窓を出さずに試すなら `--no-embed`
   - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
 - `ui/` — Rust 版の UI(GPUI。段階 4)。ルートとは別のワークスペース。`prelude-ui`(共通の見た目と部品。入力欄 `TextInput` も)・`prelude-sidebar`(サイドバー)・`prelude-launcher`(ランチャー)・`prelude-filer`(ファイラ。見せ方は `FilerView` のトレイト)。コアの `files`・`field` のペインは既定で `prelude-filer` を起動するので、試すときは `PATH` に `proto/gpui/target/debug` などを足す。ビルドは `cd ui && cargo build`(GPUI の初回のビルドは重い。`CARGO_TARGET_DIR=../proto/gpui/target` で試作のビルド結果を使い回せる)

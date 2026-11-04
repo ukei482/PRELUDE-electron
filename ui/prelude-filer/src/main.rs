@@ -8,7 +8,11 @@
 //! - 移ったフォルダはコアに知らせる(`pane.update` の `path`)。タブを開き直すとそのフォルダで開く
 //! - フォルダの中が変わったら(ほかのアプリでファイルを足したなど)、1 秒以内に読み直す
 //!
-//! 使い方: `prelude-filer [--pane <id>] [--view list|field] [フォルダ]`(フォルダを省くとホーム)
+//! - 選ぶ画面(`--choose`): アプリの「開く」「保存」のダイアログとして動く(判断 12)。Enter・ボタンで、選んだパスを `--output` のファイルに書いて終わる。
+//!   Esc・Cancel・窓を閉じると何も書かずに終わる(取り消し)。消す・移すなどの操作はできない。
+//!   `open`(ファイル 1 つ)・`open-multiple`(Ctrl+クリックなどで複数。Ctrl+Enter で確定)・`directory`(今のフォルダ)・`save`(下の欄に名前。あるファイルは確かめる)
+//!
+//! 使い方: `prelude-filer [--pane <id>] [--view list|field] [--choose <種類> --output <ファイル> [--name <名前>] [--title <題名>]] [フォルダ]`(フォルダを省くとホーム)
 use gpui::{
     App, Bounds, ClipboardItem, Context, Entity, FocusHandle, Focusable, KeyBinding, Window, WindowBounds, WindowOptions, actions, div,
     prelude::*, px, size,
@@ -51,7 +55,8 @@ actions!(
         Rename,
         NewFolder,
         PromptConfirm,
-        PromptCancel
+        PromptCancel,
+        ChooseConfirm
     ]
 );
 
@@ -62,6 +67,26 @@ enum Prompt {
     NewFolder,
     /// 完全に消してよいか
     DeleteForever(Vec<PathBuf>),
+    /// 保存の名前(選ぶ画面)
+    SaveName,
+}
+
+/// 選ぶ画面(アプリのダイアログ)の種類
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChooseMode {
+    Open,
+    OpenMultiple,
+    Directory,
+    Save,
+}
+
+struct Choose {
+    mode: ChooseMode,
+    output: PathBuf,
+    /// 窓の題名(アプリが決めたもの)
+    title: String,
+    /// 確かめた上書き先(もう一度確定すると置き換える)
+    overwrite: Option<PathBuf>,
 }
 
 struct Filer {
@@ -81,6 +106,8 @@ struct Filer {
     status: Option<(String, bool)>,
     /// コピー・移動・ゴミ箱の途中
     busy: bool,
+    /// 選ぶ画面として動いているとき
+    choose: Option<Choose>,
 }
 
 fn home() -> PathBuf {
@@ -120,6 +147,10 @@ impl Filer {
     }
 
     fn title(&self, window: &mut Window) {
+        if let Some(c) = self.choose.as_ref().filter(|c| !c.title.is_empty()) {
+            window.set_window_title(&c.title);
+            return;
+        }
         let name = self.dir.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| short(&self.dir.path));
         window.set_window_title(&format!("{name} - PRELUDE files"));
     }
@@ -137,12 +168,14 @@ impl Filer {
         });
     }
 
-    fn open(&mut self, i: usize, window: &mut Window) {
+    fn open(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(e) = self.dir.entries.get(i).cloned() else { return };
         self.dir.selected = Some(i);
         let p = self.dir.path.join(&e.name);
         if e.is_dir {
             self.go(p, true, window);
+        } else if self.choose.is_some() {
+            self.choose_confirm(window, cx);
         } else if let Err(err) = std::process::Command::new("xdg-open").arg(&p).spawn() {
             self.dir.error = Some(format!("cannot open {} ({err})", p.display()));
         }
@@ -150,17 +183,86 @@ impl Filer {
 
     fn command(&mut self, c: FilerCommand, window: &mut Window, cx: &mut Context<Self>) {
         match c {
-            FilerCommand::Select(i) => self.dir.select_one(i),
+            FilerCommand::Select(i) => {
+                self.dir.select_one(i);
+                self.save_name_from_selection(window, cx);
+            }
+            FilerCommand::Toggle(i) | FilerCommand::Range(i) if !self.can_mark() => self.dir.select_one(i),
             FilerCommand::Toggle(i) => self.dir.toggle_mark(i),
             FilerCommand::Range(i) => self.dir.mark_range(i),
-            FilerCommand::Open(i) => self.open(i, window),
+            FilerCommand::Open(i) => self.open(i, window, cx),
             FilerCommand::Go(p) => self.go(p, true, window),
         }
         cx.notify();
     }
 
+    /// 複数を選べるか(選ぶ画面では open-multiple だけ)
+    fn can_mark(&self) -> bool {
+        self.choose.as_ref().is_none_or(|c| c.mode == ChooseMode::OpenMultiple)
+    }
+
+    /// 保存の画面でファイルを選んだら、その名前を欄に入れて、打てるようにする
+    fn save_name_from_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.prompt, Some(Prompt::SaveName)) {
+            return;
+        }
+        let Some(input) = self.input.clone() else { return };
+        if let Some(e) = self.dir.selected_entry().filter(|e| !e.is_dir).cloned() {
+            input.update(cx, |i, cx| i.set_text(e.name, cx));
+        }
+        window.focus(&input.focus_handle(cx), cx);
+    }
+
+    /// 選ぶ画面: 今の選びで確定する。選んだパスを書いて終わる
+    fn choose_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(mode) = self.choose.as_ref().map(|c| c.mode) else { return };
+        let paths: Vec<PathBuf> = match mode {
+            ChooseMode::Directory => vec![self.dir.path.clone()],
+            ChooseMode::Open => self.dir.targets().into_iter().take(1).collect(),
+            ChooseMode::OpenMultiple => self.dir.targets(),
+            ChooseMode::Save => {
+                let name = self.input.as_ref().map(|i| i.read(cx).text().to_string()).unwrap_or_default();
+                let Some(p) = ops::save_target(&self.dir.path, &name) else {
+                    self.status = Some(("Invalid name".into(), true));
+                    return;
+                };
+                if p.is_dir() {
+                    self.go(p, true, window);
+                    return;
+                }
+                // あるファイルは、もう一度確定したら置き換える
+                let Some(c) = &mut self.choose else { return };
+                if p.exists() && c.overwrite.as_ref() != Some(&p) {
+                    self.status = Some((format!("\"{name}\" already exists. Press Enter again to replace it"), true));
+                    c.overwrite = Some(p);
+                    return;
+                }
+                vec![p]
+            }
+        };
+        let Some(c) = &self.choose else { return };
+        if paths.is_empty() {
+            return;
+        }
+        match ops::write_choice(&c.output, &paths) {
+            Ok(()) => cx.quit(),
+            Err(e) => self.status = Some((e, true)),
+        }
+    }
+
     fn act(&mut self, a: &dyn gpui::Action, window: &mut Window, cx: &mut Context<Self>) {
         let any = a.as_any();
+        // 選ぶ画面では、ファイルを変える操作はしない。複数選びは open-multiple だけ
+        if self.choose.is_some()
+            && (any.is::<Cut>()
+                || any.is::<Paste>()
+                || any.is::<Trash>()
+                || any.is::<DeleteForever>()
+                || any.is::<Rename>()
+                || (!self.can_mark() && (any.is::<SelectAll>() || any.is::<ShiftUp>() || any.is::<ShiftDown>())))
+        {
+            return;
+        }
         if any.is::<Up>() || any.is::<Down>() {
             self.dir.move_by(if any.is::<Up>() { -1 } else { 1 });
             if let Some(i) = self.dir.selected {
@@ -183,7 +285,7 @@ impl Filer {
             self.dir.move_by(self.dir.entries.len() as isize);
         } else if any.is::<Open>() {
             if let Some(i) = self.dir.selected {
-                self.open(i, window);
+                self.open(i, window, cx);
             }
         } else if any.is::<Parent>() {
             if let Some(p) = self.dir.path.parent().map(Path::to_path_buf) {
@@ -209,8 +311,13 @@ impl Filer {
         } else if any.is::<SelectAll>() {
             self.dir.mark_all();
         } else if any.is::<Unselect>() {
+            if self.choose.is_some() && self.dir.marked.is_empty() {
+                cx.quit(); // 選ぶ画面の Esc は取り消し
+            }
             self.dir.marked.clear();
             self.status = None;
+        } else if any.is::<ChooseConfirm>() {
+            self.choose_confirm(window, cx);
         } else if any.is::<Copy>() || any.is::<Cut>() {
             let paths = self.dir.targets();
             if !paths.is_empty() {
@@ -273,6 +380,11 @@ impl Filer {
     }
 
     fn confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.prompt, Some(Prompt::SaveName)) {
+            self.choose_confirm(window, cx);
+            cx.notify();
+            return;
+        }
         let text = self.input.as_ref().map(|i| i.read(cx).text().to_string()).unwrap_or_default();
         let p = self.prompt.take();
         let r = match &p {
@@ -283,7 +395,7 @@ impl Filer {
                 self.run(format!("Deleting {} item(s)...", paths.len()), cx, move || (vec![], ops::remove(&paths)));
                 Ok(None)
             }
-            None => Ok(None),
+            Some(Prompt::SaveName) | None => Ok(None),
         };
         match r {
             Ok(name) => {
@@ -419,6 +531,7 @@ impl Render for Filer {
             .on_action(cx.listener(|f, a: &DeleteForever, w, cx| f.act(a, w, cx)))
             .on_action(cx.listener(|f, a: &Rename, w, cx| f.act(a, w, cx)))
             .on_action(cx.listener(|f, a: &NewFolder, w, cx| f.act(a, w, cx)))
+            .on_action(cx.listener(|f, a: &ChooseConfirm, w, cx| f.act(a, w, cx)))
             .child(head)
             .child(div().flex().flex_col().flex_1().min_h(px(0.)).child(self.view.render(&self.dir, emit)));
         // 下の行: 聞いていること・知らせ・開けなかったファイルなど(フォルダ自体が読めないときは、見せ方の部品が出す)
@@ -427,13 +540,20 @@ impl Render for Filer {
                 Prompt::Rename(_) => "Rename:".to_string(),
                 Prompt::NewFolder => "New folder:".to_string(),
                 Prompt::DeleteForever(v) => format!("Delete {} item(s) permanently? Enter = delete, Esc = cancel", v.len()),
+                Prompt::SaveName => "Save as:".to_string(),
             };
             let mut bar = div()
                 .id("prompt")
                 .key_context("FilerPrompt")
                 .track_focus(&self.prompt_focus)
                 .on_action(cx.listener(|f, _: &PromptConfirm, w, cx| f.confirm(w, cx)))
-                .on_action(cx.listener(|f, _: &PromptCancel, w, cx| f.end_prompt(w, cx)))
+                .on_action(cx.listener(|f, _: &PromptCancel, w, cx| {
+                    if matches!(f.prompt, Some(Prompt::SaveName)) {
+                        cx.quit(); // 保存の欄の Esc は取り消し
+                    } else {
+                        f.end_prompt(w, cx);
+                    }
+                }))
                 .flex()
                 .items_center()
                 .gap(px(8.))
@@ -447,6 +567,39 @@ impl Render for Filer {
                 bar = bar.child(div().flex_1().child(i.clone()));
             }
             root = root.child(bar);
+        }
+        // 選ぶ画面: 確定と取り消しのボタン
+        if let Some(c) = &self.choose {
+            let text: gpui::SharedString = match c.mode {
+                ChooseMode::Directory => "Select this folder".into(),
+                ChooseMode::Save => "Save".into(),
+                _ => "Select".into(),
+            };
+            let button = |id: &'static str, t: gpui::SharedString| {
+                div()
+                    .id(id)
+                    .flex_none()
+                    .px(px(10.))
+                    .py(px(3.))
+                    .border_1()
+                    .border_color(color::line())
+                    .cursor_pointer()
+                    .hover(|s| s.bg(color::panel2()))
+                    .child(t)
+            };
+            root = root.child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.))
+                    .flex_none()
+                    .p(px(6.))
+                    .child(button("cancel", "Cancel".into()).on_click(cx.listener(|_, _, _, cx| cx.quit())))
+                    .child(button("confirm", text).on_click(cx.listener(|f, _, w, cx| {
+                        f.choose_confirm(w, cx);
+                        cx.notify();
+                    }))),
+            );
         }
         let note = self.status.clone().or_else(|| self.dir.error.clone().filter(|_| !self.dir.entries.is_empty()).map(|e| (e, true)));
         if let Some((msg, bad)) = note {
@@ -469,13 +622,29 @@ impl Render for Filer {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let usage = "usage: prelude-filer [--pane ID] [--view list|field] [FOLDER]";
+    let usage = "usage: prelude-filer [--pane ID] [--view list|field] [--choose open|open-multiple|directory|save --output FILE [--name NAME] [--title TITLE]] [FOLDER]";
+    let (mut choose_mode, mut output, mut save_name, mut title) = (None::<ChooseMode>, None::<PathBuf>, String::new(), String::new());
     let (mut pane, mut view_name, mut path) = (None::<u64>, "list".to_string(), None::<PathBuf>);
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--pane" => pane = args.next().and_then(|v| v.parse().ok()),
             "--view" => view_name = args.next().unwrap_or_default(),
+            "--choose" => {
+                choose_mode = match args.next().as_deref() {
+                    Some("open") => Some(ChooseMode::Open),
+                    Some("open-multiple") => Some(ChooseMode::OpenMultiple),
+                    Some("directory") => Some(ChooseMode::Directory),
+                    Some("save") => Some(ChooseMode::Save),
+                    _ => {
+                        eprintln!("{usage}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--output" => output = args.next().map(PathBuf::from),
+            "--name" => save_name = args.next().unwrap_or_default(),
+            "--title" => title = args.next().unwrap_or_default(),
             "-h" | "--help" => {
                 println!("{usage}");
                 return;
@@ -488,6 +657,16 @@ fn main() {
         }
     }
     let start = path.map(|p| if p.is_absolute() { p } else { std::env::current_dir().unwrap_or_default().join(p) }).unwrap_or_else(home);
+    let choose = match (choose_mode, output) {
+        (Some(mode), Some(output)) => Some(Choose { mode, output, title, overwrite: None }),
+        (None, _) => None,
+        (Some(_), None) => {
+            eprintln!("{usage}");
+            std::process::exit(2);
+        }
+    };
+    // 選ぶ画面は、paths のフォルダがまだ無いときは開ける一番近いフォルダで開く
+    let start = if choose.is_some() { ops::nearest_dir(&start) } else { start };
     let (view, missing_view) = match views::by_name(&view_name) {
         Some(v) => (v, None),
         None => (views::by_name("list").expect("list view"), Some(view_name)),
@@ -523,6 +702,7 @@ fn main() {
             KeyBinding::new("f2", Rename, c),
             KeyBinding::new("ctrl-shift-n", NewFolder, c),
             // 下の行で聞いている間(入力欄の中でも効く)
+            KeyBinding::new("ctrl-enter", ChooseConfirm, c),
             KeyBinding::new("enter", PromptConfirm, Some("FilerPrompt")),
             KeyBinding::new("escape", PromptCancel, Some("FilerPrompt")),
         ]);
@@ -548,10 +728,22 @@ fn main() {
                         prompt_focus: cx.focus_handle(),
                         status: None,
                         busy: false,
+                        choose,
                     };
                     f.go(start, false, window);
                     f.pane = pane;
                     window.focus(&f.focus, cx);
+                    if f.choose.as_ref().is_some_and(|c| c.mode == ChooseMode::Save) {
+                        let input = cx.new(|cx| {
+                            let stem = save_name.rfind('.').filter(|i| *i > 0).unwrap_or(save_name.len());
+                            let mut t = TextInput::new(cx, "name", save_name.clone());
+                            t.select(0..stem, cx);
+                            t
+                        });
+                        window.focus(&input.focus_handle(cx), cx);
+                        f.prompt = Some(Prompt::SaveName);
+                        f.input = Some(input);
+                    }
                     f
                 })
             },

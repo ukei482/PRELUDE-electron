@@ -997,6 +997,12 @@ impl Core {
         }
     }
 
+    /// アプリのダイアログの最初のフォルダ。今のタブの paths の `open`(save なら `save`)
+    pub fn dialog_folder(&self, save: bool) -> String {
+        let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
+        self.paths(active).get(if save { "save" } else { "open" }).and_then(Json::as_str).unwrap_or(&self.home).to_string()
+    }
+
     /// タブで使うフォルダ。スペースの既定(`space.toml`)の上に、タブが開いたブックマークの paths を重ねる。
     /// どこにも無い項目はホーム
     fn paths(&self, tab: Option<&Tab>) -> Map<String, Json> {

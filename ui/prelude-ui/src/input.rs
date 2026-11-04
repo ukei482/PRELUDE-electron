@@ -51,6 +51,15 @@ impl TextInput {
         &self.content
     }
 
+    /// 中身を置き換える(カーソルは末尾)
+    pub fn set_text(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.content = text.into();
+        let end = self.content.len();
+        self.selected_range = end..end;
+        self.marked_range = None;
+        cx.notify();
+    }
+
     /// 中身の一部を選ぶ(バイトの位置。名前の変更で拡張子の前までを選ぶなど)
     pub fn select(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
         let end = range.end.min(self.content.len());

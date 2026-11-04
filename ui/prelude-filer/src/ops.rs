@@ -152,6 +152,23 @@ pub fn remove(paths: &[PathBuf]) -> Vec<String> {
     paths.iter().filter_map(|p| remove_all(p).err().map(|e| format!("{}: {e}", file_name(p)))).collect()
 }
 
+// ------------------------------------------------------------------ 選ぶ画面(アプリのダイアログ)
+
+/// 選んだパスを 1 行ずつ書く(コアの portal.rs が読む)
+pub fn write_choice(output: &Path, paths: &[PathBuf]) -> Result<(), String> {
+    std::fs::write(output, clip_text(paths) + "\n").map_err(|e| e.to_string())
+}
+
+/// 保存先のパス。名前が使えなければ None
+pub fn save_target(dir: &Path, name: &str) -> Option<PathBuf> {
+    valid_name(name).map(|n| dir.join(n))
+}
+
+/// 開ける一番近いフォルダ(paths のフォルダがまだ無いときなど)
+pub fn nearest_dir(p: &Path) -> PathBuf {
+    p.ancestors().find(|d| d.is_dir()).unwrap_or(Path::new("/")).to_path_buf()
+}
+
 // ------------------------------------------------------------------ クリップボード
 
 /// クリップボードに書く文字(パスを 1 行ずつ)
@@ -277,6 +294,18 @@ mod tests {
         // 完全に消す
         assert!(remove(&[dst.join("src (1)")]).is_empty());
         assert!(!dst.join("src (1)").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn 選ぶ画面() {
+        let d = tmp("choice");
+        let out = d.join("out");
+        write_choice(&out, &[d.join("a b"), d.join("議事録.txt")]).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), format!("{}/a b\n{}/議事録.txt\n", d.display(), d.display()));
+        assert_eq!(save_target(&d, " x.txt "), Some(d.join("x.txt")));
+        assert_eq!(save_target(&d, "a/b"), None);
+        assert_eq!(nearest_dir(&d.join("no/such/dir")), d);
         let _ = std::fs::remove_dir_all(&d);
     }
 
