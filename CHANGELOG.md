@@ -21,7 +21,10 @@
   - 最初のフォルダは今のタブの paths の `open` / `save`。保存し直しで今のファイルを渡されたときは、そのフォルダ
   - 選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる。既定は `prelude-filer --choose`(開く・複数を開く・フォルダ・保存)
 
+- NixOS へ移る準備: `flake.nix`(`nix develop` の開発環境)と `nix/configuration.nix`(最小の OS の設定)
+
 ### 変更
+- `/bin/bash` の決め打ちをやめて `PATH` から探すようにした(NixOS には無い。ホームの端末・音量の監視など)
 - フィールド表示のカードは、ファイラの本体が持つフォルダの木の見せ方にする設計にした(`docs/redesign-rust.md` の判断 13。実装は後回し)
 
 ## [0.12.0] - 2026-11-03

@@ -381,7 +381,7 @@ PRELUDE が頼っているのは **KDE Plasma 6 + Wayland(KWin)** で、Ubuntu �
 
 | 今 | NixOS では |
 |---|---|
-| `/usr/bin/konsole`・`/snap/bin/chromium`・`/usr/share/icons` などの決め打ち | `PATH` と `XDG_DATA_DIRS` から探す(`sys/xdg.js`・`crates/prelude-core/src/xdg.rs`)。**済** |
+| `/usr/bin/konsole`・`/snap/bin/chromium`・`/usr/share/icons`・`/bin/bash` などの決め打ち | `PATH` と `XDG_DATA_DIRS` から探す(`sys/xdg.js`・`crates/prelude-core/src/xdg.rs`)。**済** |
 | npm の `electron`(`node_modules/electron/dist/electron`) | NixOS では動かない(普通のファイルの配置が無い)。nixpkgs の `electron`(版を合わせる)で `electron .`。ネイティブモジュールは無いので、ほかの依存はそのまま |
 | `scripts/theme.sh`(sudo で SDDM・ロック画面のテーマを置く、`quiet splash`) | NixOS のモジュールに書く(SDDM のテーマ・`boot.kernelParams` など) |
 | `systemd/prelude-shell*.service`、`scripts/shell-mode.sh` | モジュールの `systemd.user.services` |
@@ -396,6 +396,14 @@ PRELUDE が頼っているのは **KDE Plasma 6 + Wayland(KWin)** で、Ubuntu �
 - アプリの取り込み: NixOS では包まれたプログラムのプロセス名が `.konsole-wrapped` のようになる。`/proc` で窓の持ち主を見分ける所(`appembed.js`・`embed.rs`・`procs.rs`)が合うか
 - KWin スクリプト・シェルモード・ロック画面と SDDM のテーマ
 - `.desktop` の `Exec` が `/nix/store/…` の絶対パスになるアプリで、人からもらったブックマークの起動コマンドの確かめが働くか
+
+### 移行の方針(2026-11-04)
+PRELUDE の開発を止めても Ubuntu を使い続ける利点は薄いので、**試してから戻すのではなく、NixOS へ移る** つもりで進める。ただし Kubuntu はすぐ消さず、横に入れて確かめてから消す。
+- `flake.nix` に開発環境、`nix/configuration.nix` に最小の OS の設定だけを書く。今の Kubuntu の中身は書き写さず、足りないものをその都度足す
+- メモリの節約にはならない(この PC で使っているのはアプリで、減るのは Discover と snapd の 130MB ほど)。スワップの不足は zram で補う
+- この PC では仮想マシンを使わない(メモリ 7.6GB に 3.5GB を割り当てて、OOM で落ちた)
+- 確かめること: Claude のデスクトップアプリ(`.deb`。nixpkgs の `by-name` には無かった)、pCloud(AppImage)、open-pdf-studio(snap)
+- `nix/hardware-configuration.nix` は入れる PC で作る。EFI 区画が 300MB なので、カーネルをルートの `/boot` に置く GRUB にする
 
 ### 順番
 
