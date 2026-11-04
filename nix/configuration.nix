@@ -26,6 +26,8 @@
 
   # 日本語
   i18n.defaultLocale = "ja_JP.UTF-8";
+  console.keyMap = "jp106";
+  services.xserver.xkb.layout = "jp";
   i18n.inputMethod = {
     enable = true;
     type = "fcitx5";
