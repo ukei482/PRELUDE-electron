@@ -51,6 +51,13 @@ impl TextInput {
         &self.content
     }
 
+    /// 中身の一部を選ぶ(バイトの位置。名前の変更で拡張子の前までを選ぶなど)
+    pub fn select(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        let end = range.end.min(self.content.len());
+        self.selected_range = range.start.min(end)..end;
+        cx.notify();
+    }
+
     /// 中身を全部選ぶ(開いたときに打ち直しやすくする)
     pub fn select_everything(&mut self, cx: &mut Context<Self>) {
         self.selected_range = 0..self.content.len();

@@ -9,6 +9,7 @@
 - Rust 版のファイラ(GPUI。移行の段階 5 の前半)。ふだんの PRELUDE(Electron 版)には入らない
   - **ファイラの枠**: Rust 版のコアは、`files`・`field` のペインもペインのレシピで開く。既定は PRELUDE のファイラ(`prelude-filer`)で、`~/.config/prelude/panes/files.toml` を置けば yazi・Dolphin などに替えられる。レシピの `{path}` はペインのフォルダ(無ければ paths の `files`)、`{pane}` はペインの id
   - `prelude-filer`: 見せ方を `FilerView` のトレイトで差し替えられる。今は一覧(名前・大きさ・更新時刻)。↑↓ で選び、Enter・ダブルクリックで開く(フォルダなら入る、ファイルはアプリで開く)。Backspace で上のフォルダ、Alt+←/→ で戻る・進む、Ctrl+H で隠しファイル。フォルダの中が変わると読み直す。移ったフォルダはコアに残し、タブを開き直すとそのフォルダで開く
+  - `prelude-filer` のファイルの操作: Ctrl+クリック・Shift+クリック・Shift+↑↓・Ctrl+A で複数選び、Ctrl+C / X / V でコピー・切り取り・貼り付け(Dolphin などとも行き来できる)、Delete でゴミ箱、Shift+Delete で完全に消す(確かめてから)、F2 で名前の変更、Ctrl+Shift+N で新しいフォルダ。同じ名前があれば上書きせず「名前 (1)」にする
 - Rust 版のサイドバー(GPUI。移行の段階 4 の前半)。画面の左端に貼り付き、スペース(押すと切り替え)・ブックマーク(押すと開く。フォルダは 1 段)・タブ(押すと切り替え、× で閉じる)を出す。コアのソケットだけでつながり、コアが動いていなければ 2 秒ごとにつなぎ直す。ふだんの PRELUDE(Electron 版)には入らない
   - `ui/` に GPUI のワークスペースを分けた(ルートの `cargo test` に巻き込まない)。共通の見た目は `prelude-ui`(Electron 版と同じ色・書体)
   - `prelude-proto` にコアにつなぐクライアント(`Client`)を足し、`prelude` コマンドもこれを使うようにした
