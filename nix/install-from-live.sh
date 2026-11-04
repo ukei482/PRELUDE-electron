@@ -54,7 +54,9 @@ case "${1:-}" in
     mount "$ESP" /mnt/boot/efi
     # ライブ環境に Nix を入れる(ダウンロードは /mnt に置いて、メモリを使い切らないようにする)
     if ! command -v nix >/dev/null && [ ! -x /nix/var/nix/profiles/default/bin/nix ]; then
-      sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon --yes
+      command -v curl >/dev/null || { apt-get update && apt-get install -y curl; }
+      curl --proto '=https' --tlsv1.2 -fL https://nixos.org/nix/install -o /tmp/nix-install.sh || die "Nix を取れません。Wi-Fi を確かめてください"
+      sh /tmp/nix-install.sh --daemon --yes
     fi
     export PATH=/nix/var/nix/profiles/default/bin:$PATH
     N="nix --extra-experimental-features nix-command --extra-experimental-features flakes"
