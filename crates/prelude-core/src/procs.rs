@@ -80,3 +80,9 @@ pub fn signal(pid: u32, sig: i32) -> bool {
     let r = unsafe { libc::kill(pid as i32, sig) };
     r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
 }
+
+/// プロセスグループ全体に合図を送る
+pub fn signal_group(pgid: u32, sig: i32) -> bool {
+    // SAFETY: kill は引数の整数を渡すだけ。負の値はプロセスグループを指す
+    pgid > 1 && unsafe { libc::kill(-(pgid as i32), sig) == 0 }
+}

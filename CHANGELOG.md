@@ -17,6 +17,10 @@
   - 日本語入力のできる入力欄を `prelude-ui` の部品(`TextInput`)にした
 - Rust 版の UI(GPUI)の試作(`proto/gpui`。移行の段階 0)。画面の左端に貼り付くサイドバーの形で、layer-shell・日本語の表示と入力・1 万件の一覧・GPU が不調なときの切り替えを確かめる。ふだんの PRELUDE には入らない
 
+- Rust 版のアプリのダイアログ(移行の段階 7)。xdg-desktop-portal の FileChooser のバックエンドをコアが持つ。ふだんの PRELUDE(Electron 版)と今のダイアログは変わらない(`scripts/portal.sh on` で切り替えたときだけ)
+  - 最初のフォルダは今のタブの paths の `open` / `save`。保存し直しで今のファイルを渡されたときは、そのフォルダ
+  - 選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる。既定は `prelude-filer --choose`(開く・複数を開く・フォルダ・保存)
+
 ### 変更
 - フィールド表示のカードは、ファイラの本体が持つフォルダの木の見せ方にする設計にした(`docs/redesign-rust.md` の判断 13。実装は後回し)
 
