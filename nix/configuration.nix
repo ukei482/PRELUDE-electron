@@ -3,7 +3,7 @@
 {
   system.stateVersion = "26.05";
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
-  nixpkgs.config.allowUnfree = true; # claude-code
+  nixpkgs.config.allowUnfree = true; # Claude・Discord・Chrome など
 
   # 起動。Kubuntu と並べている間は、GRUB が両方を出す。
   # EFI 区画が 300MB しかないので、カーネルはルートの /boot に置く(systemd-boot は EFI 区画に置くので使わない)
@@ -45,12 +45,23 @@
   services.displayManager.sddm.wayland.enable = true;
 
   environment.systemPackages = with pkgs; [
+    (callPackage ./claude-desktop.nix { })
     chromium
     claude-code
+    discord
+    gh
     git
+    google-chrome
     kdePackages.dolphin
     kdePackages.kate
     kdePackages.konsole
+    krita
+    libreoffice
+    mypaint
+    pcloud
+    rsync
+    zed-editor
+    zoom-us
   ];
 
   # パスワードはここに書かない。入れた後に `nixos-enter --root /mnt -c 'passwd ukeiyamada'` で決める

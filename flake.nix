@@ -13,7 +13,7 @@
   outputs = { self, nixpkgs, rust-overlay }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; overlays = [ rust-overlay.overlays.default ]; };
+      pkgs = import nixpkgs { inherit system; overlays = [ rust-overlay.overlays.default ]; config.allowUnfree = true; };
       # GPUI(Zed)の rust-toolchain.toml に合わせる。既定の rustc は古い(1.95)。
       # nixpkgs の rust_1_98 は clippy がキャッシュに無く、手元でのコンパイルに 3GB 以上要るので、配布済みのものを使う
       rust = pkgs.rust-bin.stable."1.98.1".default.override { extensions = [ "clippy" "rustfmt" "rust-src" "rust-analyzer" ]; };
@@ -30,6 +30,8 @@
       ];
     in
     {
+      packages.${system}.claude-desktop = pkgs.callPackage ./nix/claude-desktop.nix { };
+
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           # Rust 版(crates・ui)
