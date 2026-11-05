@@ -19,7 +19,8 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 | ダイアログ | sway のセッションだけ、アプリの「開く」「保存」を PRELUDE にする(`xdg.portal.config.sway`)。`services.prelude.portal.enable = false` で外す |
 
 ### sway の断片
-- sway の起動のときに、セッションの環境を systemd に渡してから `prelude-core.service` を restart する
+- sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す
+- キー配列は `services.xserver.xkb.layout`、入力メソッドは `i18n.inputMethod` の fcitx5 を sway でも使う(sway はどちらも自分では読まない)
 - `$mod+d` でランチャー(`services.prelude.launcher`。既定は `prelude items | fuzzel --dmenu | prelude open`。GPUI のランチャーを入れたら `prelude-launcher` に替える)
 - タブ = 作業領域で、作業領域の名前はタブの番号。`$mod+数字`(sway の既定)でタブを切り替える
 - 親のある窓(ダイアログ・ポップアップ)は浮かせる(判断 12)。足したい決まりは `services.prelude.sway.extraConfig`

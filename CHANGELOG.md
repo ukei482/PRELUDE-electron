@@ -35,6 +35,11 @@
 - NixOS へ移る準備: `flake.nix`(`nix develop` の開発環境)と `nix/configuration.nix`(最小の OS の設定)
   - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 
+### 修正
+- sway のセッションで、ランチャーから開いたアプリ・Web のペインが開かなかった(コアのサービスの `PATH` が NixOS の既定のままだった)
+- sway のセッションで、キー配列が US になり、fcitx5 も起動しなかった。日本語入力に切り替えられなかった
+- sway を抜けてもコアが動き続け、`SWAYSOCK` が Plasma のアプリにも渡っていた
+
 ### 変更
 - CI で `npm ci --ignore-scripts` を実行するようにした(0.12.0 の前から `smol-toml` が無くて失敗していた)
 - `/bin/bash` の決め打ちをやめて `PATH` から探すようにした(NixOS には無い。ホームの端末・音量の監視など)
