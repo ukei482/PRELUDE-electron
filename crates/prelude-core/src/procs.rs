@@ -10,6 +10,11 @@ pub fn uptime() -> f64 {
     std::fs::read_to_string("/proc/uptime").ok().and_then(|s| s.split_whitespace().next()?.parse().ok()).unwrap_or(0.0)
 }
 
+/// プロセスの環境変数に `KEY=値` があるか
+pub fn has_env(pid: u32, entry: &str) -> bool {
+    std::fs::read(format!("/proc/{pid}/environ")).is_ok_and(|e| e.split(|b| *b == 0).any(|x| x == entry.as_bytes()))
+}
+
 struct Stat {
     pid: u32,
     ppid: u32,

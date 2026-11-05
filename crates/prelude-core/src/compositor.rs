@@ -23,6 +23,8 @@ pub struct Want {
     pub rect: Option<PaneRect>,
     /// 窓の題名の印(Web のペイン)。あれば起動はせず、この題名の窓を取り込む(窓は web.rs が作る)
     pub marker: String,
+    /// 既にある窓(PRELUDE を通さずに開いた窓。[`Note::Foreign`] の con)。あれば起動はせず、この窓をペインにする
+    pub window: Option<i64>,
 }
 
 /// タブの配置の木(ペインの id だけ)。コンポジタに並べさせる裏側が使う
@@ -62,6 +64,11 @@ pub enum Note {
     Claimed { pane: u64 },
     /// 使用者がコンポジタでタブ(作業領域)・ペイン(窓)を選んだ。pane が無ければタブだけ
     Focus { tab: u64, pane: Option<u64> },
+    /// PRELUDE を通さずに開いた普通の窓がタブに出てきた。tree はそのタブの今の並びで、この窓はペイン 0(判断 12)
+    Foreign { tab: u64, con: i64, app: String, title: String, focused: bool, tree: Tree },
+    /// 使用者がコンポジタで窓を動かした。タブの番号と、そのタブの今の並び(窓のあるペインだけ)。無ければ窓が無くなった。
+    /// 知らない番号はコンポジタで作った作業領域なので、新しいタブにする
+    Layout(Vec<(u32, Option<Tree>)>),
     /// Web のペインの今の URL と題名(web.rs から)
     Web { pane: u64, url: String, title: String },
     /// Web のペインから新しいタブで開くリンク(web.rs から)

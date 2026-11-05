@@ -71,6 +71,17 @@ impl Layout {
         }
     }
 
+    /// keep が偽のペインを除いた配置。片側が空の分割はもう片側だけになる
+    fn filtered(&self, keep: &impl Fn(u64, &Leaf) -> bool) -> Option<Layout> {
+        match self {
+            Layout::Pane { id, leaf } => keep(*id, leaf).then(|| self.clone()),
+            Layout::Split { dir, ratio, a, b } => match (a.filtered(keep), b.filtered(keep)) {
+                (Some(a), Some(b)) => Some(Layout::Split { dir: *dir, ratio: *ratio, a: Box::new(a), b: Box::new(b) }),
+                (x, None) | (None, x) => x,
+            },
+        }
+    }
+
     pub fn panes(&self) -> Vec<(u64, &Leaf)> {
         match self {
             Layout::Split { a, b, .. } => [a.panes(), b.panes()].concat(),
@@ -204,6 +215,38 @@ fn leaf_title(l: &Leaf) -> String {
     }
 }
 
+/// コンポジタの木 → 配置。知らないペインは除く
+fn layout_of(t: &Tree, leaves: &HashMap<u64, Leaf>) -> Option<Layout> {
+    match t {
+        Tree::Pane(id) => leaves.get(id).map(|l| Layout::Pane { id: *id, leaf: l.clone() }),
+        Tree::Split { dir, ratio, a, b } => match (layout_of(a, leaves), layout_of(b, leaves)) {
+            (Some(a), Some(b)) => Some(Layout::Split { dir: *dir, ratio: *ratio, a: Box::new(a), b: Box::new(b) }),
+            (x, None) | (None, x) => x,
+        },
+    }
+}
+
+fn tree_panes(t: &Tree, out: &mut HashSet<u64>) {
+    match t {
+        Tree::Pane(p) => {
+            out.insert(*p);
+        }
+        Tree::Split { a, b, .. } => {
+            tree_panes(a, out);
+            tree_panes(b, out);
+        }
+    }
+}
+
+fn replace_pane(t: &Tree, from: u64, to: u64) -> Tree {
+    match t {
+        Tree::Pane(p) => Tree::Pane(if *p == from { to } else { *p }),
+        Tree::Split { dir, ratio, a, b } => {
+            Tree::Split { dir: *dir, ratio: *ratio, a: Box::new(replace_pane(a, from, to)), b: Box::new(replace_pane(b, from, to)) }
+        }
+    }
+}
+
 // ------------------------------------------------------------------ タブ
 
 #[derive(Debug, Clone, PartialEq)]
@@ -296,6 +339,8 @@ pub struct Core {
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
     titles: HashMap<u64, String>,
+    /// PRELUDE を通さずに開いた窓のペインと、その窓。残さない
+    windows: HashMap<u64, i64>,
     /// 起動コマンドがインストール済みのアプリのものか(テストで差し替える)
     installed: fn(&str) -> bool,
     /// このコアの印(Web のペインの窓の題名の印に入れる)
@@ -328,6 +373,7 @@ impl Core {
             recipes: vec![],
             stopped: HashSet::new(),
             titles: HashMap::new(),
+            windows: HashMap::new(),
             installed: crate::apps::is_installed,
             tag: String::new(),
             apps: crate::apps::cached,
@@ -375,18 +421,21 @@ impl Core {
     }
 
     fn save_tabs(&self, t: &Tabs) -> SavedTabs {
-        let tabs = t
-            .tabs
+        // 開き直せない窓は書かない(判断 12)。それだけのタブも残さない
+        let keep = |id: u64, l: &Leaf| !(self.windows.contains_key(&id) && l.str("cmd").is_empty());
+        let kept: Vec<(&Tab, Layout)> = t.tabs.iter().filter_map(|tab| Some((tab, tab.layout.filtered(&keep)?))).collect();
+        let active = t.active.and_then(|a| kept.iter().position(|(x, _)| x.id == a)).unwrap_or(0);
+        let tabs = kept
             .iter()
-            .map(|tab| SavedTab {
+            .map(|(tab, layout)| SavedTab {
                 num: tab.num,
                 bookmark: tab.bookmark.as_ref().map(|(p, _)| p.clone()),
                 title: tab.bookmark.as_ref().map(|(_, t)| t.clone()).unwrap_or_default(),
-                active_pane: tab.layout.panes().iter().position(|(id, _)| *id == tab.active_pane).unwrap_or(0),
-                layout: serde_json::to_value(tab.layout.to_node().to_value(&self.home)).unwrap_or(Json::Null),
+                active_pane: layout.panes().iter().position(|(id, _)| *id == tab.active_pane).unwrap_or(0),
+                layout: serde_json::to_value(layout.to_node().to_value(&self.home)).unwrap_or(Json::Null),
             })
             .collect();
-        SavedTabs { active: t.active.and_then(|a| t.tabs.iter().position(|x| x.id == a)).unwrap_or(0), tabs }
+        SavedTabs { active, tabs }
     }
 
     fn load_tabs(&mut self, s: &SavedTabs) -> Tabs {
@@ -529,6 +578,7 @@ impl Core {
                         cwd: String::new(),
                         rect: self.places.get(&id).copied(),
                         marker,
+                        window: None,
                     });
                     continue;
                 }
@@ -547,12 +597,13 @@ impl Core {
                 } else {
                     continue;
                 };
-                if cmd.trim().is_empty() {
+                let window = self.windows.get(&id).copied();
+                if cmd.trim().is_empty() && window.is_none() {
                     continue;
                 }
                 let p = paths.get_or_insert_with(|| self.paths(Some(t)));
                 let cwd = p.get("terminal").and_then(Json::as_str).unwrap_or(&self.home).to_string();
-                out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied(), marker: String::new() });
+                out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied(), marker: String::new(), window });
             }
         }
         out
@@ -565,9 +616,12 @@ impl Core {
         Scene { panes: self.wants(), tabs, active: self.tabs.active }
     }
 
-    /// 取り込んだ窓が無くなった。ペインは残して止まったものにする。変われば true
+    /// 取り込んだ窓が無くなった。ペインは残して止まったものにする(外から開いた窓はペインごと消す)。変われば true
     pub fn note_exited(&mut self, pane: u64) -> bool {
         self.titles.remove(&pane);
+        if self.windows.contains_key(&pane) {
+            return self.pane_close(pane).is_ok();
+        }
         self.find_pane(pane).is_ok() && self.stopped.insert(pane)
     }
 
@@ -578,6 +632,91 @@ impl Core {
         }
         self.titles.insert(pane, title);
         true
+    }
+
+    /// PRELUDE を通さずに開いた窓を、タブのペインにする(判断 12)。tree はコンポジタの今の並びで、この窓はペイン 0。
+    /// インストール済みのアプリなら開き直せるように起動コマンドを持つ。変われば true
+    pub fn note_foreign(&mut self, tab: u64, con: i64, app: &str, title: &str, focused: bool, tree: &Tree) -> bool {
+        let Some(num) = self.tabs.tabs.iter().find(|t| t.id == tab).map(|t| t.num) else { return false };
+        let found = (self.apps)().into_iter().find(|a| a.id.to_lowercase() == app || a.cls == app);
+        let mut fields = Table::new();
+        let name = found.as_ref().map(|a| a.name.as_str()).unwrap_or(if title.is_empty() { app } else { title });
+        fields.insert("name".into(), Value::String(name.to_string()));
+        fields.insert("cmd".into(), Value::String(found.as_ref().map(|a| a.exec.clone()).unwrap_or_default()));
+        fields.insert("cls".into(), Value::String(app.to_string()));
+        let id = self.next_id();
+        self.apply_trees(&[(num, Some(replace_pane(tree, 0, id)))], [(id, Leaf { kind: "app".into(), fields })].into());
+        let Some(t) = self.tabs.tabs.iter_mut().find(|t| t.id == tab).filter(|t| t.layout.has(id)) else { return false };
+        if focused {
+            t.active_pane = id;
+        }
+        self.windows.insert(id, con);
+        true
+    }
+
+    /// 使用者がコンポジタで動かした配置を受け取る。変われば true
+    pub fn note_layout(&mut self, tabs: &[(u32, Option<Tree>)]) -> bool {
+        let before = self.tabs.clone();
+        self.apply_trees(tabs, HashMap::new());
+        self.tabs != before
+    }
+
+    /// タブの配置をコンポジタの並びにする。木に無いペイン(窓がまだ無い・止まった・浮かせた)はタブに残す。
+    /// ペインは別のタブへ移っていてもよい。ペインの無くなったタブは閉じ、知らない番号のタブは作る
+    fn apply_trees(&mut self, given: &[(u32, Option<Tree>)], extra: HashMap<u64, Leaf>) {
+        let mut placed = HashSet::new();
+        for t in given.iter().filter_map(|(_, t)| t.as_ref()) {
+            tree_panes(t, &mut placed);
+        }
+        let mut leaves = extra;
+        for t in &self.tabs.tabs {
+            leaves.extend(t.layout.panes().into_iter().map(|(id, l)| (id, l.clone())));
+        }
+        let mut empty = vec![];
+        for (num, tree) in given {
+            let i = self.tabs.tabs.iter().position(|t| t.num == *num);
+            let rest: Vec<Layout> = i
+                .map(|i| self.tabs.tabs[i].layout.panes())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(id, _)| !placed.contains(id))
+                .map(|(id, l)| Layout::Pane { id, leaf: l.clone() })
+                .collect();
+            let shown = tree.as_ref().and_then(|t| layout_of(t, &leaves));
+            let layout = rest.into_iter().fold(shown, |l, r| {
+                Some(match l {
+                    Some(l) => Layout::Split { dir: FDir::Row, ratio: 0.7, a: Box::new(l), b: Box::new(r) },
+                    None => r,
+                })
+            });
+            match (i, layout) {
+                (Some(i), Some(layout)) => {
+                    let t = &mut self.tabs.tabs[i];
+                    t.layout = layout;
+                    if !t.layout.has(t.active_pane) {
+                        t.active_pane = t.layout.first();
+                    }
+                }
+                (Some(i), None) => empty.push(self.tabs.tabs[i].id),
+                (None, Some(layout)) => {
+                    let id = self.next_id();
+                    let active_pane = layout.first();
+                    self.tabs.tabs.push(Tab { id, num: *num, layout, active_pane, bookmark: None });
+                }
+                (None, None) => {}
+            }
+        }
+        for id in empty {
+            let Some(i) = self.tabs.tabs.iter().position(|t| t.id == id) else { continue };
+            // 移ったペインの様子は残す
+            let keep: Vec<(u64, String)> = placed.iter().filter_map(|p| Some((*p, self.titles.get(p)?.clone()))).collect();
+            let stopped: Vec<u64> = placed.iter().copied().filter(|p| self.stopped.contains(p)).collect();
+            let windows: Vec<(u64, i64)> = placed.iter().filter_map(|p| Some((*p, *self.windows.get(p)?))).collect();
+            self.close_tab(i);
+            self.titles.extend(keep);
+            self.stopped.extend(stopped);
+            self.windows.extend(windows);
+        }
     }
 
     /// UI が知らせたペインの場所(見えているペインだけ)
@@ -716,6 +855,7 @@ impl Core {
             self.places.remove(&id);
             self.stopped.remove(&id);
             self.titles.remove(&id);
+            self.windows.remove(&id);
         }
         if self.tabs.active == Some(t.id) {
             let n = self.tabs.tabs.len();
@@ -751,6 +891,7 @@ impl Core {
     fn pane_close(&mut self, pane: u64) -> Reply {
         let (i, _) = self.find_pane(pane)?;
         self.places.remove(&pane);
+        self.windows.remove(&pane);
         let tab = &mut self.tabs.tabs[i];
         if matches!(tab.layout, Layout::Pane { .. }) {
             self.close_tab(i);
@@ -791,6 +932,12 @@ impl Core {
         }
         if !self.space_names().iter().any(|n| n == name) {
             return Err(not_found("space"));
+        }
+        // 外から開いた窓はスペースを出るときに閉じる(コンポジタの側で閉じられる)。開き直せないものはペインも消す
+        for (pane, _) in std::mem::take(&mut self.windows) {
+            if self.find_pane(pane).is_ok_and(|(_, l)| l.str("cmd").is_empty()) {
+                let _ = self.pane_close(pane);
+            }
         }
         let cur = std::mem::take(&mut self.tabs);
         self.others.insert(std::mem::replace(&mut self.space, name.to_string()), cur);

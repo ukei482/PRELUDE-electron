@@ -124,6 +124,9 @@ pub fn read_output(text: &str) -> Vec<String> {
     text.lines().map(str::trim).filter(|l| l.starts_with('/')).map(str::to_string).collect()
 }
 
+/// 選ぶ画面の環境変数の印。コンポジタの裏側が、親のある窓として浮かせるのに使う
+pub const DIALOG_ENV: &str = "PRELUDE_DIALOG=1";
+
 /// 選ぶ画面を動かして、選んだパスを返す。取り消しなら空。cancel が来たら止める
 pub async fn choose(cmd: &str, output: &Path, cancel: oneshot::Receiver<()>) -> std::io::Result<Vec<String>> {
     let _ = std::fs::remove_file(output);
@@ -133,6 +136,7 @@ pub async fn choose(cmd: &str, output: &Path, cancel: oneshot::Receiver<()>) -> 
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
+        .env("PRELUDE_DIALOG", "1")
         .kill_on_drop(true);
     c.process_group(0);
     let mut child = c.spawn()?;
