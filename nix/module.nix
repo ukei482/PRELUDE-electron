@@ -25,6 +25,10 @@ let
     # コアを sway と一緒に起動し、sway と一緒に止める
     exec ${swaySession}
 
+    # タイトルバーは出さない(ペインの題名はサイドバーに出る)。残したいときは sway.extraConfig で上書きする
+    default_border pixel 2
+    default_floating_border pixel 2
+
     # キー配列。sway は services.xserver.xkb を読まない
     input type:keyboard xkb_layout "${config.services.xserver.xkb.layout}"
     ${lib.optionalString (im.enable && im.type == "fcitx5") ''

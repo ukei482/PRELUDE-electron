@@ -35,6 +35,7 @@
 - NixOS へ移る準備: `flake.nix`(`nix develop` の開発環境)と `nix/configuration.nix`(最小の OS の設定)
   - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 
+- sway の断片でタイトルバーを出さないようにした(ペインの題名はサイドバーに出る)
 - GPUI の UI の NixOS のパッケージ(`nix/prelude-ui.nix`)。`services.prelude.ui.enable` で、sway と一緒にサイドバーが起動し、`$mod+d` が GPUI のランチャーになり、フォルダのペインとアプリのダイアログでファイラが使える
 
 ### 修正

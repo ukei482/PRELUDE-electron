@@ -23,6 +23,7 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 
 ### sway の断片
 - sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す
+- タイトルバーは出さない(`default_border pixel 2`)。`services.prelude.sway.extraConfig` で上書きできる
 - キー配列は `services.xserver.xkb.layout`、入力メソッドは `i18n.inputMethod` の fcitx5 を sway でも使う(sway はどちらも自分では読まない)
 - `$mod+d` でランチャー(`services.prelude.launcher`。既定は `prelude items | fuzzel --dmenu | prelude open`。GPUI のランチャーを入れたら `prelude-launcher` に替える)
 - タブ = 作業領域で、作業領域の名前はタブの番号。`$mod+数字`(sway の既定)でタブを切り替える
