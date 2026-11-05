@@ -57,6 +57,5 @@ waybar の例(タブの番号は `sway/workspaces` が出すので、PRELUDE の
 ほかのバー(eww・i3blocks など)は、`prelude watch --bar` の行をそのまま読むか、全部の状態が要るなら `prelude watch`(`state` のイベントの JSON)を読む。
 
 ## まだのもの
-- GPUI の UI(`ui/`。サイドバー・ランチャー・ファイラ)の Nix のパッケージ。GPUI は Zed のリポジトリを git で使うので、`cargoLock.outputHashes` が要る。手元でのビルドが重い(判断 9 の「nix-daemon のビルドには上限が効かない」)ので、GitHub Actions でビルドしてキャッシュで配るとき(段階 8)にまとめる
 - Hyprland の断片(裏側と一緒に)
 - コンポジタ自身のタブの見た目を隠す断片(sway はタブを使わないので要らない。Hyprland のグループのバー)

@@ -17,7 +17,7 @@
 - `theme/` — ロック画面(kscreenlocker のシェルのパッケージ)と SDDM のテーマ。QML。見た目は `theme/common/Prompt.qml` で共通。入れる/外すのは `scripts/theme.sh`
 - `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)、`portal.sh`(アプリのダイアログを PRELUDE にする/戻す)
 - `test/` — `npm test`(Node の `node:test`)。DOM・Electron なしで動く計算だけをテストする
-- `crates/` — Rust 版(`docs/redesign-rust.md`)。`cargo test`(Rust は `~/.cargo/bin`)
+- `crates/` — Rust 版(`docs/redesign-rust.md`)。`nix develop . -c cargo test`(`~/.cargo/bin` の cargo は既定のツールチェーンが無くて動かない)
   - `prelude-format`(`.prelude`・`space.toml`)。`test/fixtures/format/` は JS と Rust の両方のテストが読む
   - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`compositor.rs` が窓を並べる相手の差し替え口、`embed.rs` と `embed.js` が KWin の裏側(アプリの窓の取り込み)、`sway.rs` が sway・SwayFX の裏側、`recipes.rs` がペインのレシピ、`portal.rs` がアプリのダイアログのポータル)、`prelude-cli`(`prelude` コマンド)
   - 別のソケットで動かしたコアは、D-Bus の名前(`org.prelude.Core.d…`)と KWin スクリプトの名前に印が付き、ふだんのコア・Electron 版と取り合わない。窓を出さずに試すなら `--no-embed`
@@ -26,7 +26,13 @@
 - `ui/` — Rust 版の UI(GPUI。段階 4)。ルートとは別のワークスペース。`prelude-ui`(共通の見た目と部品。入力欄 `TextInput` も)・`prelude-sidebar`(サイドバー)・`prelude-launcher`(ランチャー)・`prelude-filer`(ファイラ。見せ方は `FilerView` のトレイト)。コアの `files`・`field` のペインは既定で `prelude-filer` を起動するので、試すときは `PATH` に `proto/gpui/target/debug` などを足す。ビルドは `cd ui && cargo build`(GPUI の初回のビルドは重い。`CARGO_TARGET_DIR=../proto/gpui/target` で試作のビルド結果を使い回せる)
 - `proto/gpui/` — GPUI の試作(段階 0)。ルートのワークスペースの外。ビルドには開発用のライブラリが要る(`docs/redesign-rust.md` の「GPUI の試作で分かったこと」)
 - `flake.nix`・`nix/` — NixOS へ移るための開発環境(`nix develop`)と OS の設定(判断 9)。`nix/prelude.nix` はコア・コマンドのパッケージ、`nix/module.nix` は NixOS のモジュール(`services.prelude`。コアのサービス・sway の断片・ダイアログ)。rice とのつなぎ方は `docs/rice.md`
-- `docs/release.md` — リリースと更新の詳しい手順
+- `docs/release.md` — リリースと更新の詳しい手順(Rust 版は `nixos-rebuild`、戻すのは世代)
+
+## sway のセッションで作業するとき
+Claude のアプリ自身が PRELUDE のペインとして動いていることがある(`echo $XDG_CURRENT_DESKTOP` が `sway`)。
+
+- ふだんのコア(`prelude-core.service`)を止めない。起動したアプリごと閉じ、Claude も閉じる。修正の試験は別のソケットのコアと 2 つ目のサイドバーで行う
+- 「直っていない」と言われたら、まず動いているコアのパスと世代を見る(`docs/release.md`)。反映はコアを再起動しない
 
 ## 開発版を試す
 シェルの PRELUDE は `~/.local/share/prelude/current`(リリース)を起動していて、作業フォルダの変更は届かない。
