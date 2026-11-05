@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
-const { instanceTag, CLOSE_FDS } = require('./util');
+const { instanceTag, CLOSE_FDS, BASH } = require('./util');
 
 const ROOT = path.join(__dirname, '..');
 const CLI_DIR = path.join(ROOT, 'cli');
@@ -44,8 +44,8 @@ function start(key, cols, rows) {
   };
   for (const k of ['PRELUDE_DEBUG', 'PRELUDE_EMBEDDED', 'ELECTRON_RUN_AS_NODE']) delete env[k];
   // Electron が開いたままのファイルを渡さないよう、bash で閉じてから動かす(sys/util.js の CLOSE_FDS)
-  const proc = spawn('/bin/bash', ['-c', `${CLOSE_FDS}; exec python3 -I "$0" "$@"`, path.join(__dirname, 'ptyhost.py'),
-    String(cols | 0 || 80), String(rows | 0 || 24), '/bin/bash', '--rcfile', path.join(CLI_DIR, 'bashrc'), '-i'],
+  const proc = spawn(BASH, ['-c', `${CLOSE_FDS}; exec python3 -I "$0" "$@"`, path.join(__dirname, 'ptyhost.py'),
+    String(cols | 0 || 80), String(rows | 0 || 24), BASH, '--rcfile', path.join(CLI_DIR, 'bashrc'), '-i'],
   { env, cwd: os.homedir(), stdio: ['pipe', 'pipe', 'ignore'] });
   const t = { proc };
   terms.set(key, t);

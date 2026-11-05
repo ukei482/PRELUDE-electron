@@ -14,6 +14,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # テストは Node の node:test だけを使い、DOM・Electron は要らない。
-      # npm ci は Electron 本体のダウンロードで遅くなるので省く(依存が要るテストを足したら npm ci を入れる)
+      # テストは Node の node:test だけを使い、DOM・Electron は要らない。依存(smol-toml)は要る。
+      # --ignore-scripts で Electron 本体のダウンロードは省く
+      - run: npm ci --ignore-scripts
       - run: npm test

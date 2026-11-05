@@ -1,5 +1,9 @@
 'use strict';
 const { execFile } = require('child_process');
+const xdg = require('./xdg');
+
+// bash の場所(NixOS には /bin/bash が無い)
+const BASH = xdg.which(['bash']) || '/bin/bash';
 
 // 外部コマンドを(シェルを通さず)実行する。失敗しても例外は出さず { ok:false } を返す
 const exec = (cmd, args = [], timeout = 4000) => new Promise((resolve) => {
@@ -21,6 +25,6 @@ const instanceTag = (() => {
 // bash で 0〜2 以外を閉じてから実行する(/bin/sh(dash)は2桁のファイル番号を扱えない)
 const CLOSE_FDS = 'for f in /proc/$$/fd/*; do n=${f##*/}; case $n in 0|1|2) ;; *) eval "exec $n>&-" 2>/dev/null ;; esac; done';
 // シェルのコマンド cmd を、余分なファイルを閉じてから /bin/sh で実行する spawn の引数 [実行ファイル, 引数]
-const cleanShell = (cmd) => ['/bin/bash', ['-c', `${CLOSE_FDS}; exec /bin/sh -c "$0"`, cmd]];
+const cleanShell = (cmd) => [BASH, ['-c', `${CLOSE_FDS}; exec /bin/sh -c "$0"`, cmd]];
 
-module.exports = { exec, instanceTag, CLOSE_FDS, cleanShell };
+module.exports = { exec, instanceTag, CLOSE_FDS, cleanShell, BASH };
