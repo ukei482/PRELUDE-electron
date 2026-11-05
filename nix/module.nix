@@ -7,11 +7,29 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.prelude;
+  im = config.i18n.inputMethod;
+  systemctl = "${config.systemd.package}/bin/systemctl";
+  # sway のセッションの始まりと終わり。セッションの環境(WAYLAND_DISPLAY・SWAYSOCK・PATH・入力メソッドなど)を systemd に渡し、
+  # 前のセッションのコアが残っていても入れ替わるように restart する。コアは SWAYSOCK を見て sway の裏側を使う。
+  # sway が終わったらコアを止め、SWAYSOCK を消す(user のサービスの環境はログアウトしても残り、Plasma のアプリにも渡ってしまう)
+  swaySession = pkgs.writeShellScript "prelude-sway-session" ''
+    ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all
+    ${systemctl} --user restart prelude-core.service
+    ${config.programs.sway.package}/bin/swaymsg -t subscribe '["shutdown"]' >/dev/null 2>&1
+    ${systemctl} --user stop prelude-core.service
+    ${systemctl} --user unset-environment SWAYSOCK I3SOCK
+  '';
   swayConf = ''
     # PRELUDE(services.prelude が置く。nix/module.nix)
-    # コアを sway と一緒に起動する。セッションの環境(WAYLAND_DISPLAY・SWAYSOCK・入力メソッドなど)を systemd に渡し、
-    # 前のセッションのコアが残っていても入れ替わるように restart する。コアは SWAYSOCK を見て sway の裏側を使う
-    exec ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all && systemctl --user restart prelude-core.service
+    # コアを sway と一緒に起動し、sway と一緒に止める
+    exec ${swaySession}
+
+    # キー配列。sway は services.xserver.xkb を読まない
+    input type:keyboard xkb_layout "${config.services.xserver.xkb.layout}"
+    ${lib.optionalString (im.enable && im.type == "fcitx5") ''
+
+      # 入力メソッド。sway は xdg の自動起動を動かさない
+      exec ${im.package}/bin/fcitx5 -d --replace''}
 
     # ランチャー
     bindsym --no-warn $mod+d exec ${cfg.launcher}
@@ -72,6 +90,12 @@ in
       description = "PRELUDE のコア";
       # ふだんは sway の断片が起動する。Plasma では Electron 版が動くので、ここでは起動しない
       partOf = [ "graphical-session.target" ];
+      # NixOS が既定で付ける PATH(coreutils など)を外し、セッションの PATH を受け継ぐ。
+      # コアが起動するアプリ・Chromium は PATH から探す
+      path = lib.mkForce [ ];
+      # 反映でコアを再起動しない。コアは止まるときに起動したアプリを閉じるので、sway の中の nixos-rebuild で作業が消えてしまう。
+      # 新しいコアは次の sway のセッションから動く
+      restartIfChanged = false;
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/prelude-core";
         Restart = "on-failure";
