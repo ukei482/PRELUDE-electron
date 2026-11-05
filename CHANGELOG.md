@@ -42,6 +42,8 @@
   - 最初の起動で Electron 版の設定を引き継ぐ: `~/.config/prelude/theme.toml`(色・文字の大きさ・サイドバーの幅)、`settings.toml`(検索・隠しファイル・スペースのフォルダ・ダウンロード)を作り、`~/ブックマーク/*.prelude` を `Main` にコピーする。既にあるファイルは上書きせず、元のファイルも変えない。無くなる設定は `migrated.txt` に出す
   - サイドバー・ランチャー・ファイラが `theme.toml` と `settings.toml` を読む
 
+- Rust 版の更新と戻し方を `docs/release.md` に書いた(`nixos-rebuild` と世代)
+
 ### 修正
 - sway のアプリの「開く」「保存」のダイアログが画面の下にはみ出し、確定のボタンに届かなかった。画面の 60%×70% で真ん中に出す
 - sway のセッションで、キーを押す前に開いたファイラ・ランチャーが落ちることがあった(sway が keymap を送る前に modifiers を送り、GPUI が unwrap していた)

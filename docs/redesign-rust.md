@@ -320,7 +320,8 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 7 | FileChooser のポータル(判断 5-a)。選ぶ画面はファイラの枠のもの | アプリのダイアログの最初のフォルダが paths になる |
 | | ↳ 済: `portal.rs`(`org.freedesktop.impl.portal.FileChooser`。`OpenFile`・`SaveFile`、`Request.Close`)。最初のフォルダは今のタブの paths の `open` / `save`。ただし `current_file`(保存し直し)を渡されたらそのフォルダ。選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる(既定は `prelude-filer --choose`、結果は `{output}` のファイル)。切り替えは `scripts/portal.sh on|off`。まだ: `filters`・`choices`、`SaveFiles`、D-Bus でのコアの自動起動 | |
 | 8 | 設定の引き継ぎ、配布と更新(判断 9 で flake と NixOS の世代に変わった)。Rust 版をリリースにし、Electron 版を消す | 切り替え |
-| | ↳ 済(8-a): 設定の引き継ぎ(`migrate.rs`)。最初の起動で `config.json` から `~/.config/prelude/theme.toml`・`settings.toml` を作り、`~/ブックマーク/*.prelude` を `Main` にコピーする。無くなる設定は `migrated.txt` に一覧にする。既にあるファイルは上書きせず、元のファイルは変えない。`prelude-format` の `config` をコアと UI が読む(色・文字の大きさ・サイドバーの幅・検索・隠しファイル・スペースのフォルダ・ダウンロード)。残り: 配布の仕上げ(8-b)、Electron 版と KWin の裏側を消す(8-c) | |
+| | ↳ 済(8-a): 設定の引き継ぎ(`migrate.rs`)。最初の起動で `config.json` から `~/.config/prelude/theme.toml`・`settings.toml` を作り、`~/ブックマーク/*.prelude` を `Main` にコピーする。無くなる設定は `migrated.txt` に一覧にする。既にあるファイルは上書きせず、元のファイルは変えない。`prelude-format` の `config` をコアと UI が読む(色・文字の大きさ・サイドバーの幅・検索・隠しファイル・スペースのフォルダ・ダウンロード)。残り: Electron 版と KWin の裏側を消す(8-c) | |
+| | ↳ 済(8-b): 配布と更新。`docs/release.md` の「Rust 版(NixOS)」。手元のコードから `nixos-rebuild` で入れ、戻すのは世代。リリースの添付・Nix のキャッシュは作らない(使う PC は 1 台で、UI のビルドも 10 分で済む)。2 台目に入れるときに見直す | |
 
 ### ソケットの約束(版 1。段階 2 で作ったもの)
 
@@ -420,7 +421,7 @@ PRELUDE の開発を止めても Ubuntu を使い続ける利点は薄いので�
 
 1. 今の Kubuntu のまま準備する: 決め打ちのパスを無くす(済)、この判断を書く(済)
 2. NixOS を別の区画か USB に入れて、上の「確かめること」を試す。`flake.nix`(Electron 版・Rust 版のパッケージ、`nix develop`)はここで作る(NixOS の上で確かめないと動くか分からないため)
-3. NixOS のモジュールを書き、シェルとして常用する。更新の仕組みを世代に置き換える
+3. NixOS のモジュールを書き、シェルとして常用する。更新の仕組みを世代に置き換える(済。2026-11-05)
 4. 移る。データ(`~/スペース`、Chromium のプロファイル)はホームごと持っていく。移る時期は段階 8(Electron 版を消す)に合わせるのが一番無理がない
 
 ---

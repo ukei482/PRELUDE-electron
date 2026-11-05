@@ -1,5 +1,39 @@
 # リリースと更新の手順
 
+## Rust 版(NixOS)
+
+Rust 版はこのリポジトリの flake と NixOS のモジュール(`services.prelude`)で入れる(`docs/redesign-rust.md` の判断 9)。タグもリリースの添付も要らない。各 PC で手元のコードからビルドする。
+
+```bash
+git pull
+sudo nixos-rebuild switch --flake ~/PRELUDE-electron#prelude --cores 2 --max-jobs 1
+```
+
+- **`Done.` と出るまで sway を抜けない。** 抜けると反映が止まる
+- `--cores 2 --max-jobs 1` は外さない。メモリ 7.6GB の PC で OOM になる。UI のビルドは 2 並列で 10 分ほど
+- 反映してもコアは再起動しない(止めると起動したアプリを閉じるため)。**新しいコアは次の sway のセッションから動く。** サイドバーも同じ。ランチャーとファイラは次に開いたときから新しくなる
+- 反映できているかは、次で確かめる
+
+  ```bash
+  nixos-rebuild list-generations | head -2
+  ```
+
+  ```bash
+  readlink /proc/$(pgrep -x prelude-core)/exe
+  ```
+
+- **戻す:** 起動の画面(GRUB)で前の世代を選ぶか、次のコマンドで前の世代へ戻す
+
+  ```bash
+  sudo nixos-rebuild switch --rollback
+  ```
+
+  設定(`~/.config/prelude`)と `~/スペース` は世代の外にあるので、戻しても変わらない
+- `ui/Cargo.lock` を変えたら、`nix/prelude-ui.nix` の `cargoHash` も取り直す(一度 `lib.fakeHash` にして `nix build '.#prelude-ui.cargoDeps'` を実行すると、正しい値がエラーに出る)
+- `nix/prelude-ui.nix` の `postPatch` は GPUI の不具合の直し。Zed のコミットを上げるときに、直っていれば外す
+
+## Electron 版
+
 デスクトップシェルとして常用する版（**安定版**）と、開発中の作業フォルダ（**開発版**）を分けて、
 更新で壊しても戻れるようにするための手順です。道具は `scripts/release.sh`（配置の管理）と
 `scripts/shell-mode.sh`（plasmashell との切替）、`scripts/shell-mode-test.sh`（実機テスト）です。
