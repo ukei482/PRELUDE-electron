@@ -5,14 +5,16 @@
 //! - [`server`] — ソケット(1 行 1 つの JSON)、状態の書き出し
 //! - [`portal`] — アプリの「開く」「保存」のダイアログ(xdg-desktop-portal の FileChooser のバックエンド)
 //! - [`web`] — Web のペイン(Chromium を CDP で動かす)
-//! - [`compositor`] — 窓を並べる相手(コンポジタ)の差し替え口。[`embed`] はその KWin の裏側(アプリの窓の取り込み)。[`recipes`] はペインのレシピ、[`apps`] はインストール済みのアプリ、[`procs`] は /proc、[`xdg`] はコマンド・データのフォルダの探し方
+//! - [`compositor`] — 窓を並べる相手(コンポジタ)の差し替え口。[`embed`] はその KWin の裏側(アプリの窓の取り込み)、[`sway`] は sway・SwayFX の裏側、[`launch`] は両方で使う起動と窓の見分け方。[`recipes`] はペインのレシピ、[`apps`] はインストール済みのアプリ、[`procs`] は /proc、[`xdg`] はコマンド・データのフォルダの探し方
 pub mod apps;
 pub mod compositor;
 pub mod embed;
+pub mod launch;
 pub mod portal;
 pub mod procs;
 pub mod recipes;
 pub mod server;
 pub mod state;
+pub mod sway;
 pub mod web;
 pub mod xdg;

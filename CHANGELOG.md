@@ -21,6 +21,14 @@
   - 最初のフォルダは今のタブの paths の `open` / `save`。保存し直しで今のファイルを渡されたときは、そのフォルダ
   - 選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる。既定は `prelude-filer --choose`(開く・複数を開く・フォルダ・保存)
 
+- Rust 版のコアの sway・SwayFX の裏側(移行の段階 3 の残り。判断 10〜12)。sway の中でコアを動かすと(`SWAYSOCK` で決まる。`PRELUDE_COMPOSITOR=sway` でも)、タブ 1 つが作業領域 1 つ、ペイン 1 つが窓 1 つになり、タブの分割の形と比率のとおりに sway が窓を並べる。ふだんの PRELUDE(Electron 版)は変わらない
+  - sway で作業領域・窓を選ぶと、コアの今のタブ・ペインもそれになる。コアでタブを切り替えると sway の作業領域が切り替わる
+  - 窓を閉じるとペインは止まったものになり、コアを止めると起動したアプリを閉じる。コアが落ちたときは、次の起動で窓の印だけを外す(窓は閉じない)
+  - 浮いた窓(ダイアログなど)は取り込まず、sway が浮かせたままにする
+  - NixOS の設定で SwayFX を入れ、SDDM で Plasma と選べるようにした(ランチャーの代わりの fuzzel も)
+- rice とつなぐ出口と設定の断片(移行の段階 6。`docs/rice.md`)。ふだんの PRELUDE(Electron 版)は変わらない
+  - `prelude watch --bar`: 状態が変わるたびに、スペースと今のタブの題名を 1 行の JSON で出す(waybar の custom モジュールでそのまま使える)。コアが止まっていても終わらず、つなぎ直す
+  - NixOS のモジュール `services.prelude`(`nix/module.nix`): コアとコマンド(`nix/prelude.nix`)・Chromium を入れ、コアを systemd の user サービスにする。sway の断片で、sway と一緒にコアを起動し、`$mod+d` でランチャーを開き、ダイアログを浮かせる。sway のセッションでは、アプリの「開く」「保存」を PRELUDE にする
 - NixOS へ移る準備: `flake.nix`(`nix develop` の開発環境)と `nix/configuration.nix`(最小の OS の設定)
   - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 

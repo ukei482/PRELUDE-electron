@@ -29,6 +29,8 @@ usage: prelude <command> [args]
   bookmarks              List bookmarks of this space
   paths [n]              Folders used by tab n (files, open, save, download, terminal)
   watch                  Print state events as JSON lines
+  watch --bar            One JSON line per change for a bar (waybar's custom module, return-type json).
+                         Keeps running and reconnects while prelude-core is not running
   raw <cmd> [args-json]  Send a command and print the result as JSON
 
 The core socket is $PRELUDE_CORE_SOCK or $XDG_RUNTIME_DIR/prelude/core.sock.";
@@ -169,6 +171,68 @@ fn print_panes(num: u32, l: &Value) {
     println!("{num:>3}  {:>4}  {:<8} {}{title}{state}", l["id"], l["type"].as_str().unwrap_or(""), short(what));
 }
 
+/// ペインの窓の題名(配置の木から id で探す)
+fn window_title(l: &Value, pane: u64) -> Option<&str> {
+    if l["k"] == "split" {
+        return window_title(&l["a"], pane).or_else(|| window_title(&l["b"], pane));
+    }
+    (l["id"].as_u64() == Some(pane)).then(|| l["window_title"].as_str()).flatten()
+}
+
+/// pango の文字(waybar は text・tooltip を pango のマークアップとして読む)
+fn pango(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// バーに出す 1 行。text は「スペース  今のタブの番号 題名」、tooltip はタブの一覧、class はつながっているか。
+/// waybar の custom モジュール(`"exec": "prelude watch --bar", "return-type": "json"`)がそのまま読める形
+fn bar_line(s: Option<&State>) -> Value {
+    let Some(s) = s else {
+        return json!({ "text": "", "tooltip": "prelude-core is not running", "class": "offline", "alt": "offline" });
+    };
+    let title = |t: &prelude_proto::TabInfo| {
+        let w = window_title(&t.layout, t.active_pane).filter(|w| !w.is_empty()).unwrap_or(&t.title);
+        let w: String = w.chars().take(60).collect();
+        pango(&w)
+    };
+    let active = s.tabs.iter().find(|t| Some(t.id) == s.active);
+    let text = match active {
+        Some(t) => format!("{}  {} {}", pango(&s.space), t.num, title(t)),
+        None => pango(&s.space),
+    };
+    let tooltip: Vec<String> =
+        s.tabs.iter().map(|t| format!("{} {:>2}  {}", if Some(t.id) == s.active { "*" } else { " " }, t.num, title(t))).collect();
+    json!({ "text": text, "tooltip": tooltip.join("\n"), "class": "online", "alt": s.space })
+}
+
+/// `watch --bar`: コアが動いていなければ空の行を出し、2 秒ごとにつなぎ直す。同じ行は続けて出さない
+fn watch_bar() -> Result<(), String> {
+    let mut last = String::new();
+    let mut emit = |v: Value| {
+        let l = v.to_string();
+        if l != last {
+            println!("{l}");
+            let _ = std::io::stdout().flush();
+            last = l;
+        }
+    };
+    loop {
+        if let Ok(mut c) = Conn::open(true) {
+            while let Ok(m) = c.read() {
+                if let Incoming::Event(e) = m {
+                    if e.event == "state" {
+                        if let Ok(s) = serde_json::from_value::<State>(e.data) {
+                            emit(bar_line(Some(&s)));
+                        }
+                    }
+                }
+            }
+        }
+        emit(bar_line(None));
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+}
+
 /// `place` で知らせた場所の控え(コアは場所を送り返さないので、続けて使えるように手元に置く)
 fn places_file() -> PathBuf {
     let mut p = prelude_proto::socket_path();
@@ -291,6 +355,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 println!("{k:<9} {}", short(v.as_str().unwrap_or_default()));
             }
         }
+        ["watch", "--bar"] => watch_bar()?,
         ["watch"] => {
             let mut c = Conn::open(true)?;
             loop {
@@ -317,5 +382,32 @@ fn main() {
     if let Err(e) = run(&args) {
         eprintln!("prelude: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn バーの行() {
+        let s: State = serde_json::from_value(json!({
+            "space": "仕事 & 家",
+            "space_dir": "/x",
+            "active": 8,
+            "tabs": [
+                { "id": 7, "num": 1, "title": "web", "bookmark": null, "active_pane": 1, "layout": { "k": "leaf", "id": 1, "type": "web" } },
+                { "id": 8, "num": 2, "title": "app", "bookmark": null, "active_pane": 3, "layout": {
+                    "k": "split", "dir": "row", "ratio": 0.5,
+                    "a": { "k": "leaf", "id": 2, "type": "app", "window_title": "a" },
+                    "b": { "k": "leaf", "id": 3, "type": "app", "window_title": "<b>" } } }
+            ]
+        }))
+        .unwrap();
+        let v = bar_line(Some(&s));
+        assert_eq!(v["text"], "仕事 &amp; 家  2 &lt;b&gt;");
+        assert_eq!(v["tooltip"], "   1  web\n*  2  &lt;b&gt;");
+        assert_eq!(v["class"], "online");
+        assert_eq!(bar_line(None)["class"], "offline");
     }
 }

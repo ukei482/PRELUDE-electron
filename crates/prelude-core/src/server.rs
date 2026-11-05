@@ -6,7 +6,7 @@
 use crate::compositor::{self, Compositor, Note};
 use crate::state::{Core, Saved};
 use crate::{portal, recipes, web};
-use prelude_proto::{Command, ErrorCode, Event, Hello, PaneSpec, Request, Response, WebAction, MAX_LINE, PROTOCOL, SUPPORTED};
+use prelude_proto::{Command, ErrorCode, Event, Hello, PaneSpec, Request, Response, TabRef, WebAction, MAX_LINE, PROTOCOL, SUPPORTED};
 use serde_json::{json, Value};
 use std::future::Future;
 use std::io;
@@ -177,6 +177,17 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                     Note::Claimed { pane } => {
                         if let Some(w) = &shared.web {
                             w.claimed(pane);
+                        }
+                    }
+                    Note::Focus { tab, pane } => {
+                        // コンポジタで選んだタブ・ペインを、コアの今のタブ・ペインにする
+                        let mut changed = core.handle(Command::TabActivate { tab: TabRef::Id { id: tab } }).changed;
+                        if let Some(pane) = pane {
+                            changed |= core.handle(Command::PaneFocus { pane }).changed;
+                        }
+                        if changed {
+                            shared.changed(core, true);
+                            shared.sync_embed(core);
                         }
                     }
                     Note::Web { pane, url, title } => {

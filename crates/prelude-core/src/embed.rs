@@ -7,7 +7,8 @@
 //! - 窓が無くなったペインは [`Note::Exited`] で知らせる(コアはペインを残して止まったものにする)
 //! - 終わるときは、起動したアプリに終了の合図を送り、閉じるのを少し待つ。落ちたときに備えて、取り込み中の窓の id をファイルに控え、次の起動で普通の窓に戻す
 use crate::compositor::{Compositor, Note, Scene, Want};
-use crate::{apps, procs};
+use crate::launch::{self, keys_of};
+use crate::procs;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -163,51 +164,6 @@ struct Windows {
     all: Vec<String>,
 }
 
-/// 起動を任せるだけのラッパー(窓の名前にならない)
-const WRAPPERS: [&str; 18] = [
-    "sh",
-    "bash",
-    "env",
-    "nohup",
-    "setsid",
-    "pkexec",
-    "sudo",
-    "lxqt-sudo",
-    "xdg-open",
-    "gtk-launch",
-    "kioclient",
-    "kioclient5",
-    "flatpak",
-    "snap",
-    "dbus-launch",
-    "x-terminal-emulator",
-    "exec",
-    "",
-];
-
-/// 起動したアプリの窓を見分ける名前(小文字)。.desktop の id・StartupWMClass・実行ファイル名
-fn keys_of(cmd: &str, cls: &str) -> Vec<String> {
-    if cls.starts_with("chrome-") {
-        return vec![cls.to_lowercase()]; // 実ブラウザのペインは、そのペイン専用のクラスだけで照合する
-    }
-    let mut keys: Vec<String> = Vec::new();
-    let mut add = |k: String| {
-        if !k.is_empty() && !keys.contains(&k) {
-            keys.push(k);
-        }
-    };
-    add(cls.to_lowercase());
-    if let Some(a) = apps::cached().into_iter().find(|a| a.exec == cmd.trim()) {
-        add(a.cls);
-        add(a.id.to_lowercase());
-    }
-    let base = procs::cmd_base(cmd);
-    if !WRAPPERS.contains(&base.as_str()) {
-        add(base);
-    }
-    keys
-}
-
 impl Embedder {
     async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Msg>) {
         let mut tick = tokio::time::interval(Duration::from_secs(1));
@@ -338,16 +294,7 @@ impl Embedder {
                 let _ = self.tx.send(m);
             }
         }
-        let cwd = if std::path::Path::new(&w.cwd).is_dir() { w.cwd.clone() } else { std::env::var("HOME").unwrap_or_else(|_| "/".into()) };
-        let mut cmd = tokio::process::Command::new("/bin/sh");
-        cmd.arg("-c")
-            .arg(&w.cmd)
-            .current_dir(&cwd)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        cmd.process_group(0); // PRELUDE の端末のシグナル(Ctrl+C など)を受けない
-        let mut child = match cmd.spawn() {
+        let mut child = match launch::spawn(&w.cmd, &w.cwd) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("prelude-core: cannot launch {} ({e})", w.cmd);

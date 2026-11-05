@@ -303,6 +303,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | | ↳ 済(3-b): Chromium の Web ペイン(`web.rs`)。上の「Web のペインの作り方(段階 3-b で分かったこと)」 | |
 | | ↳ 判断 10・11 で足したもの: 取り込みを `Compositor` のトレイトにする(裏側は KWin・sway(i3 の IPC)・Hyprland)。窓を重ねる形から、コンポジタに並べさせる形へ。ランチャーの候補 `prelude items`(fuzzel につないで使う) | |
 | | ↳ 済: `Compositor` のトレイト(`compositor.rs`)。コアは窓を出すペインとタブごとの配置の木(`Scene`)を渡す。裏側は環境から決め(`PRELUDE_COMPOSITOR` で指定もできる)、今あるのは KWin(`embed.rs`。木は使わず、場所に重ねる)だけ。残り: sway・Hyprland の裏側(NixOS で試すとき) | |
+| | ↳ 済: sway(SwayFX)の裏側(`sway.rs`。i3 の IPC)。タブ = 作業領域(`<番号>`、別のソケットのコアは `<番号>:prelude<印>`)、配置の木を sway の分割として組む(窓をいったん置き場に移し、分ける → 隣の印へ移す。フォーカスは動かさない)、比率は `resize set … ppt`。窓は起動したプロセス → 窓の名前の順で見分けて印(`_prelude<印>_<ペイン>`)を付ける。sway で選んだ作業領域・窓はコアの今のタブ・ペインになる(`Note::Focus`)。木はコアの木が変わったときだけ組み直す。浮いた窓は取り込まない。headless の sway で確かめた。残り: sway で手で動かした配置をコアの木に戻す、PRELUDE を通さずに開いた窓を今のタブのペインにする(判断 12)、Hyprland の裏側、日本語入力の確認(NixOS) | |
 | | ↳ 済: ランチャーの候補 `prelude items`(`item.list`・`item.open`)。タブが先、ブックマーク・アプリ・ほかのスペースは点数(最近 + よく使う。半減期 14 日。`core.json` の `history`)の順。`prelude items \| fuzzel --dmenu \| prelude open` で使う | |
 | 4 | ~~既定の UI(Slint)~~ → **サイドバーとランチャー(GPUI)**、共通の見た目と部品のクレート(`prelude-ui`)(判断 10・11) | Rust 版を日常で試せる |
 | | ↳ 済(4-a): `ui/` のワークスペース(GPUI。ルートとは別)、`prelude-ui`(色・書体・行など。Electron 版の見た目に合わせる)、サイドバー `prelude-sidebar`(layer-shell で左端。スペース・ブックマーク・タブ。コアのソケットだけでつながる)、`prelude-proto` の型付きのクライアント(`Client`。`prelude` コマンドも使う)。残り(4-b): GPUI のランチャー | |
@@ -312,6 +313,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | | ↳ 済(5-b): ファイルの操作(`ops.rs`。`fileops.js` の移植)。複数選択、コピー・切り取り・貼り付け(クリップボードはパスの文字。切り取りの印はペインごとのファイラの間で分け合う)、ゴミ箱(`gio trash`)・完全に消す(確かめてから)、名前の変更、新しいフォルダ。上書きはせず「名前 (1)」、フォルダを自分の中へは断る、別のドライブへの移動はコピーして消す。残り: フィールド表示(5-c) | |
 | | ↳ 5-c は後回し(判断 13)。カードをファイラに包含する形で作る。それまで `--view field` は一覧で出す | |
 | 6 | ~~システム(通知・トレイ・OSD・音量・クイック設定)= `sys/` の移植~~ → **rice に任せる**(判断 10)。PRELUDE は表示用の出口(`prelude watch` の JSON)と、NixOS のモジュールが出す設定の断片(キー・窓の決まり)を用意する | plasmashell が要らなくなる |
+| | ↳ 済: NixOS のモジュール(`nix/module.nix`。`services.prelude`)とコア・コマンドのパッケージ(`nix/prelude.nix`)。コアの systemd の user サービス、sway の断片(コアの起動・`$mod+d` のランチャー・ダイアログを浮かせる)、sway のセッションのダイアログのポータル。バーの出口 `prelude watch --bar`(waybar の custom モジュールの形)。つなぎ方は `docs/rice.md`。まだ: GPUI の UI のパッケージ(段階 8 の配布と一緒に)、Hyprland の断片 | |
 | 7 | FileChooser のポータル(判断 5-a)。選ぶ画面はファイラの枠のもの | アプリのダイアログの最初のフォルダが paths になる |
 | | ↳ 済: `portal.rs`(`org.freedesktop.impl.portal.FileChooser`。`OpenFile`・`SaveFile`、`Request.Close`)。最初のフォルダは今のタブの paths の `open` / `save`。ただし `current_file`(保存し直し)を渡されたらそのフォルダ。選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる(既定は `prelude-filer --choose`、結果は `{output}` のファイル)。切り替えは `scripts/portal.sh on|off`。まだ: `filters`・`choices`、`SaveFiles`、D-Bus でのコアの自動起動 | |
 | 8 | 設定の引き継ぎ、GitHub Actions でのビルドと配布、更新の仕組み(判断 8)。Rust 版をリリースにし、Electron 版を消す | 切り替え |
