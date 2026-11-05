@@ -5,6 +5,9 @@
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.config.allowUnfree = true; # Claude・Discord・Chrome など
 
+  # Claude のデスクトップアプリが取ってくる claude-code(普通の Linux 向けのバイナリ)を動かす
+  programs.nix-ld.enable = true;
+
   # 起動。Kubuntu と並べている間は、GRUB が両方を出す。
   # EFI 区画が 300MB しかないので、カーネルはルートの /boot に置く(systemd-boot は EFI 区画に置くので使わない)
   boot.loader.efi.canTouchEfiVariables = true;

@@ -1,6 +1,6 @@
 # PRELUDE の開発環境と、NixOS の設定(docs/redesign-rust.md の判断 9)。
 #   nix develop                               開発環境に入る(cargo・npm・GPUI のビルド)
-#   sudo nixos-rebuild switch --flake .#prelude   OS に反映する
+#   sudo nixos-rebuild switch --flake .#prelude   OS に反映する(/etc/nixos ではなく、いつもこのリポジトリから)
 {
   description = "PRELUDE";
 
