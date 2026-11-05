@@ -18,8 +18,13 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 | `/etc/sway/config.d/prelude.conf` | sway の設定の断片(下)。`services.prelude.sway.enable`(既定は `programs.sway.enable`) |
 | ダイアログ | sway のセッションだけ、アプリの「開く」「保存」を PRELUDE にする(`xdg.portal.config.sway`)。`services.prelude.portal.enable = false` で外す |
 
+### GPUI の UI
+`services.prelude.ui.enable = true` で、サイドバー・ランチャー・ファイラが入る。サイドバーを起動しないなら `services.prelude.ui.sidebar = false`。ランチャーは `services.prelude.launcher` で替えられる(fuzzel などのプログラムでよい)
+
 ### sway の断片
 - sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す
+- 鍵の保管庫は、ログインで開いた KWallet をそのまま使う(`pam_kwallet_init` を起動する)
+- タイトルバーは出さない(`default_border pixel 2`)。`services.prelude.sway.extraConfig` で上書きできる
 - キー配列は `services.xserver.xkb.layout`、入力メソッドは `i18n.inputMethod` の fcitx5 を sway でも使う(sway はどちらも自分では読まない)
 - `$mod+d` でランチャー(`services.prelude.launcher`。既定は `prelude items | fuzzel --dmenu | prelude open`。GPUI のランチャーを入れたら `prelude-launcher` に替える)
 - タブ = 作業領域で、作業領域の名前はタブの番号。`$mod+数字`(sway の既定)でタブを切り替える

@@ -35,7 +35,12 @@
 - NixOS へ移る準備: `flake.nix`(`nix develop` の開発環境)と `nix/configuration.nix`(最小の OS の設定)
   - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 
+- sway の断片でタイトルバーを出さないようにした(ペインの題名はサイドバーに出る)
+- GPUI の UI の NixOS のパッケージ(`nix/prelude-ui.nix`)。`services.prelude.ui.enable` で、sway と一緒にサイドバーが起動し、`$mod+d` が GPUI のランチャーになり、フォルダのペインとアプリのダイアログでファイラが使える
+
 ### 修正
+- sway のセッションで鍵の保管庫(`org.freedesktop.secrets`)が使えず、`gh`・git の認証などが失敗していた
+- sway でサイドバーのタブを押すと、画面は切り替わるのにコアの今のタブが前に戻ることがあった。切り替えの途中の sway の知らせを、使用者の操作と取り違えていた。今のタブを閉じたときに空の作業領域に残るのも同じ原因
 - sway のセッションで、ランチャーから開いたアプリ・Web のペインが開かなかった(コアのサービスの `PATH` が NixOS の既定のままだった)
 - sway のセッションで、キー配列が US になり、fcitx5 も起動しなかった。日本語入力に切り替えられなかった
 - sway の中で `nixos-rebuild switch` をすると、コアが再起動して起動したアプリが閉じていた。反映ではコアを再起動せず、新しいコアは次の sway のセッションから動く
