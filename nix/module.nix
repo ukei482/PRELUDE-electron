@@ -93,6 +93,9 @@ in
       # NixOS が既定で付ける PATH(coreutils など)を外し、セッションの PATH を受け継ぐ。
       # コアが起動するアプリ・Chromium は PATH から探す
       path = lib.mkForce [ ];
+      # 反映でコアを再起動しない。コアは止まるときに起動したアプリを閉じるので、sway の中の nixos-rebuild で作業が消えてしまう。
+      # 新しいコアは次の sway のセッションから動く
+      restartIfChanged = false;
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/prelude-core";
         Restart = "on-failure";
