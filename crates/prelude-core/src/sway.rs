@@ -353,6 +353,14 @@ pub fn ratio_cmds(t: &Tree, con: &impl Fn(u64) -> i64, sway: &Value) -> Vec<Stri
     out
 }
 
+/// 浮かせた選ぶ画面を、画面の中に収まる大きさで真ん中に置くコマンド
+pub fn dialog_cmds(con: i64) -> Vec<String> {
+    vec![
+        format!("[con_id={con}] resize set width 60 ppt height 70 ppt"),
+        format!("[con_id={con}] move position center"),
+    ]
+}
+
 /// sway のコマンドの文字列の引用
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
@@ -373,6 +381,8 @@ enum Msg {
     Foreign(i64, u32),
     /// 窓が動いた。sway の木を読んでコアの木に戻す
     Reconcile,
+    /// 選ぶ画面の大きさと場所を決める
+    Dialog(i64),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -512,6 +522,7 @@ impl Sway {
                     match m {
                         Msg::Foreign(con, tries) => self.foreign(con, tries).await,
                         Msg::Reconcile => self.reconcile().await,
+                        Msg::Dialog(con) => self.ipc.run(&dialog_cmds(con)).await,
                         Msg::Shutdown(done) => {
                             self.shutdown().await;
                             let _ = done.send(());
@@ -911,7 +922,10 @@ impl Sway {
                 match v["change"].as_str().unwrap_or("") {
                     "new" => {
                         if v["container"]["pid"].as_u64().is_some_and(|p| procs::has_env(p as u32, DIALOG_ENV)) {
+                            // タイルの大きさのまま浮くと画面からはみ出すので、大きさと場所も決める。
+                            // 窓が出た直後の resize は効かないので、少し待つ
                             self.ipc.run(&[format!("[con_id={id}] floating enable")]).await;
+                            self.later(Msg::Dialog(id), Duration::from_millis(300));
                             return;
                         }
                         self.claim().await;
@@ -1122,6 +1136,12 @@ mod tests {
         assert!(!looks_same(&row(P(1), P(2), 0.5), &col(P(1), P(2), 0.5)));
         assert!(!looks_same(&row(P(1), P(2), 0.5), &row(P(2), P(1), 0.5)));
         assert!(!looks_same(&row(P(1), P(2), 0.5), &P(1)));
+    }
+
+    #[test]
+    fn 選ぶ画面は真ん中に浮かせる() {
+        assert_eq!(dialog_cmds(7)[0], "[con_id=7] resize set width 60 ppt height 70 ppt");
+        assert_eq!(dialog_cmds(7).last().unwrap(), "[con_id=7] move position center");
     }
 
     #[test]
