@@ -36,6 +36,11 @@ let
       # 入力メソッド。sway は xdg の自動起動を動かさない
       exec ${im.package}/bin/fcitx5 -d --replace''}
 
+    ${lib.optionalString config.security.pam.services.login.kwallet.enable ''
+      # 鍵の保管庫(gh・ブラウザなどのログイン情報)。ログインで開いた KWallet に、セッションをつなぐ。
+      # Plasma では xdg の自動起動がしている。これが無いと org.freedesktop.secrets が現れない
+      exec ${pkgs.kdePackages.kwallet-pam}/libexec/pam_kwallet_init''}
+
     # ランチャー
     bindsym --no-warn $mod+d exec ${cfg.launcher}
     ${lib.optionalString (cfg.ui.enable && cfg.ui.sidebar) ''

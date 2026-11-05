@@ -23,6 +23,7 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 
 ### sway の断片
 - sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す
+- 鍵の保管庫は、ログインで開いた KWallet をそのまま使う(`pam_kwallet_init` を起動する)
 - タイトルバーは出さない(`default_border pixel 2`)。`services.prelude.sway.extraConfig` で上書きできる
 - キー配列は `services.xserver.xkb.layout`、入力メソッドは `i18n.inputMethod` の fcitx5 を sway でも使う(sway はどちらも自分では読まない)
 - `$mod+d` でランチャー(`services.prelude.launcher`。既定は `prelude items | fuzzel --dmenu | prelude open`。GPUI のランチャーを入れたら `prelude-launcher` に替える)
