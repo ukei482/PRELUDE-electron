@@ -70,7 +70,7 @@
 
       nixosConfigurations.prelude = nixpkgs.lib.nixosSystem {
         inherit system;
-        modules = [ self.nixosModules.default ./nix/configuration.nix ./nix/hardware-configuration.nix ];
+        modules = [ self.nixosModules.default ./nix/configuration.nix ./nix/rice.nix ./nix/hardware-configuration.nix ];
       };
     };
 }

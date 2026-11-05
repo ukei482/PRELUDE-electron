@@ -36,6 +36,7 @@
   - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 
 - sway の断片でタイトルバーを出さないようにした(ペインの題名はサイドバーに出る)
+- この PC の rice(`nix/rice.nix`): waybar(Electron 版の一番外側のバーと同じ見た目。`prelude watch --bar`・ネットワーク・電池・音量・トレイ・時計)と mako を入れ、sway の素のバーを隠す。タイトルバー・キー配列・fcitx5・鍵の保管庫の設定をモジュールから移した
 - GPUI の UI の NixOS のパッケージ(`nix/prelude-ui.nix`)。`services.prelude.ui.enable` で、sway と一緒にサイドバーが起動し、`$mod+d` が GPUI のランチャーになり、フォルダのペインとアプリのダイアログでファイラが使える
 
 - Rust 版の設定(移行の段階 8 の前半)。ふだんの PRELUDE(Electron 版)は変わらない

@@ -8,7 +8,6 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.prelude;
-  im = config.i18n.inputMethod;
   systemctl = "${config.systemd.package}/bin/systemctl";
   # sway のセッションの始まりと終わり。セッションの環境(WAYLAND_DISPLAY・SWAYSOCK・PATH・入力メソッドなど)を systemd に渡し、
   # 前のセッションのコアが残っていても入れ替わるように restart する。コアは SWAYSOCK を見て sway の裏側を使う。
@@ -24,22 +23,6 @@ let
     # PRELUDE(services.prelude が置く。nix/module.nix)
     # コアを sway と一緒に起動し、sway と一緒に止める
     exec ${swaySession}
-
-    # タイトルバーは出さない(ペインの題名はサイドバーに出る)。残したいときは sway.extraConfig で上書きする
-    default_border pixel 2
-    default_floating_border pixel 2
-
-    # キー配列。sway は services.xserver.xkb を読まない
-    input type:keyboard xkb_layout "${config.services.xserver.xkb.layout}"
-    ${lib.optionalString (im.enable && im.type == "fcitx5") ''
-
-      # 入力メソッド。sway は xdg の自動起動を動かさない
-      exec ${im.package}/bin/fcitx5 -d --replace''}
-
-    ${lib.optionalString config.security.pam.services.login.kwallet.enable ''
-      # 鍵の保管庫(gh・ブラウザなどのログイン情報)。ログインで開いた KWallet に、セッションをつなぐ。
-      # Plasma では xdg の自動起動がしている。これが無いと org.freedesktop.secrets が現れない
-      exec ${pkgs.kdePackages.kwallet-pam}/libexec/pam_kwallet_init''}
 
     # ランチャー
     bindsym --no-warn $mod+d exec ${cfg.launcher}
