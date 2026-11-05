@@ -34,6 +34,17 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [ clang cmake patchelf pkg-config rustPlatform.bindgenHook ];
   buildInputs = runtimeLibs;
   doCheck = false;
+  # sway は席のキーボードが決まる前の窓に、keymap を送らずに modifiers を送ることがある。GPUI はそこで unwrap して落ちるので、
+  # keymap が届くまで読み飛ばす(GPUI のコミットを上げるときに、直っていれば外す)
+  postPatch = ''
+    client=$cargoDepsCopy/source-git-0/gpui_linux-0.1.0/src/linux/wayland/client.rs
+    sed -i \
+      -e '/wl_keyboard::Event::Modifiers {/,/let old_layout =/ s/let keymap_state = state.keymap_state.as_mut().unwrap();/let Some(keymap_state) = state.keymap_state.as_mut() else { return };/' \
+      -e 's/let keymap_state = state.keymap_state.as_ref().unwrap();/let Some(keymap_state) = state.keymap_state.as_ref() else { return };/' \
+      "$client"
+    test "$(grep -c 'else { return };' "$client")" -ge 3
+    ! grep -q 'keymap_state.as_ref().unwrap()' "$client"
+  '';
   postFixup = ''
     for f in $out/bin/*; do
       patchelf --add-rpath ${lib.makeLibraryPath runtimeLibs} "$f"
