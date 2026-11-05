@@ -3,11 +3,16 @@
 //! - タブ 1 つ = 作業領域 1 つ(名前は `<タブの番号><印>`)、ペイン 1 つ = 窓 1 つ。配置の木([`Tree`])を sway の分割の木として組む
 //! - 起動はコアがする(どのプロセスの窓かを知るため)。窓が出たら、起動したプロセス・窓の名前・題名の印(Web のペイン)で見分けて
 //!   そのペインのものにし、sway の印(`_prelude<印>_<ペイン>`。`_` で始まる印は題名の帯に出ない)を付ける
-//! - 木はコアの木が変わったときだけ組み直す。sway の中で手で動かした窓をコアの木に戻すことはしない(使用者と取り合わない)
+//! - 木はコアの木が変わったときだけ組み直す。使用者が sway で動かした窓・変えた大きさは、sway の木を読んでコアの木に戻す
+//!   ([`Note::Layout`]。読むのは動かした知らせのときと 1 秒ごと。sway は大きさの変更を知らせない)。戻した木は組み直さない
 //! - 使用者が作業領域・窓を選んだら [`Note::Focus`] でコアに知らせる(コアの今のタブ・ペインが付いてくる)
 //! - 浮いた窓(ダイアログなど)は取り込まない。sway がそのまま浮かせる(判断 12)
+//! - PRELUDE を通さずに開いた普通の窓は、タブの作業領域に出たら、sway が置いた場所のままペインにする([`Note::Foreign`]。判断 12)。
+//!   タブでない作業領域の窓には触らない。少し待ってから決める(起動したペインの窓が遅れて見分けられることがある)
+//! - アプリのダイアログの選ぶ画面は親のある窓として扱い、すぐ浮かせる。どのプログラムでもよいように、起動の環境変数の印([`DIALOG_ENV`])で見分ける
 use crate::compositor::{Compositor, Note, Scene, TabScene, Tree, Want};
 use crate::launch::{self, keys_of};
+use crate::portal::DIALOG_ENV;
 use crate::procs;
 use prelude_format::Dir as FDir;
 use serde_json::Value;
@@ -109,6 +114,7 @@ pub struct View {
     pub marks: Vec<String>,
     pub workspace: String,
     pub floating: bool,
+    pub focused: bool,
 }
 
 /// 木の中の窓を全部(スクラッチパッドのものも)
@@ -126,6 +132,7 @@ pub fn views(tree: &Value) -> Vec<View> {
                 marks: n["marks"].as_array().map(|m| m.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
                 workspace: ws.to_string(),
                 floating,
+                focused: n["focused"] == true,
             });
         }
         for c in n["nodes"].as_array().into_iter().flatten() {
@@ -162,6 +169,77 @@ fn ancestors(tree: &Value, id: i64) -> Option<Vec<i64>> {
     })
 }
 
+/// 作業領域を全部(スクラッチパッドの `__i3_scratch` も入る)
+fn workspaces(tree: &Value) -> Vec<&Value> {
+    fn walk<'a>(n: &'a Value, out: &mut Vec<&'a Value>) {
+        if n["type"] == "workspace" {
+            out.push(n);
+        } else {
+            for c in n["nodes"].as_array().into_iter().flatten() {
+                walk(c, out);
+            }
+        }
+    }
+    let mut out = vec![];
+    walk(tree, &mut out);
+    out
+}
+
+/// 全画面の窓があるか(そのときの大きさは配置の比率ではない)
+fn has_fullscreen(n: &Value) -> bool {
+    (n["type"] == "con" && n["fullscreen_mode"].as_u64().unwrap_or(0) != 0)
+        || n["nodes"].as_array().into_iter().flatten().chain(n["floating_nodes"].as_array().into_iter().flatten()).any(has_fullscreen)
+}
+
+/// sway の容器 → 配置の木。pane_of が知らない窓は飛ばす。sway の分割は子がいくつでもあるので、右へ畳み込んで 2 つずつにする。
+/// 比率は `percent`(親の中の割合。隙間の分だけ合計が 1 より小さい)を、残りの子の合計で割ったもの
+pub fn read_tree(n: &Value, pane_of: &impl Fn(i64) -> Option<u64>) -> Option<Tree> {
+    let nodes = n["nodes"].as_array().filter(|a| !a.is_empty());
+    let Some(nodes) = nodes else { return n["id"].as_i64().and_then(pane_of).map(Tree::Pane) };
+    let layout = n["layout"].as_str().unwrap_or("");
+    let dir = if matches!(layout, "splitv" | "stacked") { FDir::Col } else { FDir::Row };
+    let equal = matches!(layout, "tabbed" | "stacked");
+    let kids: Vec<(Tree, f64)> = nodes
+        .iter()
+        .filter_map(|c| Some((read_tree(c, pane_of)?, if equal { 1.0 } else { c["percent"].as_f64().unwrap_or(1.0 / nodes.len() as f64) })))
+        .collect();
+    let mut it = kids.into_iter().rev();
+    let (mut t, mut sum) = it.next()?;
+    for (a, w) in it {
+        sum += w;
+        let ratio = if sum > 0.0 { ((w / sum) * 1000.0).round() / 1000.0 } else { 0.5 };
+        t = Tree::Split { dir, ratio, a: Box::new(a), b: Box::new(t) };
+    }
+    Some(t)
+}
+
+/// ペインの場所(全体を 1 とする)
+fn rects(t: &Tree, r: [f64; 4], out: &mut HashMap<u64, [f64; 4]>) {
+    let [x, y, w, h] = r;
+    match t {
+        Tree::Pane(p) => {
+            out.insert(*p, r);
+        }
+        Tree::Split { dir: FDir::Row, ratio, a, b } => {
+            rects(a, [x, y, w * ratio, h], out);
+            rects(b, [x + w * ratio, y, w * (1.0 - ratio), h], out);
+        }
+        Tree::Split { ratio, a, b, .. } => {
+            rects(a, [x, y, w, h * ratio], out);
+            rects(b, [x, y + h * ratio, w, h * (1.0 - ratio)], out);
+        }
+    }
+}
+
+/// 画面の上で同じ並びか。sway は同じ向きの分割をまとめることがあるので、木の形ではなくペインの場所を比べる。
+/// 比率を付けるときの丸めがあるので、少しの差は同じとみなす
+pub fn looks_same(x: &Tree, y: &Tree) -> bool {
+    let (mut a, mut b) = (HashMap::new(), HashMap::new());
+    rects(x, [0.0, 0.0, 1.0, 1.0], &mut a);
+    rects(y, [0.0, 0.0, 1.0, 1.0], &mut b);
+    a.len() == b.len() && a.iter().all(|(p, r)| b.get(p).is_some_and(|s| r.iter().zip(s).all(|(u, v)| (u - v).abs() < 0.03)))
+}
+
 // ------------------------------------------------------------------ 木を組むコマンド(計算だけ。テストする)
 
 /// タブの作業領域の名前。番号で始めるので、sway の `workspace number <n>` のキーがそのまま効く
@@ -171,6 +249,12 @@ pub fn ws_name(num: u32, tag: &str) -> String {
     } else {
         format!("{num}:prelude{tag}")
     }
+}
+
+/// 作業領域の名前 → タブの番号([`ws_name`] の逆)。タブにできない名前は None
+pub fn ws_num(name: &str, tag: &str) -> Option<u32> {
+    let n = if tag.is_empty() { name } else { name.strip_suffix(&format!(":prelude{tag}"))? };
+    n.parse().ok().filter(|n| *n > 0)
 }
 
 /// 窓のあるペインだけの木。片側が空の分割はもう片側だけになる
@@ -265,12 +349,19 @@ fn quote(s: &str) -> String {
 
 // ------------------------------------------------------------------ 裏側
 
+/// 窓が出てから、外から開いた窓と決めるまでの間。起動を動いているプロセスに任せたペインは、1.5 秒後に窓を借りる
+const FOREIGN_WAIT: Duration = Duration::from_secs(2);
+
 enum Msg {
     Arrange(Scene),
     Event(u32, Value),
     ShExited(u64, u32),
     /// 窓が閉じた後、少し待っても次の窓が無ければ終わったとみなす
     Gone(u64),
+    /// 出てきた窓をもう一度見て、どのペインのものでもなければペインにする。数は見直した回数
+    Foreign(i64, u32),
+    /// 窓が動いた。sway の木を読んでコアの木に戻す
+    Reconcile,
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -333,6 +424,9 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Hand
         panes: HashMap::new(),
         scene: Scene::default(),
         applied: HashMap::new(),
+        fresh: HashMap::new(),
+        loose: HashSet::new(),
+        asked: HashSet::new(),
         want_focus: (None, None),
         echoes: vec![],
         quiet_until: Instant::now(),
@@ -360,6 +454,8 @@ struct Pane {
     t0: Instant,
     had_window: bool,
     dead: u32,
+    /// PRELUDE を通さずに開いた窓のペイン。起動したものではないので、窓を探さない
+    foreign: bool,
 }
 
 struct Sway {
@@ -371,6 +467,12 @@ struct Sway {
     scene: Scene,
     /// タブごとの、最後に組んだ木(窓のあるペインだけ)
     applied: HashMap<u64, Tree>,
+    /// sway で作られた作業領域の木(タブの番号ごと)。コアがタブにしたら applied へ移す
+    fresh: HashMap<u32, Tree>,
+    /// 窓はあるが木に並んでいないペイン(使用者が浮かせた窓など)
+    loose: HashSet<u64>,
+    /// コアにペインにしてもらうのを待っている窓
+    asked: HashSet<i64>,
     /// 最後にコアが望んだ今のタブとペイン(変わったときだけ sway に合わせる)
     want_focus: (Option<u64>, Option<u64>),
     /// sway で選ばれてコアに知らせたもの。コアから同じものが返ってきたら、もう合わせない
@@ -397,6 +499,8 @@ impl Sway {
                 m = rx.recv() => {
                     let Some(m) = m else { break };
                     match m {
+                        Msg::Foreign(con, tries) => self.foreign(con, tries).await,
+                        Msg::Reconcile => self.reconcile().await,
                         Msg::Shutdown(done) => {
                             self.shutdown().await;
                             let _ = done.send(());
@@ -452,8 +556,13 @@ impl Sway {
             self.close_pane(id).await;
         }
         let mut known: Option<HashSet<i64>> = None;
+        let mut adopted = vec![];
         for w in &scene.panes {
             if self.panes.contains_key(&w.pane) {
+                continue;
+            }
+            if let Some(c) = w.window {
+                self.take_window(w.clone(), c, &mut adopted).await;
                 continue;
             }
             if w.marker.is_empty() && w.cmd.trim().is_empty() {
@@ -465,8 +574,139 @@ impl Sway {
             self.launch(w.clone(), known.clone().unwrap_or_default());
         }
         self.scene = scene;
+        // 今の sway の並びから作った木は、組み直さない
+        let con: HashMap<u64, i64> = self.panes.iter().filter_map(|(id, p)| Some((*id, p.con?))).collect();
+        let loose = self.loose.clone();
+        for t in &self.scene.tabs {
+            let shown = || prune(&t.tree, &|p| con.contains_key(&p) && !loose.contains(&p));
+            let fresh = self.fresh.remove(&t.num);
+            let mut l = vec![];
+            leaves(&t.tree, &mut l);
+            if adopted.iter().any(|p| l.contains(p)) || (fresh.is_some() && !self.applied.contains_key(&t.id)) {
+                if let Some(s) = shown() {
+                    self.applied.insert(t.id, s);
+                }
+            }
+        }
+        self.fresh.clear();
         self.claim().await;
         self.layout().await;
+    }
+
+    /// PRELUDE を通さずに開いた窓をペインにする。もう閉じていたら、コアに知らせる
+    async fn take_window(&mut self, w: Want, c: i64, adopted: &mut Vec<u64>) {
+        self.asked.remove(&c);
+        let id = w.pane;
+        let tree = self.ipc.tree().await;
+        let Some(v) = views(&tree).into_iter().find(|v| v.id == c) else {
+            let _ = self.notes.send(Note::Exited { pane: id, had_window: true });
+            return;
+        };
+        self.ipc.run(&[format!("[con_id={c}] mark --add {}", quote(&self.mark(id)))]).await;
+        let p = Pane {
+            keys: vec![],
+            want: w,
+            sh: None,
+            sh_pid: 0,
+            owned: HashSet::new(),
+            con: Some(c),
+            old: HashSet::new(),
+            adopt: false,
+            launched_at: 0.0,
+            t0: Instant::now(),
+            had_window: true,
+            dead: 0,
+            foreign: true,
+        };
+        self.panes.insert(id, p);
+        adopted.push(id);
+        let _ = self.notes.send(Note::Title { pane: id, title: v.title.chars().take(300).collect() });
+        let _ = self.notes.send(Note::Claimed { pane: id });
+    }
+
+    /// 出てきた窓がどのペインのものでもなければ、コアにペインにしてもらう
+    async fn foreign(&mut self, con: i64, tries: u32) {
+        self.claim().await;
+        self.layout().await;
+        if self.asked.contains(&con) || self.panes.values().any(|p| p.con == Some(con)) {
+            return;
+        }
+        let tree = self.ipc.tree().await;
+        let Some(v) = views(&tree).into_iter().find(|v| v.id == con).filter(|v| !v.floating) else { return };
+        // Web のペインの窓は、題名の印が付くまで見分けられない
+        let web_pending = self.panes.values().any(|p| !p.want.marker.is_empty() && p.con.is_none());
+        if web_pending && v.app.contains("chrom") && tries < 10 {
+            self.later(Msg::Foreign(con, tries + 1), Duration::from_secs(2));
+            return;
+        }
+        let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.tag) == v.workspace) else { return };
+        let mine: HashMap<i64, u64> = self.panes.iter().filter_map(|(id, p)| Some((p.con?, *id))).chain([(con, 0)]).collect();
+        let Some(ws) = workspaces(&tree).into_iter().find(|w| w["name"] == v.workspace.as_str()) else { return };
+        let Some(t) = read_tree(ws, &|c| mine.get(&c).copied()) else { return };
+        self.asked.insert(con);
+        let _ = self.notes.send(Note::Foreign { tab: tab.id, con, app: v.app, title: v.title, focused: v.focused, tree: t });
+    }
+
+    /// 少し後に自分へ知らせる
+    fn later(&self, m: Msg, d: Duration) {
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(d).await;
+            let _ = tx.send(m);
+        });
+    }
+
+    /// sway の今の並びを読み、組んだ木と違っていたら(使用者が動かした)コアの木に戻す
+    async fn reconcile(&mut self) {
+        let mine: HashMap<i64, u64> = self.panes.iter().filter_map(|(id, p)| Some((p.con?, *id))).collect();
+        // 窓が閉じたばかりのペインは、次の窓を待っている間(窓を作り直すアプリ)。今の木はまだ確かでない
+        if mine.is_empty() || self.panes.values().any(|p| p.con.is_none() && p.had_window) {
+            return;
+        }
+        let tree = self.ipc.tree().await;
+        let spaces = workspaces(&tree);
+        if spaces.iter().any(|w| has_fullscreen(w)) {
+            return;
+        }
+        let tmp = self.tmp_ws();
+        let mut read: HashMap<String, Tree> = spaces
+            .iter()
+            .filter_map(|w| {
+                let name = w["name"].as_str()?;
+                (name != tmp).then_some(())?;
+                Some((name.to_string(), read_tree(w, &|c| mine.get(&c).copied())?))
+            })
+            .collect();
+        let mut changes = vec![];
+        let mut placed = vec![];
+        for t in &self.scene.tabs {
+            let cur = read.remove(&ws_name(t.num, &self.tag));
+            if let Some(c) = &cur {
+                leaves(c, &mut placed);
+            }
+            match (&cur, self.applied.get(&t.id)) {
+                (None, None) => continue,
+                (Some(c), Some(a)) if looks_same(c, a) => continue,
+                _ => {}
+            }
+            match &cur {
+                Some(c) => self.applied.insert(t.id, c.clone()),
+                None => self.applied.remove(&t.id),
+            };
+            changes.push((t.num, cur));
+        }
+        // タブでない作業領域へ移した窓: 番号の作業領域なら新しいタブ、そうでなければ木に並んでいないものとして扱う
+        for (name, t) in read {
+            if let Some(num) = ws_num(&name, &self.tag) {
+                leaves(&t, &mut placed);
+                self.fresh.insert(num, t.clone());
+                changes.push((num, Some(t)));
+            }
+        }
+        self.loose = mine.values().copied().filter(|p| !placed.contains(p)).collect();
+        if !changes.is_empty() {
+            let _ = self.notes.send(Note::Layout(changes));
+        }
     }
 
     /// 起動する(Web のペインは窓を web.rs が作るので、待つだけ)
@@ -503,6 +743,7 @@ impl Sway {
             t0: Instant::now(),
             had_window: false,
             dead: 0,
+            foreign: false,
         };
         self.panes.insert(p.want.pane, p);
     }
@@ -523,14 +764,14 @@ impl Sway {
 
     /// まだ窓の無いペインに、出てきた窓を結び付ける
     async fn claim(&mut self) {
-        if self.panes.values().all(|p| p.con.is_some()) {
+        if self.panes.values().all(|p| p.con.is_some() || p.foreign) {
             return;
         }
         let tree = self.ipc.tree().await;
         let all = views(&tree);
         let mut taken: HashSet<i64> = self.panes.values().filter_map(|p| p.con).collect();
         // まだ窓の無いペインと、そのプロセス(起動した順)
-        let mut ids: Vec<u64> = self.panes.iter().filter(|(_, p)| p.con.is_none()).map(|(id, _)| *id).collect();
+        let mut ids: Vec<u64> = self.panes.iter().filter(|(_, p)| p.con.is_none() && !p.foreign).map(|(id, _)| *id).collect();
         ids.sort_unstable();
         let pids: HashMap<u64, HashSet<u32>> = ids
             .iter()
@@ -588,7 +829,8 @@ impl Sway {
 
     /// タブの木と、今のタブ・ペインを sway に合わせる
     async fn layout(&mut self) {
-        let con: HashMap<u64, i64> = self.panes.iter().filter_map(|(id, p)| Some((*id, p.con?))).collect();
+        let con: HashMap<u64, i64> =
+            self.panes.iter().filter(|(id, _)| !self.loose.contains(id)).filter_map(|(id, p)| Some((*id, p.con?))).collect();
         let tabs: Vec<TabScene> = self.scene.tabs.clone();
         let mut moved = false;
         for t in &tabs {
@@ -657,10 +899,23 @@ impl Sway {
                 let owner = self.panes.iter().find(|(_, p)| p.con == Some(id)).map(|(id, _)| *id);
                 match v["change"].as_str().unwrap_or("") {
                     "new" => {
+                        if v["container"]["pid"].as_u64().is_some_and(|p| procs::has_env(p as u32, DIALOG_ENV)) {
+                            self.ipc.run(&[format!("[con_id={id}] floating enable")]).await;
+                            return;
+                        }
                         self.claim().await;
                         self.layout().await;
+                        self.later(Msg::Foreign(id, 0), FOREIGN_WAIT);
+                    }
+                    "floating" | "move" => {
+                        // 浮いていた窓をタイルにしたときは、外から開いた窓と同じに扱う
+                        if owner.is_none() && v["change"] == "floating" {
+                            self.later(Msg::Foreign(id, 0), Duration::from_millis(100));
+                        }
+                        self.later(Msg::Reconcile, Duration::from_millis(200));
                     }
                     "close" => {
+                        self.asked.remove(&id);
                         if let Some(pane) = owner {
                             self.panes.get_mut(&pane).unwrap().con = None;
                             // すぐに次の窓を出すアプリ(窓の作り直し)に備えて、少し待つ
@@ -716,16 +971,17 @@ impl Sway {
     /// 1 秒ごと: 起動して 30 秒の間は窓を探し直す(プロセスが後から見つかることがある)。
     /// 窓が一度も出ないまま、20 秒たってプロセスも居なければ終わったとみなす
     async fn tick(&mut self) {
-        if self.panes.values().any(|p| p.con.is_none() && p.t0.elapsed() < Duration::from_secs(30)) {
+        if self.panes.values().any(|p| p.con.is_none() && !p.foreign && p.t0.elapsed() < Duration::from_secs(30)) {
             self.claim().await;
             self.layout().await;
         }
+        self.reconcile().await;
         let mut exited = vec![];
         let ids: Vec<u64> = self.panes.keys().copied().collect();
         for id in ids {
             let others = self.others_pids(id);
             let p = self.panes.get_mut(&id).unwrap();
-            if p.had_window || !p.want.marker.is_empty() || p.t0.elapsed() < Duration::from_secs(20) {
+            if p.had_window || p.foreign || !p.want.marker.is_empty() || p.t0.elapsed() < Duration::from_secs(20) {
                 continue;
             }
             let mut pids: Vec<u32> = p.sh.map(procs::descendants).unwrap_or_default();
@@ -764,6 +1020,14 @@ impl Sway {
 
     /// 終わる: 起動したアプリを閉じ、3 秒まで待つ。残ったものだけ強制終了する
     async fn shutdown(&mut self) {
+        // 外から開いた窓は PRELUDE のものではないので、印だけ外して残す
+        for (id, p) in self.panes.iter().filter(|(_, p)| p.foreign) {
+            if let Some(c) = p.con {
+                let cmd = format!("[con_id={c}] unmark {}", quote(&self.mark(*id)));
+                self.ipc.run(&[cmd]).await;
+            }
+        }
+        self.panes.retain(|_, p| !p.foreign);
         let mut pids: Vec<u32> = vec![];
         for p in self.panes.values() {
             pids.extend(p.sh.map(procs::descendants).unwrap_or_default());
@@ -794,6 +1058,56 @@ mod tests {
         Tree::Split { dir: FDir::Col, ratio, a: Box::new(a), b: Box::new(b) }
     }
     use Tree::Pane as P;
+
+    fn con(id: i64, percent: f64) -> Value {
+        json!({ "id": id, "type": "con", "pid": 1, "app_id": "foot", "name": "x", "percent": percent, "nodes": [], "floating_nodes": [] })
+    }
+    fn split(id: i64, layout: &str, percent: f64, nodes: Vec<Value>) -> Value {
+        json!({ "id": id, "type": "con", "layout": layout, "percent": percent, "nodes": nodes, "floating_nodes": [] })
+    }
+
+    #[test]
+    fn sway_の木を配置にする() {
+        // 実際の sway の形: 隙間の分だけ percent の合計は 1 より小さい
+        let ws = json!({ "id": 4, "type": "workspace", "layout": "splith", "percent": null, "floating_nodes": [], "nodes": [
+            con(5, 0.3), split(7, "splitv", 0.697, vec![con(6, 0.498), con(8, 0.497)])
+        ] });
+        let of = |c: i64| Some(c as u64);
+        assert_eq!(read_tree(&ws, &of), Some(row(P(5), col(P(6), P(8), 0.501), 0.301)));
+        // 知らない窓は飛ばす
+        assert_eq!(read_tree(&ws, &|c| (c != 5).then_some(c as u64)), Some(col(P(6), P(8), 0.501)));
+        assert_eq!(read_tree(&ws, &|_| None), None);
+        // 3 つ並びは右へ畳む
+        let ws = json!({ "id": 4, "type": "workspace", "layout": "splith", "floating_nodes": [], "nodes": [con(1, 0.25), con(2, 0.25), con(3, 0.5)] });
+        assert_eq!(read_tree(&ws, &of), Some(row(P(1), row(P(2), P(3), 0.333), 0.25)));
+        // タブの並びは大きさを持たない
+        let ws = json!({ "id": 4, "type": "workspace", "layout": "tabbed", "floating_nodes": [], "nodes": [con(1, 1.0), con(2, 0.0)] });
+        assert_eq!(read_tree(&ws, &of), Some(row(P(1), P(2), 0.5)));
+        // 空の作業領域
+        assert_eq!(read_tree(&json!({ "id": 4, "type": "workspace", "nodes": [] }), &|_| None), None);
+    }
+
+    #[test]
+    fn 画面の上の並びを比べる() {
+        // 木の形が違っても、同じ場所なら同じ
+        assert!(looks_same(&row(row(P(1), P(2), 0.5), P(3), 0.667), &row(P(1), row(P(2), P(3), 0.5), 0.333)));
+        // 少しの差は同じ
+        assert!(looks_same(&row(P(1), P(2), 0.6), &row(P(1), P(2), 0.61)));
+        assert!(!looks_same(&row(P(1), P(2), 0.6), &row(P(1), P(2), 0.4)));
+        assert!(!looks_same(&row(P(1), P(2), 0.5), &col(P(1), P(2), 0.5)));
+        assert!(!looks_same(&row(P(1), P(2), 0.5), &row(P(2), P(1), 0.5)));
+        assert!(!looks_same(&row(P(1), P(2), 0.5), &P(1)));
+    }
+
+    #[test]
+    fn 作業領域の名前からタブの番号() {
+        assert_eq!(ws_num("3", ""), Some(3));
+        assert_eq!(ws_num("3:prelude.d01", ".d01"), Some(3));
+        assert_eq!(ws_num("3", ".d01"), None);
+        assert_eq!(ws_num("mail", ""), None);
+        assert_eq!(ws_num("0", ""), None);
+        assert_eq!(ws_num("__i3_scratch", ""), None);
+    }
 
     #[test]
     fn 送る形() {

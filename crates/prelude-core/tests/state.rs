@@ -467,3 +467,131 @@ fn ファイラの枠_ペインのフォルダか_paths_の_files() {
     ok(&mut c, Command::PaneUpdate { pane: a, fields: f });
     assert!(c.wants()[0].cmd.ends_with("'/work/src'"));
 }
+
+// ------------------------------------------------------------------ コンポジタの並びを受け取る
+
+mod compositor_layout {
+    use super::*;
+    use prelude_core::compositor::Tree;
+    use prelude_format::Dir as FDir;
+
+    fn row(a: Tree, b: Tree, ratio: f64) -> Tree {
+        Tree::Split { dir: FDir::Row, ratio, a: Box::new(a), b: Box::new(b) }
+    }
+    use Tree::Pane as P;
+
+    fn app(cmd: &str) -> PaneSpec {
+        serde_json::from_value(json!({ "type": "app", "cmd": cmd })).unwrap()
+    }
+    fn open(c: &mut Core, cmd: &str) -> u64 {
+        c.handle(Command::TabOpen { pane: app(cmd), index: None }).reply.unwrap();
+        let s = c.state();
+        s.tabs.iter().find(|t| Some(t.id) == s.active).unwrap().active_pane
+    }
+    fn split(c: &mut Core, pane: u64, cmd: &str) -> u64 {
+        c.handle(Command::PaneSplit { pane, dir: Dir::Row, new: app(cmd) }).reply.unwrap().as_u64().unwrap()
+    }
+    fn core(name: &str) -> Core {
+        Core::new(HOME, spaces(&format!("compositor-{name}")), None)
+    }
+    fn tree_of(c: &Core, num: u32) -> Tree {
+        c.scene().tabs.iter().find(|t| t.num == num).unwrap().tree.clone()
+    }
+
+    #[test]
+    fn 手で動かした並びと比率を受け取る() {
+        let mut c = core("moved");
+        let a = open(&mut c, "a");
+        let b = split(&mut c, a, "b");
+        let moved = row(P(b), P(a), 0.3);
+        assert!(c.note_layout(&[(1, Some(moved.clone()))]));
+        assert_eq!(tree_of(&c, 1), moved);
+        // 同じなら変わらない
+        assert!(!c.note_layout(&[(1, Some(moved))]));
+        // 残す形にも入る
+        let s = serde_json::to_string(&c.saved()).unwrap();
+        assert!(s.contains("0.3"), "{s}");
+    }
+
+    #[test]
+    fn 窓の無いペインはタブに残す() {
+        let mut c = core("rest");
+        let a = open(&mut c, "a");
+        let b = split(&mut c, a, "b");
+        let d = split(&mut c, b, "d");
+        c.note_exited(d);
+        assert!(c.note_layout(&[(1, Some(row(P(b), P(a), 0.4)))]));
+        let want = row(row(P(b), P(a), 0.4), P(d), 0.7);
+        assert_eq!(tree_of(&c, 1), want);
+        assert!(c.state().tabs[0].layout.to_string().contains("stopped"));
+    }
+
+    #[test]
+    fn 別のタブへ移したペイン() {
+        let mut c = core("tabs");
+        let a = open(&mut c, "a");
+        let b = split(&mut c, a, "b");
+        c.handle(Command::PaneFocus { pane: b }).reply.unwrap();
+        let x = open(&mut c, "x");
+        // b をタブ 2 へ
+        assert!(c.note_layout(&[(1, Some(P(a))), (2, Some(row(P(x), P(b), 0.5)))]));
+        assert_eq!(tree_of(&c, 1), P(a));
+        assert_eq!(tree_of(&c, 2), row(P(x), P(b), 0.5));
+        let t1 = c.state().tabs.into_iter().find(|t| t.num == 1).unwrap();
+        assert_eq!(t1.active_pane, a);
+        // a もタブ 2 へ: タブ 1 は無くなる。今のタブは残る
+        assert!(c.note_layout(&[(1, None), (2, Some(row(row(P(x), P(b), 0.5), P(a), 0.6)))]));
+        assert_eq!(c.state().tabs.len(), 1);
+        // 新しい番号の作業領域へ移したらタブになる
+        assert!(c.note_layout(&[(2, Some(row(P(x), P(b), 0.5))), (7, Some(P(a)))]));
+        assert_eq!(tree_of(&c, 7), P(a));
+    }
+
+    #[test]
+    fn 外から開いた窓はペインになる() {
+        let mut c = core("foreign");
+        c.set_apps(|| {
+            vec![prelude_core::apps::App { name: "Okular".into(), exec: "okular".into(), cls: "".into(), id: "org.kde.okular".into() }]
+        });
+        let a = open(&mut c, "a");
+        let tab = c.state().active.unwrap();
+        // インストール済みのアプリ: 開き直せる
+        assert!(c.note_foreign(tab, 500, "org.kde.okular", "x.pdf", true, &row(P(a), P(0), 0.5)));
+        let s = c.state();
+        let okular = s.tabs[0].active_pane;
+        assert_ne!(okular, a);
+        assert_eq!(tree_of(&c, 1), row(P(a), P(okular), 0.5));
+        let w = c.wants().into_iter().find(|w| w.pane == okular).unwrap();
+        assert_eq!((w.window, w.cmd.as_str()), (Some(500), "okular"));
+        assert!(serde_json::to_string(&c.saved()).unwrap().contains("okular"));
+        // 開き直せない窓: タブにはいるが書かない
+        assert!(c.note_foreign(tab, 501, "foo", "題名", false, &row(row(P(a), P(okular), 0.5), P(0), 0.6)));
+        let t = &c.state().tabs[0];
+        assert_eq!(t.active_pane, okular);
+        let foo = c.wants().into_iter().find(|w| w.window == Some(501)).unwrap();
+        assert_eq!(foo.cmd, "");
+        assert!(t.title.contains("題名"));
+        assert!(!serde_json::to_string(&c.saved()).unwrap().contains("題名"));
+        // 閉じるとペインごと消える(止まったものにしない)
+        assert!(c.note_exited(foo.pane));
+        assert_eq!(tree_of(&c, 1), row(P(a), P(okular), 0.5));
+        assert!(c.note_exited(okular));
+        assert_eq!(tree_of(&c, 1), P(a));
+        // 知らないタブには入れない
+        assert!(!c.note_foreign(tab + 999, 502, "foo", "", false, &P(0)));
+    }
+
+    #[test]
+    fn スペースを出ると開き直せない窓は消える() {
+        let mut c = core("space");
+        let a = open(&mut c, "a");
+        let tab = c.state().active.unwrap();
+        c.note_foreign(tab, 500, "foo", "t", false, &row(P(a), P(0), 0.5));
+        let space = c.state().space;
+        c.handle(Command::SpaceCreate { name: "他".into() }).reply.unwrap();
+        c.handle(Command::SpaceSwitch { name: "他".into() }).reply.unwrap();
+        c.handle(Command::SpaceSwitch { name: space }).reply.unwrap();
+        assert_eq!(tree_of(&c, 1), P(a));
+        assert!(c.wants().iter().all(|w| w.window.is_none()));
+    }
+}

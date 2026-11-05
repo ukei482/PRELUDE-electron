@@ -165,7 +165,7 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                             eprintln!("prelude-core: no window found for pane {pane}");
                         }
                         if core.note_exited(pane) {
-                            shared.changed(core, false);
+                            shared.changed(core, true); // 外から開いた窓は、ペインごと無くなる
                             shared.sync_embed(core); // 止まった Web のペインを閉じる
                         }
                     }
@@ -186,6 +186,18 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                             changed |= core.handle(Command::PaneFocus { pane }).changed;
                         }
                         if changed {
+                            shared.changed(core, true);
+                            shared.sync_embed(core);
+                        }
+                    }
+                    Note::Foreign { tab, con, app, title, focused, tree } => {
+                        if core.note_foreign(tab, con, &app, &title, focused, &tree) {
+                            shared.changed(core, true);
+                            shared.sync_embed(core);
+                        }
+                    }
+                    Note::Layout(tabs) => {
+                        if core.note_layout(&tabs) {
                             shared.changed(core, true);
                             shared.sync_embed(core);
                         }
