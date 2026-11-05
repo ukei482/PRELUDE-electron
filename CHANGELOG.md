@@ -22,7 +22,7 @@
   - 選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる。既定は `prelude-filer --choose`(開く・複数を開く・フォルダ・保存)
 
 - NixOS へ移る準備: `flake.nix`(`nix develop` の開発環境)と `nix/configuration.nix`(最小の OS の設定)
-  - `nix/claude-desktop.nix`(Anthropic の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
+  - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 
 ### 変更
 - `/bin/bash` の決め打ちをやめて `PATH` から探すようにした(NixOS には無い。ホームの端末・音量の監視など)

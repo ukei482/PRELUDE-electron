@@ -30,7 +30,10 @@
       ];
     in
     {
-      packages.${system}.claude-desktop = pkgs.callPackage ./nix/claude-desktop.nix { };
+      packages.${system} = {
+        claude-desktop = pkgs.callPackage ./nix/claude-desktop.nix { };
+        open-pdf-studio = pkgs.callPackage ./nix/open-pdf-studio.nix { };
+      };
 
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [

@@ -49,6 +49,7 @@
 
   environment.systemPackages = with pkgs; [
     (callPackage ./claude-desktop.nix { })
+    (callPackage ./open-pdf-studio.nix { })
     chromium
     claude-code
     discord
@@ -61,7 +62,10 @@
     krita
     libreoffice
     mypaint
+    nodejs # Open PDF Studio の MCP(server.mjs)
     pcloud
+    poppler-utils # pdftoppm
+    python3
     rsync
     zed-editor
     zoom-us
