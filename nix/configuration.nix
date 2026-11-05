@@ -56,6 +56,7 @@
   };
   # PRELUDE のコア・コマンドと、sway の設定の断片・ダイアログ(nix/module.nix)
   services.prelude.enable = true;
+  services.prelude.ui.enable = true;
 
   environment.systemPackages = with pkgs; [
     (callPackage ./claude-desktop.nix { })

@@ -18,6 +18,9 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 | `/etc/sway/config.d/prelude.conf` | sway の設定の断片(下)。`services.prelude.sway.enable`(既定は `programs.sway.enable`) |
 | ダイアログ | sway のセッションだけ、アプリの「開く」「保存」を PRELUDE にする(`xdg.portal.config.sway`)。`services.prelude.portal.enable = false` で外す |
 
+### GPUI の UI
+`services.prelude.ui.enable = true` で、サイドバー・ランチャー・ファイラが入る。サイドバーを起動しないなら `services.prelude.ui.sidebar = false`。ランチャーは `services.prelude.launcher` で替えられる(fuzzel などのプログラムでよい)
+
 ### sway の断片
 - sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す
 - キー配列は `services.xserver.xkb.layout`、入力メソッドは `i18n.inputMethod` の fcitx5 を sway でも使う(sway はどちらも自分では読まない)
