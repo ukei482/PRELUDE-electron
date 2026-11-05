@@ -19,6 +19,7 @@
       rust = pkgs.rust-bin.stable."1.98.1".default.override { extensions = [ "clippy" "rustfmt" "rust-src" "rust-analyzer" ]; };
       rustPlatform = pkgs.makeRustPlatform { cargo = rust; rustc = rust; };
       prelude = pkgs.callPackage ./nix/prelude.nix { inherit rustPlatform; };
+      prelude-ui = pkgs.callPackage ./nix/prelude-ui.nix { inherit rustPlatform; };
       # GPUI が起動のときに読むライブラリ(リンクせずに開くものも含む)
       runtimeLibs = with pkgs; [
         fontconfig
@@ -33,7 +34,7 @@
     in
     {
       packages.${system} = {
-        inherit prelude;
+        inherit prelude prelude-ui;
         default = prelude;
         claude-desktop = pkgs.callPackage ./nix/claude-desktop.nix { };
         open-pdf-studio = pkgs.callPackage ./nix/open-pdf-studio.nix { };
@@ -64,6 +65,7 @@
       nixosModules.default = { pkgs, lib, ... }: {
         imports = [ ./nix/module.nix ];
         services.prelude.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.prelude;
+        services.prelude.ui.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.prelude-ui;
       };
 
       nixosConfigurations.prelude = nixpkgs.lib.nixosSystem {

@@ -27,6 +27,7 @@ use tokio::sync::{mpsc, oneshot};
 /// i3 の IPC の種類
 mod kind {
     pub const RUN_COMMAND: u32 = 0;
+    pub const GET_WORKSPACES: u32 = 1;
     pub const SUBSCRIBE: u32 = 2;
     pub const GET_TREE: u32 = 4;
     /// イベントは上の 1 ビットが立つ
@@ -82,6 +83,11 @@ impl Ipc {
     async fn tree(&mut self) -> Value {
         self.request(kind::GET_TREE, "").await.unwrap_or(Value::Null)
     }
+    /// 今選ばれている作業領域の名前
+    async fn focused_ws(&mut self) -> Option<String> {
+        let v = self.request(kind::GET_WORKSPACES, "").await.ok()?;
+        focused_name(&v)
+    }
     /// コマンドを送る(; でつないで 1 通にする)。失敗したものはログに出す
     async fn run(&mut self, cmds: &[String]) {
         if cmds.is_empty() {
@@ -99,6 +105,11 @@ impl Ipc {
             Err(e) => eprintln!("prelude-core: sway IPC failed ({e})"),
         }
     }
+}
+
+/// get_workspaces の返事から、選ばれている作業領域の名前
+fn focused_name(v: &Value) -> Option<String> {
+    v.as_array()?.iter().find(|w| w["focused"] == true)?["name"].as_str().map(str::to_string)
 }
 
 // ------------------------------------------------------------------ sway の木を読む
@@ -342,6 +353,14 @@ pub fn ratio_cmds(t: &Tree, con: &impl Fn(u64) -> i64, sway: &Value) -> Vec<Stri
     out
 }
 
+/// 浮かせた選ぶ画面を、画面の中に収まる大きさで真ん中に置くコマンド
+pub fn dialog_cmds(con: i64) -> Vec<String> {
+    vec![
+        format!("[con_id={con}] resize set width 60 ppt height 70 ppt"),
+        format!("[con_id={con}] move position center"),
+    ]
+}
+
 /// sway のコマンドの文字列の引用
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
@@ -362,6 +381,8 @@ enum Msg {
     Foreign(i64, u32),
     /// 窓が動いた。sway の木を読んでコアの木に戻す
     Reconcile,
+    /// 選ぶ画面の大きさと場所を決める
+    Dialog(i64),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -501,6 +522,7 @@ impl Sway {
                     match m {
                         Msg::Foreign(con, tries) => self.foreign(con, tries).await,
                         Msg::Reconcile => self.reconcile().await,
+                        Msg::Dialog(con) => self.ipc.run(&dialog_cmds(con)).await,
                         Msg::Shutdown(done) => {
                             self.shutdown().await;
                             let _ = done.send(());
@@ -900,7 +922,10 @@ impl Sway {
                 match v["change"].as_str().unwrap_or("") {
                     "new" => {
                         if v["container"]["pid"].as_u64().is_some_and(|p| procs::has_env(p as u32, DIALOG_ENV)) {
+                            // タイルの大きさのまま浮くと画面からはみ出すので、大きさと場所も決める。
+                            // 窓が出た直後の resize は効かないので、少し待つ
                             self.ipc.run(&[format!("[con_id={id}] floating enable")]).await;
+                            self.later(Msg::Dialog(id), Duration::from_millis(300));
                             return;
                         }
                         self.claim().await;
@@ -937,16 +962,27 @@ impl Sway {
                         if Instant::now() < self.quiet_until {
                             return;
                         }
-                        let Some(tab) = self.scene.tabs.iter().find(|t| {
-                            let mut l = vec![];
-                            leaves(&t.tree, &mut l);
-                            l.contains(&pane)
-                        }) else {
+                        let Some((tab, num)) = self
+                            .scene
+                            .tabs
+                            .iter()
+                            .find(|t| {
+                                let mut l = vec![];
+                                leaves(&t.tree, &mut l);
+                                l.contains(&pane)
+                            })
+                            .map(|t| (t.id, t.num))
+                        else {
                             return;
                         };
-                        if self.want_focus != (Some(tab.id), Some(pane)) {
-                            self.echoes.push((tab.id, Some(pane), Instant::now()));
-                            let _ = self.notes.send(Note::Focus { tab: tab.id, pane: Some(pane) });
+                        // サイドバーを押した後の切り替えの途中で、sway は元の窓を選び直して知らせてくる。
+                        // 今もその作業領域が選ばれているときだけ、使用者が選んだものとして扱う
+                        if self.ipc.focused_ws().await.as_deref() != Some(ws_name(num, &self.tag).as_str()) {
+                            return;
+                        }
+                        if self.want_focus != (Some(tab), Some(pane)) {
+                            self.echoes.push((tab, Some(pane), Instant::now()));
+                            let _ = self.notes.send(Note::Focus { tab, pane: Some(pane) });
                         }
                     }
                     _ => {}
@@ -956,11 +992,14 @@ impl Sway {
                 if v["change"] != "focus" || Instant::now() < self.quiet_until {
                     return;
                 }
-                let name = v["current"]["name"].as_str().unwrap_or("");
-                let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.tag) == name) else { return };
-                if self.want_focus.0 != Some(tab.id) {
-                    self.echoes.push((tab.id, None, Instant::now()));
-                    let _ = self.notes.send(Note::Focus { tab: tab.id, pane: None });
+                let name = v["current"]["name"].as_str().unwrap_or("").to_string();
+                let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.tag) == name).map(|t| t.id) else { return };
+                if self.ipc.focused_ws().await.as_deref() != Some(name.as_str()) {
+                    return;
+                }
+                if self.want_focus.0 != Some(tab) {
+                    self.echoes.push((tab, None, Instant::now()));
+                    let _ = self.notes.send(Note::Focus { tab, pane: None });
                 }
             }
             kind::EV_SHUTDOWN => eprintln!("prelude-core: sway is shutting down"),
@@ -1097,6 +1136,19 @@ mod tests {
         assert!(!looks_same(&row(P(1), P(2), 0.5), &col(P(1), P(2), 0.5)));
         assert!(!looks_same(&row(P(1), P(2), 0.5), &row(P(2), P(1), 0.5)));
         assert!(!looks_same(&row(P(1), P(2), 0.5), &P(1)));
+    }
+
+    #[test]
+    fn 選ぶ画面は真ん中に浮かせる() {
+        assert_eq!(dialog_cmds(7)[0], "[con_id=7] resize set width 60 ppt height 70 ppt");
+        assert_eq!(dialog_cmds(7).last().unwrap(), "[con_id=7] move position center");
+    }
+
+    #[test]
+    fn 選ばれている作業領域() {
+        let v = json!([{ "name": "1", "focused": false }, { "name": "3", "focused": true }]);
+        assert_eq!(focused_name(&v).as_deref(), Some("3"));
+        assert_eq!(focused_name(&json!([])), None);
     }
 
     #[test]

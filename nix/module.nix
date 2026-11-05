@@ -1,6 +1,7 @@
 # PRELUDE の NixOS モジュール(docs/redesign-rust.md の判断 6 の段階 6・判断 9)。
 # PRELUDE は自分の層(コア・コマンド・ダイアログ)だけを持ち、バー・通知などは rice に任せる。ここで出すのは、つなぐための断片:
 #   - コアの systemd の user サービス(prelude-core.service)
+#   - GPUI の UI(サイドバー・ランチャー・ファイラ)
 #   - sway の設定の断片(/etc/sway/config.d/prelude.conf): コアの起動・ランチャーのキー・窓の決まり
 #   - アプリのダイアログのポータル(sway のセッションだけ。Plasma のダイアログは変えない)
 # バーには `prelude watch --bar` をつなぐ(waybar の custom モジュール。docs/rice.md)
@@ -24,6 +25,10 @@ let
     # コアを sway と一緒に起動し、sway と一緒に止める
     exec ${swaySession}
 
+    # タイトルバーは出さない(ペインの題名はサイドバーに出る)。残したいときは sway.extraConfig で上書きする
+    default_border pixel 2
+    default_floating_border pixel 2
+
     # キー配列。sway は services.xserver.xkb を読まない
     input type:keyboard xkb_layout "${config.services.xserver.xkb.layout}"
     ${lib.optionalString (im.enable && im.type == "fcitx5") ''
@@ -31,8 +36,17 @@ let
       # 入力メソッド。sway は xdg の自動起動を動かさない
       exec ${im.package}/bin/fcitx5 -d --replace''}
 
+    ${lib.optionalString config.security.pam.services.login.kwallet.enable ''
+      # 鍵の保管庫(gh・ブラウザなどのログイン情報)。ログインで開いた KWallet に、セッションをつなぐ。
+      # Plasma では xdg の自動起動がしている。これが無いと org.freedesktop.secrets が現れない
+      exec ${pkgs.kdePackages.kwallet-pam}/libexec/pam_kwallet_init''}
+
     # ランチャー
     bindsym --no-warn $mod+d exec ${cfg.launcher}
+    ${lib.optionalString (cfg.ui.enable && cfg.ui.sidebar) ''
+
+      # サイドバー(画面の左端に貼り付く。コアが動いていなければ、つながるまで待つ)
+      exec ${cfg.ui.package}/bin/prelude-sidebar''}
 
     # PRELUDE のタブ = 作業領域(名前はタブの番号)。$mod+数字(sway の既定のキー)でタブを切り替える
 
@@ -56,9 +70,22 @@ in
 
     launcher = lib.mkOption {
       type = lib.types.str;
-      default = "prelude items | ${pkgs.fuzzel}/bin/fuzzel --dmenu | prelude open";
-      example = "prelude-launcher";
-      description = "$mod+d で開くランチャー。GPUI のランチャー(ui/prelude-launcher)を入れたら、それに替える";
+      default = if cfg.ui.enable then "prelude-launcher" else "prelude items | ${pkgs.fuzzel}/bin/fuzzel --dmenu | prelude open";
+      defaultText = lib.literalExpression ''"prelude-launcher"(UI を入れないときは fuzzel)'';
+      description = "$mod+d で開くランチャー";
+    };
+
+    ui = {
+      enable = lib.mkEnableOption "GPUI の UI(サイドバー・ランチャー・ファイラ)。ビルドが重い";
+      package = lib.mkOption {
+        type = lib.types.package;
+        description = "prelude-sidebar・prelude-launcher・prelude-filer の入ったパッケージ(flake の packages.prelude-ui)";
+      };
+      sidebar = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "sway と一緒にサイドバーを起動する。自分のバーだけで使うなら外す";
+      };
     };
 
     sway = {
@@ -84,7 +111,7 @@ in
 
   config = lib.mkIf cfg.enable {
     # Web のペインは Chromium そのもの(判断 3-b。無いときの扱いは作らない)
-    environment.systemPackages = [ cfg.package pkgs.chromium ];
+    environment.systemPackages = [ cfg.package pkgs.chromium ] ++ lib.optional cfg.ui.enable cfg.ui.package;
 
     systemd.user.services.prelude-core = {
       description = "PRELUDE のコア";
