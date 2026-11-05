@@ -358,7 +358,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | 動き(`behavior`) | `settings.toml`。Rust 版で無くなる設定(`chromiumSites` など)は `migrated.txt` に一覧にして知らせる |
 | ショートカット(`shortcuts`)・タブの開き方(`tabs`) | 引き継がない。キーはコンポジタが受ける(判断 12) |
 | 前回のタブ(`workspace*.json`) | 引き継がない(スペースのブックマークから開き直せる) |
-| Web のログイン | 今 Chromium の窓で使っている `prelude-profile` を、そのまま Rust 版の Chromium のプロファイルにする。**Electron 版の中でログインしていたサイトは、一度ログインし直す**(Electron から Chromium へログイン状態を移す確かな方法が無い) |
+| Web のログイン | 引き継がない。NixOS の Chromium は `~/.config/PRELUDE-electron/browser-profile` を使い、Kubuntu の snap 版の `prelude-profile` は移さない(Cookie は鍵で暗号化されていて、移しても残るとは限らない)。**足りないサイトは一度ログインし直す**(2026-11-05 決定) |
 | 元のファイル | 消さない。いつでも Electron 版に戻れる |
 
 ### 配布(判断 9 で置き換え)
