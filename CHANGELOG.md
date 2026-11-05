@@ -25,6 +25,7 @@
   - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 
 ### 変更
+- CI で `npm ci --ignore-scripts` を実行するようにした(0.12.0 の前から `smol-toml` が無くて失敗していた)
 - `/bin/bash` の決め打ちをやめて `PATH` から探すようにした(NixOS には無い。ホームの端末・音量の監視など)
 - フィールド表示のカードは、ファイラの本体が持つフォルダの木の見せ方にする設計にした(`docs/redesign-rust.md` の判断 13。実装は後回し)
 
