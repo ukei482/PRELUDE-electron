@@ -20,7 +20,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 /// サイドバーの幅(Electron 版の --sbw と同じ)
-const WIDTH: f32 = 220.;
 
 /// コアから受け取った今の様子
 #[derive(Clone)]
@@ -237,12 +236,13 @@ impl Render for Sidebar {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let mut window_mode = false;
-    let mut width = WIDTH;
+    let default_width = prelude_ui::THEME.sidebar_width;
+    let mut width = default_width;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--window" => window_mode = true,
-            "--width" => width = args.next().and_then(|w| w.parse().ok()).unwrap_or(WIDTH),
+            "--width" => width = args.next().and_then(|w| w.parse().ok()).unwrap_or(default_width),
             "-h" | "--help" => {
                 println!("usage: prelude-sidebar [--window] [--width PX]");
                 return;

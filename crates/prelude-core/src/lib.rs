@@ -10,6 +10,7 @@ pub mod apps;
 pub mod compositor;
 pub mod embed;
 pub mod launch;
+pub mod migrate;
 pub mod portal;
 pub mod procs;
 pub mod recipes;

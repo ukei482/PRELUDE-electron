@@ -319,7 +319,8 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | | ↳ 済: GPUI の UI のパッケージ(`nix/prelude-ui.nix`。`services.prelude.ui.enable`)。sway と一緒にサイドバーを起動し、`$mod+d` を `prelude-launcher` にし、`prelude-filer` を `PATH` に入れる。release のビルドは 2 並列で 10 分 16 秒、3 つの実行ファイルで 113MB、ピークでも空きメモリに余裕があった(`nix build '.#prelude-ui' --cores 2 --max-jobs 1`)。起動のときに開くライブラリは `LD_LIBRARY_PATH` ではなく rpath に入れる(ファイラから開くアプリに漏れるため) | |
 | 7 | FileChooser のポータル(判断 5-a)。選ぶ画面はファイラの枠のもの | アプリのダイアログの最初のフォルダが paths になる |
 | | ↳ 済: `portal.rs`(`org.freedesktop.impl.portal.FileChooser`。`OpenFile`・`SaveFile`、`Request.Close`)。最初のフォルダは今のタブの paths の `open` / `save`。ただし `current_file`(保存し直し)を渡されたらそのフォルダ。選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる(既定は `prelude-filer --choose`、結果は `{output}` のファイル)。切り替えは `scripts/portal.sh on|off`。まだ: `filters`・`choices`、`SaveFiles`、D-Bus でのコアの自動起動 | |
-| 8 | 設定の引き継ぎ、GitHub Actions でのビルドと配布、更新の仕組み(判断 8)。Rust 版をリリースにし、Electron 版を消す | 切り替え |
+| 8 | 設定の引き継ぎ、配布と更新(判断 9 で flake と NixOS の世代に変わった)。Rust 版をリリースにし、Electron 版を消す | 切り替え |
+| | ↳ 済(8-a): 設定の引き継ぎ(`migrate.rs`)。最初の起動で `config.json` から `~/.config/prelude/theme.toml`・`settings.toml` を作り、`~/ブックマーク/*.prelude` を `Main` にコピーする。無くなる設定は `migrated.txt` に一覧にする。既にあるファイルは上書きせず、元のファイルは変えない。`prelude-format` の `config` をコアと UI が読む(色・文字の大きさ・サイドバーの幅・検索・隠しファイル・スペースのフォルダ・ダウンロード)。残り: 配布の仕上げ(8-b)、Electron 版と KWin の裏側を消す(8-c) | |
 
 ### ソケットの約束(版 1。段階 2 で作ったもの)
 
@@ -353,15 +354,16 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | もの | 引き継ぎ方 |
 |---|---|
 | ブックマーク(`config.json` の `bookmarks`、`~/ブックマーク/*.prelude`) | `~/スペース/Main/` に 1 つずつ `.prelude` として書き出す(PR #66 と同じ)。サイドバーのフォルダは本物のフォルダにする |
-| 色・フォント(`appearance`) | `theme.toml` |
-| 動き・ショートカット(`behavior`・`tabs`・`shortcuts`) | 新しい設定ファイル。Rust 版で無くなる設定(`chromiumSites` など)は一覧にして知らせる |
+| 色・フォント(`appearance`) | `theme.toml`(壁紙は rice に任せるので引き継がない) |
+| 動き(`behavior`) | `settings.toml`。Rust 版で無くなる設定(`chromiumSites` など)は `migrated.txt` に一覧にして知らせる |
+| ショートカット(`shortcuts`)・タブの開き方(`tabs`) | 引き継がない。キーはコンポジタが受ける(判断 12) |
 | 前回のタブ(`workspace*.json`) | 引き継がない(スペースのブックマークから開き直せる) |
 | Web のログイン | 今 Chromium の窓で使っている `prelude-profile` を、そのまま Rust 版の Chromium のプロファイルにする。**Electron 版の中でログインしていたサイトは、一度ログインし直す**(Electron から Chromium へログイン状態を移す確かな方法が無い) |
 | 元のファイル | 消さない。いつでも Electron 版に戻れる |
 
-### 配布
-- **GitHub Actions でビルドし、タグのリリースに添付する**。各 PC の「アップデート」はそれをダウンロードするだけ(各 PC に Rust は要らない)
-- 今と同じく `release.sh switch` で前の版(Electron 版も含む)に戻せる
+### 配布(判断 9 で置き換え)
+- ~~GitHub Actions でビルドし、タグのリリースに添付する~~ → **このリポジトリの flake と NixOS のモジュール**(`services.prelude`)。`nixos-rebuild switch --flake` で入れる
+- ~~`release.sh switch` で戻す~~ → 前の版へは NixOS の世代で戻す
 
 ---
 

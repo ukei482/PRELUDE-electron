@@ -339,6 +339,8 @@ pub struct Core {
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
     titles: HashMap<u64, String>,
+    /// ダウンロードの保存先の既定(paths の download が無いとき)
+    download_dir: String,
     /// PRELUDE を通さずに開いた窓のペインと、その窓。残さない
     windows: HashMap<u64, i64>,
     /// 起動コマンドがインストール済みのアプリのものか(テストで差し替える)
@@ -373,6 +375,7 @@ impl Core {
             recipes: vec![],
             stopped: HashSet::new(),
             titles: HashMap::new(),
+            download_dir: String::new(),
             windows: HashMap::new(),
             installed: crate::apps::is_installed,
             tag: String::new(),
@@ -516,6 +519,10 @@ impl Core {
         self.installed = f;
     }
 
+    pub fn set_download_dir(&mut self, dir: String) {
+        self.download_dir = dir;
+    }
+
     pub fn set_tag(&mut self, tag: &str) {
         self.tag = tag.to_string();
     }
@@ -541,6 +548,7 @@ impl Core {
         }
         let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
         let dl = self.paths(active).get("download").and_then(Json::as_str).unwrap_or("").to_string();
+        let dl = if dl.is_empty() { self.download_dir.clone() } else { dl };
         (out, dl)
     }
 

@@ -30,7 +30,7 @@ rustPlatform.buildRustPackage {
   };
   cargoRoot = "ui";
   buildAndTestSubdir = "ui";
-  cargoHash = "sha256-2Psj0jCs0q23ihmC2xV/2/NlmZ0pG8YUPZt3Qy7DGSQ=";
+  cargoHash = "sha256-/okU+wOX2p/Yf7vbME5syDZ5Q4gvhLl30fd/ubb4lBg=";
   nativeBuildInputs = [ clang cmake patchelf pkg-config rustPlatform.bindgenHook ];
   buildInputs = runtimeLibs;
   doCheck = false;

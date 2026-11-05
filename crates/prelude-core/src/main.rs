@@ -3,10 +3,11 @@
 //! 使い方: `prelude-core [--socket <パス>] [--state <パス>] [--spaces <フォルダ>] [--recipes <フォルダ>] [--no-embed]`
 //! - ソケット: 既定は `$XDG_RUNTIME_DIR/prelude/core.sock`(環境変数 `PRELUDE_CORE_SOCK` でも変えられる)
 //! - 残す状態: 既定は `$XDG_STATE_HOME/prelude/core.json`(`PRELUDE_CORE_STATE`)
-//! - スペースのフォルダ: 既定は `~/スペース`(`PRELUDE_SPACES`)。Electron 版と同じフォルダを使う(判断 8)
+//! - スペースのフォルダ: `PRELUDE_SPACES`、`settings.toml` の `space_dir`、`~/スペース` の順。Electron 版と同じフォルダを使う(判断 8)
+//! - 最初の起動で Electron 版の設定を引き継ぐ(`migrate.rs`)。別のソケットで試しているコアでは動かさない
 //! - ペインのレシピ: 既定は `$XDG_CONFIG_HOME/prelude/panes`
 //! - `--no-embed`: アプリを起動せず、窓も取り込まない(状態だけを試す)
-use prelude_core::recipes;
+use prelude_core::{migrate, recipes};
 use prelude_core::server::{run, Options, VERSION};
 use std::path::PathBuf;
 
@@ -18,11 +19,27 @@ fn env_path(name: &str) -> Option<PathBuf> {
 
 fn main() {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    if env_path("PRELUDE_CORE_SOCK").is_none() {
+        match migrate::run(&migrate::Places::of(&home)) {
+            Ok(Some(_)) => eprintln!("prelude-core: migrated settings from the Electron version (see ~/.config/prelude/migrated.txt)"),
+            Ok(None) => {}
+            Err(e) => eprintln!("prelude-core: cannot migrate settings from the Electron version ({e})"),
+        }
+    }
+    let settings = prelude_format::config::Settings::load();
+    let expand = |p: &str| PathBuf::from(prelude_format::abs_path(p, &home, &home));
     let state_home = env_path("XDG_STATE_HOME").unwrap_or_else(|| PathBuf::from(&home).join(".local/state"));
     let mut opt = Options {
         socket: prelude_proto::socket_path(),
         state_file: env_path("PRELUDE_CORE_STATE").unwrap_or_else(|| state_home.join("prelude/core.json")),
-        spaces_root: env_path("PRELUDE_SPACES").unwrap_or_else(|| PathBuf::from(&home).join("スペース")),
+        spaces_root: env_path("PRELUDE_SPACES")
+            .or_else(|| (!settings.space_dir.is_empty()).then(|| expand(&settings.space_dir)))
+            .unwrap_or_else(|| PathBuf::from(&home).join("スペース")),
+        download_dir: if settings.download_dir.is_empty() {
+            String::new()
+        } else {
+            expand(&settings.download_dir).to_string_lossy().into_owned()
+        },
         recipes_dir: recipes::dir(),
         embed: true,
         home,

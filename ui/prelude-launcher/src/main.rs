@@ -317,7 +317,7 @@ fn main() {
     let engine = std::env::var("PRELUDE_SEARCH_ENGINE")
         .ok()
         .filter(|e| e.contains("%s"))
-        .unwrap_or_else(|| "https://www.google.com/search?q=%s".into());
+        .unwrap_or_else(|| prelude_ui::SETTINGS.search_engine.clone());
     // 候補は開く前に 1 回だけ取る(コアは同じ PC の上なので速い)
     let (items, state, error) =
         match Client::connect("prelude-launcher", false).and_then(|mut c| Ok((c.get::<Vec<Item>>("item.list", json!({}))?, c.state()?))) {

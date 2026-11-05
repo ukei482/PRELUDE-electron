@@ -716,7 +716,7 @@ fn main() {
             |window, cx| {
                 cx.new(|cx| {
                     let mut f = Filer {
-                        dir: DirState::default(),
+                        dir: DirState { show_hidden: prelude_ui::SETTINGS.show_hidden, ..DirState::default() },
                         view,
                         missing_view,
                         pane: None, // 最初のフォルダは知らせない(コアが渡したもの)

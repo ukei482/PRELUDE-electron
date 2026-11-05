@@ -29,6 +29,8 @@ pub struct Options {
     pub home: String,
     /// スペースのフォルダ(この下のフォルダ 1 つがスペース 1 つ)
     pub spaces_root: PathBuf,
+    /// ダウンロードの保存先の既定(paths の download が無いとき)。空なら Chromium の既定
+    pub download_dir: String,
     /// ペインのレシピのフォルダ
     pub recipes_dir: PathBuf,
     /// アプリの窓を取り込む(KDE のとき)。テストでは false
@@ -134,6 +136,7 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     let mut core = Core::new(opt.home.clone(), opt.spaces_root.clone(), load_saved(&opt.state_file));
     core.set_recipes(recipes::load(&opt.recipes_dir));
     core.set_tag(&tag);
+    core.set_download_dir(opt.download_dir.clone());
     let (events, _) = broadcast::channel(64);
     let (notes_tx, mut notes) = tokio::sync::mpsc::unbounded_channel();
     let compositor = if opt.embed { compositor::start(&tag, notes_tx.clone()).await } else { None };
