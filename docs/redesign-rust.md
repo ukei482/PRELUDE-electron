@@ -303,6 +303,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 | | ↳ 済(3-b): Chromium の Web ペイン(`web.rs`)。上の「Web のペインの作り方(段階 3-b で分かったこと)」 | |
 | | ↳ 判断 10・11 で足したもの: 取り込みを `Compositor` のトレイトにする(裏側は KWin・sway(i3 の IPC)・Hyprland)。窓を重ねる形から、コンポジタに並べさせる形へ。ランチャーの候補 `prelude items`(fuzzel につないで使う) | |
 | | ↳ 済: `Compositor` のトレイト(`compositor.rs`)。コアは窓を出すペインとタブごとの配置の木(`Scene`)を渡す。裏側は環境から決め(`PRELUDE_COMPOSITOR` で指定もできる)、今あるのは KWin(`embed.rs`。木は使わず、場所に重ねる)だけ。残り: sway・Hyprland の裏側(NixOS で試すとき) | |
+| | ↳ 済: sway(SwayFX)の裏側(`sway.rs`。i3 の IPC)。タブ = 作業領域(`<番号>`、別のソケットのコアは `<番号>:prelude<印>`)、配置の木を sway の分割として組む(窓をいったん置き場に移し、分ける → 隣の印へ移す。フォーカスは動かさない)、比率は `resize set … ppt`。窓は起動したプロセス → 窓の名前の順で見分けて印(`_prelude<印>_<ペイン>`)を付ける。sway で選んだ作業領域・窓はコアの今のタブ・ペインになる(`Note::Focus`)。木はコアの木が変わったときだけ組み直す。浮いた窓は取り込まない。headless の sway で確かめた。残り: sway で手で動かした配置をコアの木に戻す、PRELUDE を通さずに開いた窓を今のタブのペインにする(判断 12)、Hyprland の裏側、日本語入力の確認(NixOS) | |
 | | ↳ 済: ランチャーの候補 `prelude items`(`item.list`・`item.open`)。タブが先、ブックマーク・アプリ・ほかのスペースは点数(最近 + よく使う。半減期 14 日。`core.json` の `history`)の順。`prelude items \| fuzzel --dmenu \| prelude open` で使う | |
 | 4 | ~~既定の UI(Slint)~~ → **サイドバーとランチャー(GPUI)**、共通の見た目と部品のクレート(`prelude-ui`)(判断 10・11) | Rust 版を日常で試せる |
 | | ↳ 済(4-a): `ui/` のワークスペース(GPUI。ルートとは別)、`prelude-ui`(色・書体・行など。Electron 版の見た目に合わせる)、サイドバー `prelude-sidebar`(layer-shell で左端。スペース・ブックマーク・タブ。コアのソケットだけでつながる)、`prelude-proto` の型付きのクライアント(`Client`。`prelude` コマンドも使う)。残り(4-b): GPUI のランチャー | |

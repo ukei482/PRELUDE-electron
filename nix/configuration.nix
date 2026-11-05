@@ -47,12 +47,21 @@
   services.displayManager.sddm.enable = true;
   services.displayManager.sddm.wayland.enable = true;
 
+  # SwayFX(判断 11 の第一候補。sway + 角丸・ぼかし・影)。SDDM のセッションで Plasma と選べる。
+  # sway の中で動かした prelude-core は SWAYSOCK を見て sway の裏側(crates/prelude-core/src/sway.rs)を使う
+  programs.sway = {
+    enable = true;
+    package = pkgs.swayfx;
+    wrapperFeatures.gtk = true;
+  };
+
   environment.systemPackages = with pkgs; [
     (callPackage ./claude-desktop.nix { })
     (callPackage ./open-pdf-studio.nix { })
     chromium
     claude-code
     discord
+    fuzzel # ランチャーの代わり(prelude items | fuzzel --dmenu | prelude open)
     gh
     git
     google-chrome

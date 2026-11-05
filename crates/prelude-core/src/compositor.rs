@@ -60,6 +60,8 @@ pub enum Note {
     Title { pane: u64, title: String },
     /// ペインの窓を取り込んだ
     Claimed { pane: u64 },
+    /// 使用者がコンポジタでタブ(作業領域)・ペイン(窓)を選んだ。pane が無ければタブだけ
+    Focus { tab: u64, pane: Option<u64> },
     /// Web のペインの今の URL と題名(web.rs から)
     Web { pane: u64, url: String, title: String },
     /// Web のペインから新しいタブで開くリンク(web.rs から)
@@ -129,12 +131,13 @@ pub fn detect_from(get: impl Fn(&str) -> Option<String>) -> Option<Kind> {
 /// 裏側を始める。tag はこのコアの印(別のソケットで動かすコアと取り合わないように)。使えなければ None(ペインに窓は出ない)
 pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Box<dyn Compositor>> {
     let Some(kind) = detect() else {
-        eprintln!("prelude-core: no supported compositor (KDE Plasma on Wayland). Panes will not show windows");
+        eprintln!("prelude-core: no supported compositor (KDE Plasma on Wayland or sway). Panes will not show windows");
         return None;
     };
     match kind {
         Kind::Kwin => crate::embed::start(tag, notes).await.map(|h| Box::new(h) as Box<dyn Compositor>),
-        Kind::Sway | Kind::Hyprland => {
+        Kind::Sway => crate::sway::start(tag, notes).await.map(|h| Box::new(h) as Box<dyn Compositor>),
+        Kind::Hyprland => {
             eprintln!("prelude-core: the {} backend is not written yet. Panes will not show windows", kind.name());
             None
         }
