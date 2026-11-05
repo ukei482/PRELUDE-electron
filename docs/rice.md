@@ -23,9 +23,6 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 
 ### sway の断片
 - sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す
-- 鍵の保管庫は、ログインで開いた KWallet をそのまま使う(`pam_kwallet_init` を起動する)
-- タイトルバーは出さない(`default_border pixel 2`)。`services.prelude.sway.extraConfig` で上書きできる
-- キー配列は `services.xserver.xkb.layout`、入力メソッドは `i18n.inputMethod` の fcitx5 を sway でも使う(sway はどちらも自分では読まない)
 - `$mod+d` でランチャー(`services.prelude.launcher`。既定は `prelude items | fuzzel --dmenu | prelude open`。GPUI のランチャーを入れたら `prelude-launcher` に替える)
 - タブ = 作業領域で、作業領域の名前はタブの番号。`$mod+数字`(sway の既定)でタブを切り替える
 - 親のある窓(ダイアログ・ポップアップ)は浮かせる(判断 12)。足したい決まりは `services.prelude.sway.extraConfig`
@@ -55,6 +52,13 @@ waybar の例(タブの番号は `sway/workspaces` が出すので、PRELUDE の
 ```
 
 ほかのバー(eww・i3blocks など)は、`prelude watch --bar` の行をそのまま読むか、全部の状態が要るなら `prelude watch`(`state` のイベントの JSON)を読む。
+
+## この PC の rice(`nix/rice.nix`)
+PRELUDE の外にある好みの部分は、モジュールではなく `nix/rice.nix` に置く。ほかの PC では丸ごと替えてよい。
+
+- バーは waybar(`nix/rice/waybar.css`。色は `theme.toml` と手で合わせる)、通知は mako
+- タイトルバーを出さない、sway の素のバーを隠す、キー配列、fcitx5、鍵の保管庫(`pam_kwallet_init`)
+- **分割は sway の機能を使う:** `$mod+b`(次の窓を右へ)・`$mod+v`(次の窓を下へ)の後に開いた窓は、その場所のペインになり、配置はコアに戻る
 
 ## まだのもの
 - GPUI の UI(`ui/`。サイドバー・ランチャー・ファイラ)の Nix のパッケージ。GPUI は Zed のリポジトリを git で使うので、`cargoLock.outputHashes` が要る。手元でのビルドが重い(判断 9 の「nix-daemon のビルドには上限が効かない」)ので、GitHub Actions でビルドしてキャッシュで配るとき(段階 8)にまとめる

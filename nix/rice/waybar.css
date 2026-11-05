@@ -1,0 +1,40 @@
+/* Electron 版の一番外側のバーと同じ見た目: accent の地に bg の文字。色は ~/.config/prelude/theme.toml と合わせる */
+* {
+  font-family: "VCR OSD Mono", "DotGothic16", "Noto Sans CJK JP", sans-serif;
+  font-size: 13px;
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+}
+
+window#waybar {
+  background: #ffe6c2;
+  color: #524832;
+}
+
+#custom-prelude {
+  padding: 0 26px;
+}
+
+#custom-prelude.offline {
+  color: #ff8080;
+}
+
+#network,
+#battery,
+#pulseaudio,
+#tray,
+#clock {
+  padding: 0 4px;
+}
+
+#clock {
+  margin-right: 22px;
+}
+
+/* 少ないとき・つながっていないときは反転して目立たせる */
+#battery.warning:not(.charging),
+#network.disconnected {
+  background: #524832;
+  color: #ffe6c2;
+}
