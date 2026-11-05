@@ -1,7 +1,7 @@
 # PRELUDE の NixOS モジュール(docs/redesign-rust.md の判断 6 の段階 6・判断 9)。
 # PRELUDE は自分の層(コア・コマンド・ダイアログ)だけを持ち、バー・通知などは rice に任せる。ここで出すのは、つなぐための断片:
 #   - コアの systemd の user サービス(prelude-core.service)
-#   - GPUI の UI(サイドバー・ランチャー・ファイラ)
+#   - GPUI の UI(サイドバー・ランチャー・ファイラ・設定)
 #   - sway の設定の断片(/etc/sway/config.d/prelude.conf): コアの起動・ランチャーのキー・窓の決まり
 #   - アプリのダイアログのポータル(sway のセッションだけ。Plasma のダイアログは変えない)
 # バーには `prelude watch --bar` をつなぐ(waybar の custom モジュール。docs/rice.md)
@@ -28,8 +28,9 @@ let
     bindsym --no-warn $mod+d exec ${cfg.launcher}
     ${lib.optionalString (cfg.ui.enable && cfg.ui.sidebar) ''
 
-      # サイドバー(画面の左端に貼り付く。コアが動いていなければ、つながるまで待つ)
-      exec ${cfg.ui.package}/bin/prelude-sidebar''}
+      # サイドバー(画面の左端に貼り付く。コアが動いていなければ、つながるまで待つ)。
+      # sway は層の窓に、作られた順に場所を割り当てる。rice のバーより後に起動して、バーがサイドバーの外側に来るようにする
+      exec sh -c "sleep 1.5; exec ${cfg.ui.package}/bin/prelude-sidebar"''}
 
     # PRELUDE のタブ = 作業領域(名前はタブの番号)。$mod+数字(sway の既定のキー)でタブを切り替える
 
@@ -62,7 +63,7 @@ in
       enable = lib.mkEnableOption "GPUI の UI(サイドバー・ランチャー・ファイラ)。ビルドが重い";
       package = lib.mkOption {
         type = lib.types.package;
-        description = "prelude-sidebar・prelude-launcher・prelude-filer の入ったパッケージ(flake の packages.prelude-ui)";
+        description = "prelude-sidebar・prelude-launcher・prelude-filer・prelude-settings の入ったパッケージ(flake の packages.prelude-ui)";
       };
       sidebar = lib.mkOption {
         type = lib.types.bool;

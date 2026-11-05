@@ -31,6 +31,8 @@ usage: prelude <command> [args]
   watch                  Print state events as JSON lines
   watch --bar            One JSON line per change for a bar (waybar's custom module, return-type json).
                          Keeps running and reconnects while prelude-core is not running
+  sidebar [show|hide|toggle|restart]  Show or hide the sidebar (default: toggle)
+  shell                  Type these commands one after another (the PRELUDE CLI)
   raw <cmd> [args-json]  Send a command and print the result as JSON
 
 The core socket is $PRELUDE_CORE_SOCK or $XDG_RUNTIME_DIR/prelude/core.sock.";
@@ -246,9 +248,126 @@ fn save_places(v: &[Value]) {
     let _ = std::fs::write(places_file(), serde_json::to_string(v).unwrap_or_default());
 }
 
+/// 動いているサイドバーのプロセス
+fn sidebar_pids() -> Vec<i32> {
+    let Ok(rd) = std::fs::read_dir("/proc") else { return vec![] };
+    rd.flatten()
+        .filter_map(|e| {
+            let pid = e.file_name().to_str()?.parse::<i32>().ok()?;
+            let comm = std::fs::read_to_string(e.path().join("comm")).ok()?;
+            (comm.trim() == "prelude-sidebar").then_some(pid)
+        })
+        .collect()
+}
+
+fn sidebar_stop(pids: &[i32]) {
+    for p in pids {
+        let _ = std::process::Command::new("kill").arg(p.to_string()).status();
+    }
+}
+
+/// サイドバーを起動する。この `prelude` が終わっても動き続ける
+fn sidebar_start() -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+    Command::new("prelude-sidebar")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("cannot start prelude-sidebar ({e})"))
+}
+
+fn sidebar(what: &str) -> Result<(), String> {
+    let pids = sidebar_pids();
+    match what {
+        "show" if pids.is_empty() => sidebar_start(),
+        "show" => Ok(()),
+        "hide" => {
+            sidebar_stop(&pids);
+            Ok(())
+        }
+        "toggle" if pids.is_empty() => sidebar_start(),
+        "toggle" => {
+            sidebar_stop(&pids);
+            Ok(())
+        }
+        "restart" => {
+            sidebar_stop(&pids);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            sidebar_start()
+        }
+        _ => Err("Usage: prelude sidebar [show|hide|toggle|restart]".into()),
+    }
+}
+
+/// 1 行を言葉に分ける。"…" と '…' の中は 1 つの言葉。閉じていなければ None
+fn split_words(line: &str) -> Option<Vec<String>> {
+    let (mut out, mut cur, mut quote, mut any) = (vec![], String::new(), None, false);
+    for c in line.chars() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), c) => cur.push(c),
+            (None, '"' | '\'') => {
+                quote = Some(c);
+                any = true;
+            }
+            (None, c) if c.is_whitespace() => {
+                if any || !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+                any = false;
+            }
+            (None, c) => cur.push(c),
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    if any || !cur.is_empty() {
+        out.push(cur);
+    }
+    Some(out)
+}
+
+/// PRELUDE CLI。Electron 版の `PRELUDE` と同じように、`prelude` を省いて命令を打つ。exit か Ctrl+D で閉じる
+fn shell() -> Result<(), String> {
+    println!("PRELUDE  ({} / help / exit)", env!("CARGO_PKG_VERSION"));
+    let _ = run(&[]).map_err(|e| eprintln!("{e}"));
+    let stdin = std::io::stdin();
+    loop {
+        print!("PRELUDE> ");
+        let _ = std::io::stdout().flush();
+        let mut line = String::new();
+        if stdin.read_line(&mut line).map_err(|e| e.to_string())? == 0 {
+            println!();
+            return Ok(());
+        }
+        let Some(words) = split_words(&line) else {
+            eprintln!("Unclosed quote");
+            continue;
+        };
+        match words.first().map(String::as_str) {
+            None => {}
+            Some("exit" | "quit") => return Ok(()),
+            Some("shell") => eprintln!("Already in the PRELUDE CLI"),
+            _ => {
+                if let Err(e) = run(&words) {
+                    eprintln!("{e}");
+                }
+            }
+        }
+    }
+}
+
 fn run(args: &[String]) -> Result<(), String> {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     match a.as_slice() {
+        ["shell"] => shell()?,
+        ["sidebar"] => sidebar("toggle")?,
+        ["sidebar", what] => sidebar(what)?,
         [] | ["status"] => {
             let s = Conn::open(false)?.state()?;
             println!("Space: {}  ({})", s.space, short(&s.space_dir));
@@ -388,6 +507,17 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 行を言葉に分ける() {
+        let w = |s: &str| split_words(s).map(|v| v.join("|"));
+        assert_eq!(w("tab 2"), Some("tab|2".into()));
+        assert_eq!(w("  new  app cmd=\"foot -a x\" "), Some("new|app|cmd=foot -a x".into()));
+        assert_eq!(w("open '~/a b'\n"), Some("open|~/a b".into()));
+        assert_eq!(w("\"\""), Some("".into()));
+        assert_eq!(split_words("").unwrap().len(), 0);
+        assert_eq!(w("open \"a"), None);
+    }
 
     #[test]
     fn バーの行() {

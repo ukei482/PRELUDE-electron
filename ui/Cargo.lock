@@ -3870,6 +3870,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "prelude-settings"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "gpui",
+ "gpui_platform",
+ "log",
+ "prelude-format",
+ "prelude-ui",
+]
+
+[[package]]
 name = "prelude-sidebar"
 version = "0.1.0"
 dependencies = [

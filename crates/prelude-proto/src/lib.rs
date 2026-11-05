@@ -110,6 +110,9 @@ pub enum Command {
         key: String,
         #[serde(default)]
         allow: Vec<String>,
+        /// アプリを新しいタブではなく、このペインを分割して開く(ほかの種類の候補では無視する)
+        #[serde(default)]
+        split: Option<SplitAt>,
     },
 
     /// ペイン 1 つの新しいタブ → タブの id。`index` を省くと一番上
@@ -307,6 +310,13 @@ pub struct BookmarkOpened {
     pub tab: u64,
     /// 外した起動コマンド(インストール済みのアプリと一致しないもの)。そのペインは起動しない
     pub held: Vec<String>,
+}
+
+/// 分割して開く場所(`item.open`)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SplitAt {
+    pub pane: u64,
+    pub dir: Dir,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

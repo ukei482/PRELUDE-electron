@@ -35,6 +35,42 @@ enum Target {
     Web(String),
     /// フォルダのペイン
     Folder(String),
+    /// ペインの種類(レシピ。分割で開くとき)
+    Pane(String),
+    /// PRELUDE の操作。これがあるので、rice が無くてもランチャーだけで使える
+    Command(Command),
+}
+
+/// ランチャーから行う操作
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Command {
+    Settings,
+    Cli,
+    Sidebar,
+    SplitRight,
+    SplitDown,
+    ClosePane,
+    CloseTab,
+}
+
+const COMMANDS: [(&str, &str, Command); 7] = [
+    ("Settings", "colors, search, folders", Command::Settings),
+    ("PRELUDE CLI", "commands", Command::Cli),
+    ("Toggle sidebar", "show / hide", Command::Sidebar),
+    ("Split right", "open something beside this pane", Command::SplitRight),
+    ("Split down", "open something below this pane", Command::SplitDown),
+    ("Close pane", "this pane", Command::ClosePane),
+    ("Close tab", "this tab", Command::CloseTab),
+];
+
+/// 打った言葉に合う操作
+fn commands(query: &str) -> Vec<Entry> {
+    let q = query.trim().to_lowercase();
+    COMMANDS
+        .iter()
+        .filter(|(name, _, _)| q.is_empty() || match_rank(name, &q).is_some())
+        .map(|(name, what, c)| Entry { group: "COMMANDS", label: (*name).into(), detail: (*what).into(), target: Target::Command(*c) })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -184,11 +220,34 @@ struct Launcher {
     focus: FocusHandle,
     /// 最後に見たマウスの位置。開いた瞬間にマウスの下にある行を選ばないように、動いたときだけ選ぶ
     mouse: Option<gpui::Point<gpui::Pixels>>,
+    /// `--split`: 開くものはどれも今のペインを分割して開く(row・col)
+    split: Option<&'static str>,
+    /// `--split` のときに出すペインの種類(種類・名前)
+    recipes: Vec<(String, String)>,
 }
 
 impl Launcher {
     fn refresh(&mut self) {
         self.list = entries(&self.items, &self.query, self.pane.as_ref().map(|(_, u)| u.as_str()), &self.engine);
+        if self.split.is_some() {
+            let q = self.query.trim().to_lowercase();
+            let mut panes: Vec<Entry> = self
+                .recipes
+                .iter()
+                .filter(|(kind, name)| q.is_empty() || match_rank(&format!("{name} {kind}"), &q).is_some())
+                .map(|(kind, name)| Entry { group: "PANES", label: name.clone().into(), detail: "".into(), target: Target::Pane(kind.clone()) })
+                .collect();
+            panes.append(&mut self.list);
+            self.list = panes;
+        } else if self.pane.is_none() {
+            // 打った言葉に合う操作は一番上(`set` で同じ名前のアプリより設定が開くように)。何も打っていなければ下に並べる
+            let at = if self.query.trim().is_empty() {
+                self.list.iter().position(|e| e.group == "OPEN").unwrap_or(self.list.len())
+            } else {
+                0
+            };
+            self.list.splice(at..at, commands(&self.query));
+        }
         self.selected = 0;
     }
 
@@ -201,21 +260,55 @@ impl Launcher {
         cx.notify();
     }
 
-    /// 選んだ行を開いて終わる。split: 今のタブの右に分割して開く(Web・フォルダだけ)
+    /// 操作を実行して終わる
+    fn command(&mut self, c: Command, cx: &mut Context<Self>) {
+        let pane = self.state.as_ref().and_then(|s| s.tabs.iter().find(|t| Some(t.id) == s.active)).map(|t| t.active_pane);
+        let spawn = |prog: &str, args: &[&str]| std::process::Command::new(prog).args(args).spawn().map(|_| ()).map_err(|e| format!("{prog}: {e}"));
+        let call = |cmd: &str, args: Value| Client::connect("prelude-launcher", false).and_then(|mut c| c.call(cmd, args)).map(|_| ());
+        let r = match c {
+            Command::Settings => call("tab.open", json!({ "pane": { "type": "settings" } })),
+            Command::Cli => call("tab.open", json!({ "pane": { "type": "cli" } })),
+            Command::Sidebar => spawn("prelude", &["sidebar", "toggle"]),
+            Command::SplitRight => spawn("prelude-launcher", &["--split", "row"]),
+            Command::SplitDown => spawn("prelude-launcher", &["--split", "col"]),
+            Command::ClosePane => match pane {
+                Some(p) => call("pane.close", json!({ "pane": p })),
+                None => Ok(()),
+            },
+            Command::CloseTab => call("tab.close", json!({})),
+        };
+        match r {
+            Ok(()) => cx.quit(),
+            Err(e) => {
+                self.error = Some(e);
+                cx.notify();
+            }
+        }
+    }
+
+    /// 選んだ行を開いて終わる。split: 今のタブの右に分割して開く(`--split` なら、いつもその向きに分割する)
     fn open(&mut self, ix: usize, split: bool, cx: &mut Context<Self>) {
         let Some(e) = self.list.get(ix).cloned() else { return };
+        if let Target::Command(c) = e.target {
+            self.command(c, cx);
+            return;
+        }
         let active_pane = self.state.as_ref().and_then(|s| s.tabs.iter().find(|t| Some(t.id) == s.active)).map(|t| t.active_pane);
         let spec = |t: &Target| match t {
             Target::Web(u) => Some(json!({ "type": "web", "url": u })),
             Target::Folder(p) => Some(json!({ "type": "files", "path": p })),
-            Target::Item(_) => None,
+            Target::Pane(kind) => Some(json!({ "type": kind })),
+            Target::Item(_) | Target::Command(_) => None,
         };
-        let (cmd, args): (&str, Value) = match (&e.target, &self.pane, split.then_some(active_pane).flatten()) {
+        let dir = self.split.unwrap_or("row");
+        let split_at = (split || self.split.is_some()).then_some(active_pane).flatten();
+        let (cmd, args): (&str, Value) = match (&e.target, &self.pane, split_at) {
             (Target::Web(u), Some((pane, _)), _) if e.group == "THIS PANE" => {
                 ("pane.update", json!({ "pane": pane, "fields": { "url": u } }))
             }
-            (Target::Item(key), _, _) => ("item.open", json!({ "key": key })),
-            (t, _, Some(pane)) => ("pane.split", json!({ "pane": pane, "dir": "row", "new": spec(t) })),
+            (Target::Item(key), _, Some(pane)) => ("item.open", json!({ "key": key, "split": { "pane": pane, "dir": dir } })),
+            (Target::Item(key), _, None) => ("item.open", json!({ "key": key })),
+            (t, _, Some(pane)) => ("pane.split", json!({ "pane": pane, "dir": dir, "new": spec(t) })),
             (t, _, None) => ("tab.open", json!({ "pane": spec(t) })),
         };
         match Client::connect("prelude-launcher", false).and_then(|mut c| c.call(cmd, args)) {
@@ -295,14 +388,16 @@ impl Render for Launcher {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let usage = "usage: prelude-launcher [--window] [--pane ID --url URL]";
+    let usage = "usage: prelude-launcher [--window] [--pane ID --url URL] [--split row|col]";
     let (mut window_mode, mut pane, mut url) = (false, None::<u64>, None::<String>);
+    let mut split: Option<&'static str> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--window" => window_mode = true,
             "--pane" => pane = args.next().and_then(|v| v.parse().ok()),
             "--url" => url = args.next(),
+            "--split" => split = Some(if args.next().as_deref() == Some("col") { "col" } else { "row" }),
             "-h" | "--help" => {
                 println!("{usage}");
                 return;
@@ -318,12 +413,23 @@ fn main() {
         .ok()
         .filter(|e| e.contains("%s"))
         .unwrap_or_else(|| prelude_ui::SETTINGS.search_engine.clone());
+    // 分割で開くときに出すペインの種類
+    let recipes: Vec<(String, String)> = match split {
+        Some(_) => Client::connect("prelude-launcher", false)
+            .and_then(|mut c| c.get::<Vec<prelude_proto::RecipeInfo>>("recipe.list", json!({})))
+            .map(|r| r.into_iter().map(|r| (r.kind, r.name)).collect())
+            .unwrap_or_default(),
+        None => vec![],
+    };
     // 候補は開く前に 1 回だけ取る(コアは同じ PC の上なので速い)
     let (items, state, error) =
         match Client::connect("prelude-launcher", false).and_then(|mut c| Ok((c.get::<Vec<Item>>("item.list", json!({}))?, c.state()?))) {
             Ok((i, s)) => (i, Some(s), None),
             Err(e) => (vec![], None, Some(e)),
         };
+
+    // 分割の中に開けるのはアプリとペインだけ(タブ・スペースへの切り替えは意味が無い)
+    let items: Vec<Item> = if split.is_some() { items.into_iter().filter(|i| i.kind == "app").collect() } else { items };
 
     application().run(move |cx: &mut App| {
         prelude_ui::init(cx);
@@ -383,6 +489,8 @@ fn main() {
                         error,
                         focus: cx.focus_handle(),
                         mouse: None,
+                        split,
+                        recipes,
                     };
                     l.query = l.input.read(cx).text().to_string();
                     l.refresh();
@@ -422,6 +530,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 操作の候補() {
+        assert_eq!(commands("").len(), COMMANDS.len());
+        assert_eq!(commands("set").first().map(|e| e.target.clone()), Some(Target::Command(Command::Settings)));
+        assert_eq!(commands("side").first().map(|e| e.target.clone()), Some(Target::Command(Command::Sidebar)));
+        assert_eq!(commands("split").len(), 2);
+        assert!(commands("xyz").is_empty());
+    }
 
     const G: &str = "https://www.google.com/search?q=%s";
 

@@ -324,31 +324,31 @@ fn ランチャーの候補_開くと点数が上がる() {
     assert_eq!(c.items()[1].detail, "研究");
 
     // アプリを開くとタブになり、タブが先に出る。開いたものは点数が上がって前に出る
-    let tab = ok(&mut c, Command::ItemOpen { key: "app:org.kde.konsole".into(), allow: vec![] }).as_u64().unwrap();
+    let tab = ok(&mut c, Command::ItemOpen { key: "app:org.kde.konsole".into(), allow: vec![], split: None }).as_u64().unwrap();
     let w = c.wants();
     assert_eq!((w.len(), w[0].cmd.as_str()), (1, "org.kde.konsole"));
     let it = c.items();
     assert_eq!((it[0].key.clone(), it[0].kind.as_str(), it[0].detail.as_str()), (format!("tab:{tab}"), "tab", "1"));
     assert_eq!(it[1].key, "app:org.kde.konsole");
     // 2 回開いたものは、後で 1 回開いたものより上。ただし古くなると減る
-    ok(&mut c, Command::ItemOpen { key: paper.clone(), allow: vec![] });
+    ok(&mut c, Command::ItemOpen { key: paper.clone(), allow: vec![], split: None });
     ok(&mut c, Command::TabClose { tab: None });
     ok(&mut c, Command::BookmarkOpen { path: paper.trim_start_matches("bookmark:").into(), allow: vec![] });
     NOW.fetch_add(DAY, Ordering::Relaxed);
-    ok(&mut c, Command::ItemOpen { key: alpha.clone(), allow: vec![] });
+    ok(&mut c, Command::ItemOpen { key: alpha.clone(), allow: vec![], split: None });
     // タブで開いているブックマークはタブとして出すので、閉じてから比べる
     ok(&mut c, Command::TabClose { tab: None });
     ok(&mut c, Command::TabClose { tab: None });
     let rest: Vec<String> = c.items().into_iter().filter(|i| i.kind != "tab").map(|i| i.key).collect();
     assert_eq!(&rest[..3], &[paper.clone(), alpha.clone(), "app:org.kde.konsole".into()]);
     NOW.fetch_add(60 * DAY, Ordering::Relaxed); // 2 の点も 60 日で 1 より小さくなる
-    ok(&mut c, Command::ItemOpen { key: "app:kate".into(), allow: vec![] });
+    ok(&mut c, Command::ItemOpen { key: "app:kate".into(), allow: vec![], split: None });
     assert_eq!(c.items().into_iter().find(|i| i.kind != "tab").unwrap().key, "app:kate");
 
     // タブを指して開く・スペースを切り替える
-    ok(&mut c, Command::ItemOpen { key: format!("tab:{tab}"), allow: vec![] });
+    ok(&mut c, Command::ItemOpen { key: format!("tab:{tab}"), allow: vec![], split: None });
     assert_eq!(state(&c).active, Some(tab));
-    ok(&mut c, Command::ItemOpen { key: "space:Work".into(), allow: vec![] });
+    ok(&mut c, Command::ItemOpen { key: "space:Work".into(), allow: vec![], split: None });
     assert_eq!(state(&c).space, "Work");
     assert!(c.items().iter().any(|i| i.key == format!("space:{SPACE_DEFAULT}")));
 
@@ -361,7 +361,7 @@ fn ランチャーの候補_開くと点数が上がる() {
 
     // 知らない key
     for k in ["nope", "tab:x", "what:1", "app:none"] {
-        assert!(c.handle(Command::ItemOpen { key: k.into(), allow: vec![] }).reply.is_err(), "{k}");
+        assert!(c.handle(Command::ItemOpen { key: k.into(), allow: vec![], split: None }).reply.is_err(), "{k}");
     }
 }
 
@@ -511,6 +511,48 @@ mod compositor_layout {
         // 残す形にも入る
         let s = serde_json::to_string(&c.saved()).unwrap();
         assert!(s.contains("0.3"), "{s}");
+    }
+
+    #[test]
+    fn アプリを分割して開く() {
+        let mut c = core("item-split");
+        c.set_apps(|| vec![prelude_core::apps::App { name: "Kate".into(), exec: "kate".into(), cls: "kate".into(), id: "org.kde.kate".into() }]);
+        let a = open(&mut c, "a");
+        let at = prelude_proto::SplitAt { pane: a, dir: Dir::Col };
+        let new = c
+            .handle(Command::ItemOpen { key: "app:org.kde.kate".into(), allow: vec![], split: Some(at) })
+            .reply
+            .unwrap()
+            .as_u64()
+            .unwrap();
+        let s = c.state();
+        assert_eq!(s.tabs.len(), 1);
+        assert_eq!(s.tabs[0].active_pane, new);
+        assert_eq!(s.tabs[0].layout["dir"], "col");
+        assert_eq!(s.tabs[0].layout["b"]["cmd"], "kate");
+        // 無いペインなら失敗
+        let at = prelude_proto::SplitAt { pane: 999_999, dir: Dir::Row };
+        assert!(c.handle(Command::ItemOpen { key: "app:org.kde.kate".into(), allow: vec![], split: Some(at) }).reply.is_err());
+    }
+
+    #[test]
+    fn 起動のときは_cli_のタブから始める() {
+        let mut c = core("cli");
+        c.set_recipes(prelude_core::recipes::load(std::path::Path::new("/nonexistent")));
+        let a = open(&mut c, "a");
+        c.show_cli();
+        let s = c.state();
+        assert_eq!(s.tabs.len(), 2);
+        let cli = s.tabs.iter().find(|t| t.id == s.active.unwrap()).unwrap();
+        assert_eq!(cli.layout["type"], "cli");
+        // 既にあれば、作らずにそれを今のタブにする
+        c.handle(Command::PaneFocus { pane: a }).reply.unwrap();
+        let id = s.tabs.iter().find(|t| t.layout["type"] == "app").unwrap().id;
+        c.handle(Command::TabActivate { tab: prelude_proto::TabRef::Id { id } }).reply.unwrap();
+        c.show_cli();
+        let s = c.state();
+        assert_eq!(s.tabs.len(), 2);
+        assert_eq!(s.tabs.iter().find(|t| t.id == s.active.unwrap()).unwrap().layout["type"], "cli");
     }
 
     #[test]

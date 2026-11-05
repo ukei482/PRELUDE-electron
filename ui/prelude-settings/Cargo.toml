@@ -1,0 +1,13 @@
+[package]
+name = "prelude-settings"
+version = "0.1.0"
+description = "PRELUDE の設定の画面(GPUI。theme.toml・settings.toml を書く)"
+edition.workspace = true
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+prelude-format.workspace = true
+prelude-ui.workspace = true
+env_logger.workspace = true
+log.workspace = true

@@ -1,4 +1,4 @@
-# PRELUDE の GPUI の UI(prelude-sidebar・prelude-launcher・prelude-filer)。ui/ のワークスペース。
+# PRELUDE の GPUI の UI(prelude-sidebar・prelude-launcher・prelude-filer・prelude-settings)。ui/ のワークスペース。
 # ビルドは重い(GPUI ごと)。`--cores 2 --max-jobs 1` を付けて、メモリの空きを見てから動かす
 {
   lib,
@@ -26,11 +26,11 @@ rustPlatform.buildRustPackage {
   # prelude-proto はパスで使う。ルートの Cargo.toml はワークスペースの継承に、src/fonts は Electron 版と同じ字に要る
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [ ../Cargo.toml ../Cargo.lock ../crates ../src/fonts ../ui/Cargo.toml ../ui/Cargo.lock ../ui/prelude-ui ../ui/prelude-sidebar ../ui/prelude-launcher ../ui/prelude-filer ];
+    fileset = lib.fileset.unions [ ../Cargo.toml ../Cargo.lock ../crates ../src/fonts ../ui/Cargo.toml ../ui/Cargo.lock ../ui/prelude-ui ../ui/prelude-sidebar ../ui/prelude-launcher ../ui/prelude-filer ../ui/prelude-settings ];
   };
   cargoRoot = "ui";
   buildAndTestSubdir = "ui";
-  cargoHash = "sha256-/okU+wOX2p/Yf7vbME5syDZ5Q4gvhLl30fd/ubb4lBg=";
+  cargoHash = "sha256-WD0HxWrp4mP0BZg7gT4ZGV6Rkir/HK6lSuuAeBm7w9k=";
   nativeBuildInputs = [ clang cmake patchelf pkg-config rustPlatform.bindgenHook ];
   buildInputs = runtimeLibs;
   doCheck = false;
@@ -51,7 +51,7 @@ rustPlatform.buildRustPackage {
     done
   '';
   meta = {
-    description = "PRELUDE のサイドバー・ランチャー・ファイラ(GPUI)";
+    description = "PRELUDE のサイドバー・ランチャー・ファイラ・設定(GPUI)";
     platforms = lib.platforms.linux;
   };
 }
