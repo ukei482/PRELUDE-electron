@@ -27,6 +27,7 @@ use tokio::sync::{mpsc, oneshot};
 /// i3 の IPC の種類
 mod kind {
     pub const RUN_COMMAND: u32 = 0;
+    pub const GET_WORKSPACES: u32 = 1;
     pub const SUBSCRIBE: u32 = 2;
     pub const GET_TREE: u32 = 4;
     /// イベントは上の 1 ビットが立つ
@@ -82,6 +83,11 @@ impl Ipc {
     async fn tree(&mut self) -> Value {
         self.request(kind::GET_TREE, "").await.unwrap_or(Value::Null)
     }
+    /// 今選ばれている作業領域の名前
+    async fn focused_ws(&mut self) -> Option<String> {
+        let v = self.request(kind::GET_WORKSPACES, "").await.ok()?;
+        focused_name(&v)
+    }
     /// コマンドを送る(; でつないで 1 通にする)。失敗したものはログに出す
     async fn run(&mut self, cmds: &[String]) {
         if cmds.is_empty() {
@@ -99,6 +105,11 @@ impl Ipc {
             Err(e) => eprintln!("prelude-core: sway IPC failed ({e})"),
         }
     }
+}
+
+/// get_workspaces の返事から、選ばれている作業領域の名前
+fn focused_name(v: &Value) -> Option<String> {
+    v.as_array()?.iter().find(|w| w["focused"] == true)?["name"].as_str().map(str::to_string)
 }
 
 // ------------------------------------------------------------------ sway の木を読む
@@ -937,16 +948,27 @@ impl Sway {
                         if Instant::now() < self.quiet_until {
                             return;
                         }
-                        let Some(tab) = self.scene.tabs.iter().find(|t| {
-                            let mut l = vec![];
-                            leaves(&t.tree, &mut l);
-                            l.contains(&pane)
-                        }) else {
+                        let Some((tab, num)) = self
+                            .scene
+                            .tabs
+                            .iter()
+                            .find(|t| {
+                                let mut l = vec![];
+                                leaves(&t.tree, &mut l);
+                                l.contains(&pane)
+                            })
+                            .map(|t| (t.id, t.num))
+                        else {
                             return;
                         };
-                        if self.want_focus != (Some(tab.id), Some(pane)) {
-                            self.echoes.push((tab.id, Some(pane), Instant::now()));
-                            let _ = self.notes.send(Note::Focus { tab: tab.id, pane: Some(pane) });
+                        // サイドバーを押した後の切り替えの途中で、sway は元の窓を選び直して知らせてくる。
+                        // 今もその作業領域が選ばれているときだけ、使用者が選んだものとして扱う
+                        if self.ipc.focused_ws().await.as_deref() != Some(ws_name(num, &self.tag).as_str()) {
+                            return;
+                        }
+                        if self.want_focus != (Some(tab), Some(pane)) {
+                            self.echoes.push((tab, Some(pane), Instant::now()));
+                            let _ = self.notes.send(Note::Focus { tab, pane: Some(pane) });
                         }
                     }
                     _ => {}
@@ -956,11 +978,14 @@ impl Sway {
                 if v["change"] != "focus" || Instant::now() < self.quiet_until {
                     return;
                 }
-                let name = v["current"]["name"].as_str().unwrap_or("");
-                let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.tag) == name) else { return };
-                if self.want_focus.0 != Some(tab.id) {
-                    self.echoes.push((tab.id, None, Instant::now()));
-                    let _ = self.notes.send(Note::Focus { tab: tab.id, pane: None });
+                let name = v["current"]["name"].as_str().unwrap_or("").to_string();
+                let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.tag) == name).map(|t| t.id) else { return };
+                if self.ipc.focused_ws().await.as_deref() != Some(name.as_str()) {
+                    return;
+                }
+                if self.want_focus.0 != Some(tab) {
+                    self.echoes.push((tab, None, Instant::now()));
+                    let _ = self.notes.send(Note::Focus { tab, pane: None });
                 }
             }
             kind::EV_SHUTDOWN => eprintln!("prelude-core: sway is shutting down"),
@@ -1097,6 +1122,13 @@ mod tests {
         assert!(!looks_same(&row(P(1), P(2), 0.5), &col(P(1), P(2), 0.5)));
         assert!(!looks_same(&row(P(1), P(2), 0.5), &row(P(2), P(1), 0.5)));
         assert!(!looks_same(&row(P(1), P(2), 0.5), &P(1)));
+    }
+
+    #[test]
+    fn 選ばれている作業領域() {
+        let v = json!([{ "name": "1", "focused": false }, { "name": "3", "focused": true }]);
+        assert_eq!(focused_name(&v).as_deref(), Some("3"));
+        assert_eq!(focused_name(&json!([])), None);
     }
 
     #[test]
