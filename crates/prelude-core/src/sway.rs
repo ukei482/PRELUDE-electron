@@ -980,6 +980,13 @@ impl Sway {
                         if self.ipc.focused_ws().await.as_deref() != Some(ws_name(num, &self.tag).as_str()) {
                             return;
                         }
+                        // 開いたばかりのペインの窓を待っている間に、ランチャーが閉じて元の窓が選ばれ直しても、今のペインを戻さない。
+                        // 窓が出たら layout がそのペインを選ぶ
+                        if self.want_focus.0 == Some(tab)
+                            && self.want_focus.1.and_then(|p| self.panes.get(&p)).is_some_and(|p| p.con.is_none() && !p.had_window)
+                        {
+                            return;
+                        }
                         if self.want_focus != (Some(tab), Some(pane)) {
                             self.echoes.push((tab, Some(pane), Instant::now()));
                             let _ = self.notes.send(Note::Focus { tab, pane: Some(pane) });
