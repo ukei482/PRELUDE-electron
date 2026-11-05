@@ -8,6 +8,8 @@
 //! - ホームの下のパスは `~/…` で書き、読むときに今の PC のホームへ戻す
 use std::fmt;
 
+pub mod config;
+
 /// 今の `.prelude` の版。これより新しい版のファイルは読まない
 pub const VERSION: i64 = 2;
 /// 拡張子

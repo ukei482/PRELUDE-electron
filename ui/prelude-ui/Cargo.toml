@@ -5,6 +5,7 @@ description = "PRELUDE の UI の共通の見た目と部品(色・書体・行�
 edition.workspace = true
 
 [dependencies]
+prelude-format.workspace = true
 gpui.workspace = true
 log.workspace = true
 unicode-segmentation = "1"

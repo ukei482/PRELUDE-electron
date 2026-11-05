@@ -11,6 +11,7 @@ edition = "2024"
 # Zed の main を固定する(crates.io の gpui には layer-shell が無い。proto/gpui と同じコミット)
 gpui = { git = "https://github.com/zed-industries/zed", rev = "504abf602a09edc3c7d5a4f4f60958aee335274f" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "504abf602a09edc3c7d5a4f4f60958aee335274f", features = ["wayland", "x11"] }
+prelude-format = { path = "../crates/prelude-format" }
 prelude-proto = { path = "../crates/prelude-proto" }
 prelude-ui = { path = "prelude-ui" }
 futures = "0.3"

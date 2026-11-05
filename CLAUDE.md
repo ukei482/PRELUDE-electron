@@ -22,6 +22,7 @@
   - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`compositor.rs` が窓を並べる相手の差し替え口、`embed.rs` と `embed.js` が KWin の裏側(アプリの窓の取り込み)、`sway.rs` が sway・SwayFX の裏側、`recipes.rs` がペインのレシピ、`portal.rs` がアプリのダイアログのポータル)、`prelude-cli`(`prelude` コマンド)
   - 別のソケットで動かしたコアは、D-Bus の名前(`org.prelude.Core.d…`)と KWin スクリプトの名前に印が付き、ふだんのコア・Electron 版と取り合わない。窓を出さずに試すなら `--no-embed`
   - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
+  - 設定は `~/.config/prelude/theme.toml`・`settings.toml`(`prelude-format` の `config`)。Electron 版からの引き継ぎは `prelude-core` の `migrate.rs`(別のソケットのコアでは動かない)
 - `ui/` — Rust 版の UI(GPUI。段階 4)。ルートとは別のワークスペース。`prelude-ui`(共通の見た目と部品。入力欄 `TextInput` も)・`prelude-sidebar`(サイドバー)・`prelude-launcher`(ランチャー)・`prelude-filer`(ファイラ。見せ方は `FilerView` のトレイト)。コアの `files`・`field` のペインは既定で `prelude-filer` を起動するので、試すときは `PATH` に `proto/gpui/target/debug` などを足す。ビルドは `cd ui && cargo build`(GPUI の初回のビルドは重い。`CARGO_TARGET_DIR=../proto/gpui/target` で試作のビルド結果を使い回せる)
 - `proto/gpui/` — GPUI の試作(段階 0)。ルートのワークスペースの外。ビルドには開発用のライブラリが要る(`docs/redesign-rust.md` の「GPUI の試作で分かったこと」)
 - `flake.nix`・`nix/` — NixOS へ移るための開発環境(`nix develop`)と OS の設定(判断 9)。`nix/prelude.nix` はコア・コマンドのパッケージ、`nix/module.nix` は NixOS のモジュール(`services.prelude`。コアのサービス・sway の断片・ダイアログ)。rice とのつなぎ方は `docs/rice.md`
