@@ -140,6 +140,10 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     let (events, _) = broadcast::channel(64);
     let (notes_tx, mut notes) = tokio::sync::mpsc::unbounded_channel();
     let compositor = if opt.embed { compositor::start(&tag, notes_tx.clone()).await } else { None };
+    // sway では PRELUDE がデスクトップの全部なので、Electron 版のホームと同じく CLI から始める
+    if compositor.as_ref().is_some_and(|c| c.name() == "sway") {
+        core.show_cli();
+    }
     // Web のペインは窓の取り込みがあるときだけ(窓をペインに置けないと、Chromium の窓がばらばらに出るだけになる)
     let web = if compositor.is_some() { web::start(&tag, notes_tx) } else { None };
     let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), compositor, web });

@@ -32,7 +32,7 @@ pub struct Recipe {
 }
 
 /// コアが特別に扱う種類(レシピの名前にできない)
-const RESERVED: [&str; 5] = ["web", "app", "home", "settings", "split"];
+const RESERVED: [&str; 4] = ["web", "app", "home", "split"];
 
 pub fn dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
@@ -48,7 +48,9 @@ fn builtin() -> Vec<Recipe> {
         class: class.into(),
     };
     vec![
+        r("cli", "PRELUDE CLI", "konsole --workdir {paths.terminal} -e prelude shell", "org.kde.konsole"),
         r("console", "Console", "konsole --workdir {paths.terminal}", "org.kde.konsole"),
+        r("settings", "Settings", "prelude-settings", "prelude-settings"),
         r("files", "Files", "prelude-filer --pane {pane} {path}", "prelude-filer"),
         r("field", "Field", "prelude-filer --pane {pane} --view field {path}", "prelude-filer"),
     ]
@@ -153,11 +155,13 @@ mod tests {
         std::fs::write(d.join("bad.toml"), "run = = 1").unwrap();
         let list = load(&d);
         let v: Vec<(&str, &str, &str)> = list.iter().map(|r| (r.kind.as_str(), r.name.as_str(), r.run.as_str())).collect();
-        assert_eq!(v[0], ("console", "console", "xterm"));
-        assert_eq!(v[3], ("notes", "メモ", "kate"));
+        assert_eq!(v[0].0, "cli");
+        assert_eq!(v[1], ("console", "console", "xterm"));
+        assert_eq!(v[4], ("notes", "メモ", "kate"));
+        assert_eq!(v[5].0, "settings");
         // ファイラの枠は既定を持ち、置き換えられる
-        assert_eq!((v[1].0, v[2].0), ("field", "files"));
-        assert!(v[2].2.starts_with("prelude-filer"));
+        assert_eq!((v[2].0, v[3].0), ("field", "files"));
+        assert!(v[3].2.starts_with("prelude-filer"));
         std::fs::write(d.join("files.toml"), "run = \"dolphin {path}\"\n").unwrap();
         assert!(load(&d).iter().any(|r| r.kind == "files" && r.run == "dolphin {path}"));
     }

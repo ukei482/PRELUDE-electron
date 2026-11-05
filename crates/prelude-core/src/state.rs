@@ -8,7 +8,7 @@ use crate::compositor::{Scene, TabScene, Tree, Want};
 use crate::recipes::{self, Recipe};
 use crate::web::WebWant;
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, State, TabInfo, TabRef};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, SplitAt, State, TabInfo, TabRef};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as Json};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -624,6 +624,21 @@ impl Core {
         Scene { panes: self.wants(), tabs, active: self.tabs.active }
     }
 
+    /// PRELUDE CLI のタブを今のタブにする。無ければ作る(起動のとき。Electron 版のホームの代わり)
+    pub fn show_cli(&mut self) {
+        if !self.recipes.iter().any(|r| r.kind == "cli") {
+            return;
+        }
+        let found = self.tabs.tabs.iter().find(|t| t.layout.panes().iter().any(|(_, l)| l.kind == "cli")).map(|t| t.id);
+        match found {
+            Some(id) => self.tabs.active = Some(id),
+            None => {
+                let leaf = Leaf { kind: "cli".into(), fields: Table::new() };
+                self.insert_tab(Layout::Pane { id: 0, leaf }, None, None);
+            }
+        }
+    }
+
     /// 取り込んだ窓が無くなった。ペインは残して止まったものにする(外から開いた窓はペインごと消す)。変われば true
     pub fn note_exited(&mut self, pane: u64) -> bool {
         self.titles.remove(&pane);
@@ -752,7 +767,7 @@ impl Core {
             Command::BookmarkList {} => Ok(json!(self.bookmarks())),
             Command::BookmarkOpen { path, allow } => self.bookmark_open(&path, &allow),
             Command::ItemList {} => Ok(json!(self.items())),
-            Command::ItemOpen { key, allow } => self.item_open(&key, &allow),
+            Command::ItemOpen { key, allow, split } => self.item_open(&key, &allow, split),
             Command::RecipeList {} => {
                 Ok(json!(self.recipes.iter().map(|r| RecipeInfo { kind: r.kind.clone(), name: r.name.clone() }).collect::<Vec<_>>()))
             }
@@ -881,8 +896,13 @@ impl Core {
     }
 
     fn pane_split(&mut self, pane: u64, dir: Dir, new: &PaneSpec) -> Reply {
-        let (i, _) = self.find_pane(pane)?;
         let leaf = leaf_of(new)?;
+        Ok(json!(self.split_leaf(pane, dir, leaf)?))
+    }
+
+    /// pane を分けて leaf のペインを足し、今のペインにする。新しいペインの id を返す
+    fn split_leaf(&mut self, pane: u64, dir: Dir, leaf: Leaf) -> Result<u64, Fail> {
+        let (i, _) = self.find_pane(pane)?;
         let nid = self.next_id();
         let fdir = if dir == Dir::Col { FDir::Col } else { FDir::Row };
         let mut leaf = Some(leaf);
@@ -893,7 +913,7 @@ impl Core {
             b: Box::new(Layout::Pane { id: nid, leaf: leaf.take().unwrap_or_else(empty_leaf) }),
         });
         self.tabs.tabs[i].active_pane = nid;
-        Ok(json!(nid))
+        Ok(nid)
     }
 
     fn pane_close(&mut self, pane: u64) -> Reply {
@@ -1127,7 +1147,7 @@ impl Core {
     }
 
     /// 候補を開く。開いたものは点数に足す(タブは足さない。いつも先に出る)
-    fn item_open(&mut self, key: &str, allow: &[String]) -> Reply {
+    fn item_open(&mut self, key: &str, allow: &[String], split: Option<SplitAt>) -> Reply {
         let (kind, rest) = key.split_once(':').ok_or_else(|| fail(ErrorCode::BadRequest, "Not an item key"))?;
         match kind {
             "tab" => {
@@ -1144,7 +1164,10 @@ impl Core {
                 if !a.cls.is_empty() {
                     leaf.fields.insert("cls".into(), a.cls.into());
                 }
-                let id = self.insert_tab(Layout::Pane { id: 0, leaf }, None, None);
+                let id = match split {
+                    Some(at) => self.split_leaf(at.pane, at.dir, leaf)?,
+                    None => self.insert_tab(Layout::Pane { id: 0, leaf }, None, None),
+                };
                 self.record(key);
                 Ok(json!(id))
             }

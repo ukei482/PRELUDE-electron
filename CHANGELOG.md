@@ -43,6 +43,14 @@
   - 最初の起動で Electron 版の設定を引き継ぐ: `~/.config/prelude/theme.toml`(色・文字の大きさ・サイドバーの幅)、`settings.toml`(検索・隠しファイル・スペースのフォルダ・ダウンロード)を作り、`~/ブックマーク/*.prelude` を `Main` にコピーする。既にあるファイルは上書きせず、元のファイルも変えない。無くなる設定は `migrated.txt` に出す
   - サイドバー・ランチャー・ファイラが `theme.toml` と `settings.toml` を読む
 
+- ランチャーを入口にした(判断 10。rice が無くても使える)
+  - ランチャーの COMMANDS: 設定・PRELUDE CLI・サイドバーの開閉・分割(右・下)・ペインを閉じる・タブを閉じる
+  - 分割では、ランチャーで開くものを選ぶ(`prelude-launcher --split row|col`)。アプリも分割で開ける(`item.open` の `split`)
+  - `prelude sidebar [show|hide|toggle|restart]`、対話の `prelude shell`(PRELUDE CLI。ペインの種類 `cli`)
+  - 設定の画面 `prelude-settings`(ペインの種類 `settings`。`theme.toml`・`settings.toml` を書く)
+  - sway では起動のときに PRELUDE CLI のタブから始める(Electron 版のホームの代わり)
+- バーがサイドバーの外側に来るように、サイドバーをバーより後に起動する
+
 ### 修正
 - sway のアプリの「開く」「保存」のダイアログが画面の下にはみ出し、確定のボタンに届かなかった。画面の 60%×70% で真ん中に出す
 - sway のセッションで、キーを押す前に開いたファイラ・ランチャーが落ちることがあった(sway が keymap を送る前に modifiers を送り、GPUI が unwrap していた)
