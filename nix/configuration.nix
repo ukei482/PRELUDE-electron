@@ -54,14 +54,14 @@
     package = pkgs.swayfx;
     wrapperFeatures.gtk = true;
   };
+  # PRELUDE のコア・コマンドと、sway の設定の断片・ダイアログ(nix/module.nix)
+  services.prelude.enable = true;
 
   environment.systemPackages = with pkgs; [
     (callPackage ./claude-desktop.nix { })
     (callPackage ./open-pdf-studio.nix { })
-    chromium
     claude-code
     discord
-    fuzzel # ランチャーの代わり(prelude items | fuzzel --dmenu | prelude open)
     gh
     git
     google-chrome

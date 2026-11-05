@@ -26,6 +26,9 @@
   - 窓を閉じるとペインは止まったものになり、コアを止めると起動したアプリを閉じる。コアが落ちたときは、次の起動で窓の印だけを外す(窓は閉じない)
   - 浮いた窓(ダイアログなど)は取り込まず、sway が浮かせたままにする
   - NixOS の設定で SwayFX を入れ、SDDM で Plasma と選べるようにした(ランチャーの代わりの fuzzel も)
+- rice とつなぐ出口と設定の断片(移行の段階 6。`docs/rice.md`)。ふだんの PRELUDE(Electron 版)は変わらない
+  - `prelude watch --bar`: 状態が変わるたびに、スペースと今のタブの題名を 1 行の JSON で出す(waybar の custom モジュールでそのまま使える)。コアが止まっていても終わらず、つなぎ直す
+  - NixOS のモジュール `services.prelude`(`nix/module.nix`): コアとコマンド(`nix/prelude.nix`)・Chromium を入れ、コアを systemd の user サービスにする。sway の断片で、sway と一緒にコアを起動し、`$mod+d` でランチャーを開き、ダイアログを浮かせる。sway のセッションでは、アプリの「開く」「保存」を PRELUDE にする
 - NixOS へ移る準備: `flake.nix`(`nix develop` の開発環境)と `nix/configuration.nix`(最小の OS の設定)
   - `nix/claude-desktop.nix`・`nix/open-pdf-studio.nix`(公式の .deb を NixOS 用に包む)、`nix/install-from-live.sh`(ライブ USB から入れる)、`nix/copy-home.sh`(Kubuntu のホームをコピーする)
 

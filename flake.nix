@@ -17,6 +17,8 @@
       # GPUI(Zed)の rust-toolchain.toml に合わせる。既定の rustc は古い(1.95)。
       # nixpkgs の rust_1_98 は clippy がキャッシュに無く、手元でのコンパイルに 3GB 以上要るので、配布済みのものを使う
       rust = pkgs.rust-bin.stable."1.98.1".default.override { extensions = [ "clippy" "rustfmt" "rust-src" "rust-analyzer" ]; };
+      rustPlatform = pkgs.makeRustPlatform { cargo = rust; rustc = rust; };
+      prelude = pkgs.callPackage ./nix/prelude.nix { inherit rustPlatform; };
       # GPUI が起動のときに読むライブラリ(リンクせずに開くものも含む)
       runtimeLibs = with pkgs; [
         fontconfig
@@ -31,6 +33,8 @@
     in
     {
       packages.${system} = {
+        inherit prelude;
+        default = prelude;
         claude-desktop = pkgs.callPackage ./nix/claude-desktop.nix { };
         open-pdf-studio = pkgs.callPackage ./nix/open-pdf-studio.nix { };
       };
@@ -56,9 +60,15 @@
       };
 
       # hardware-configuration.nix は入れる PC で `nixos-generate-config` が作る
+      # PRELUDE の NixOS モジュール(services.prelude)。ほかの設定からも `inputs.prelude.nixosModules.default` で使える
+      nixosModules.default = { pkgs, lib, ... }: {
+        imports = [ ./nix/module.nix ];
+        services.prelude.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.prelude;
+      };
+
       nixosConfigurations.prelude = nixpkgs.lib.nixosSystem {
         inherit system;
-        modules = [ ./nix/configuration.nix ./nix/hardware-configuration.nix ];
+        modules = [ self.nixosModules.default ./nix/configuration.nix ./nix/hardware-configuration.nix ];
       };
     };
 }
