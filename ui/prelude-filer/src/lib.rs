@@ -22,6 +22,31 @@ pub struct Entry {
     pub hidden: bool,
 }
 
+/// `*` と `?` の glob。大文字と小文字は区別しない
+pub fn glob_match(glob: &str, name: &str) -> bool {
+    fn go(g: &[char], n: &[char]) -> bool {
+        match g.split_first() {
+            None => n.is_empty(),
+            Some(('*', rest)) => (0..=n.len()).any(|i| go(rest, &n[i..])),
+            Some(('?', rest)) => !n.is_empty() && go(rest, &n[1..]),
+            Some((c, rest)) => n.first().is_some_and(|x| x == c) && go(rest, &n[1..]),
+        }
+    }
+    let low = |s: &str| s.to_lowercase().chars().collect::<Vec<char>>();
+    go(&low(glob), &low(name))
+}
+
+/// 選ぶ画面の `--filter`(`名前:*.png;*.jpg|名前:*.pdf`)
+pub fn parse_filters(s: &str) -> Vec<(String, Vec<String>)> {
+    s.split('|')
+        .filter_map(|f| {
+            let (name, globs) = f.split_once(':')?;
+            let g: Vec<String> = globs.split(';').filter(|g| !g.is_empty()).map(str::to_string).collect();
+            (!g.is_empty()).then(|| (name.to_string(), g))
+        })
+        .collect()
+}
+
 /// 開いているフォルダと、選んでいるもの
 #[derive(Debug, Clone, Default)]
 pub struct DirState {
@@ -31,6 +56,8 @@ pub struct DirState {
     /// 選んでいる位置(entries の中)
     pub selected: Option<usize>,
     pub show_hidden: bool,
+    /// 選ぶ画面のファイルの種類(glob)。空なら全部。フォルダはいつも出す
+    pub filter: Vec<String>,
     /// 読めなかったときの理由
     pub error: Option<String>,
     /// 読んだときのフォルダの更新時刻(変わったら読み直す)
@@ -54,7 +81,8 @@ impl DirState {
         self.stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         match read_dir(path) {
             Ok(v) => {
-                self.entries = v.into_iter().filter(|e| self.show_hidden || !e.hidden).collect();
+                let shown = |e: &Entry| e.is_dir || self.filter.is_empty() || self.filter.iter().any(|g| glob_match(g, &e.name));
+                self.entries = v.into_iter().filter(|e| (self.show_hidden || !e.hidden) && shown(e)).collect();
                 self.error = None;
             }
             Err(e) => {
@@ -276,6 +304,23 @@ pub enum FilerCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 名前の_glob() {
+        assert!(glob_match("*.png", "a.PNG"));
+        assert!(glob_match("*", "x"));
+        assert!(glob_match("a?c.*", "abc.txt"));
+        assert!(!glob_match("*.png", "a.jpg"));
+        assert!(!glob_match("?", ""));
+        assert!(glob_match("*.tar.*", "x.tar.gz"));
+    }
+
+    #[test]
+    fn ファイルの種類の文字() {
+        assert_eq!(parse_filters("画像:*.png;*.jpg|全部:*"), vec![("画像".to_string(), vec!["*.png".to_string(), "*.jpg".to_string()]), ("全部".to_string(), vec!["*".to_string()])]);
+        assert!(parse_filters("").is_empty());
+        assert!(parse_filters("名前だけ:").is_empty());
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("prelude-filer-test-{name}-{}", std::process::id()));

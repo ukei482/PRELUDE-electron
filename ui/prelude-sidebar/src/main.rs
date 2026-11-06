@@ -195,6 +195,12 @@ impl Sidebar {
                     .child(close)
                     .on_click(cx.listener(move |this, _, _, _| this.send("tab.activate", json!({ "tab": { "id": id } })))),
             );
+            // 今のペインが Web なら URL を出す(アドレスバーが無いので。判断 12)
+            if let Some(url) = prelude_proto::pane_str(&t.layout, t.active_pane, "url").filter(|_| active) {
+                list = list.child(
+                    div().px(px(6.)).pb(px(2.)).text_size(px(11.)).text_color(color::dim()).overflow_hidden().whitespace_nowrap().child(SharedString::from(url.to_string())),
+                );
+            }
         }
         if snap.state.tabs.is_empty() {
             list = list.child(div().px(px(6.)).text_color(color::dim()).child("(no tabs)"));
