@@ -145,7 +145,7 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
         core.show_cli();
     }
     // Web のペインは窓の取り込みがあるときだけ(窓をペインに置けないと、Chromium の窓がばらばらに出るだけになる)
-    let web = if compositor.is_some() { web::start(&tag, notes_tx) } else { None };
+    let web = if compositor.is_some() { web::start(&tag, opt.socket.with_extension("web"), notes_tx) } else { None };
     let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), compositor, web });
     // 前回のタブのアプリを起動し直す
     shared.sync_embed(&shared.core.lock().unwrap());

@@ -1,21 +1,21 @@
-//! Web のペイン(docs/redesign-rust.md の判断 3)。Chromium を PRELUDE 専用のプロファイルで 1 つだけ動かし、CDP で操作する。
+//! Web のペイン(docs/redesign-rust.md の判断 3)。Chromium を PRELUDE 専用のプロファイルで 1 つだけ動かし、小さな拡張機能とやり取りする。
 //!
-//! - CDP は `--remote-debugging-pipe`(fd 3 で送り、fd 4 で受ける。1 つの JSON の終わりは NUL)。ポートを開けないので、ほかのプロセスから操作されない。
-//!   コアが落ちると通信の口が閉じ、Chromium も終わる
-//! - Web のペイン 1 つ = Chromium のアプリの窓 1 つ(アドレスバー・タブなし)。動いている Chromium に `--app=file:///…/prelude-pane.html#<印>` を頼んで作る。
-//!   その小さなページが題名を `PRELUDE-PANE:<印>` にするので、KWin スクリプト(embed.js)はその題名で窓を見分けて取り込む。取り込んだら本当の URL へ移す
-//! - URL・題名は CDP のイベント(Target.targetInfoChanged)で受けてコアに知らせる(コアはペインの url を書き換えて残す。起動し直すとその URL で開く)
-//! - 新しい窓: noopener のリンク(新しいタブで開く)は PRELUDE の新しいタブにする。opener のある小さな窓(ログインのポップアップなど)は取り込まずそのまま
-//! - ダウンロードの保存先は、今のタブのブックマークの paths の download
+//! - CDP は使わない。`--remote-debugging-pipe` で起動すると `navigator.webdriver` が true になり、Google のログインに拒まれる
+//! - 拡張機能(`extension/`)は事実を知らせて頼まれたことをするだけで、判断はここでする([`decide`])。起動のときにファイルへ書き出す
+//! - 拡張機能とは native messaging。Chromium が起動した `prelude-core --web-host`(webhost.rs)が Unix ソケットへつなぐ
+//! - Web のペイン 1 つ = Chromium のアプリの窓 1 つ(アドレスバー・タブなし)。`--app=file:///…/prelude-pane.html#<印>` で作る。
+//!   その小さなページが題名を `PRELUDE-PANE:<印>` にするので、コンポジタの裏側はその題名で窓を見分けて取り込む。取り込んだら本当の URL へ移す
+//! - URL・題名は拡張機能が知らせる(コアはペインの url を書き換えて残す。起動し直すとその URL で開く)
+//! - 新しい窓: タブ付きの普通の窓に出たページは閉じて PRELUDE の新しいタブにする。ポップアップ(ログインなど)はそのまま
+//! - ダウンロードの保存先は Chromium に絶対パスで頼めないので、終わってからコアが paths の download へ移す
+//! - Chromium は窓が無くなると終わる。次のペインで起動し直す
 use crate::compositor::Note;
 use serde_json::{json, Value};
-use std::collections::HashMap;
-use std::os::fd::{FromRawFd, OwnedFd};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::UnixListener;
 use tokio::sync::{mpsc, oneshot};
 
 /// Web のペイン(コアの状態から作る)
@@ -37,7 +37,11 @@ enum Msg {
     Sync(Vec<WebWant>, String),
     Claimed(u64),
     Go(u64, Go),
-    Event(String, Value, Option<String>),
+    /// 拡張機能がつながった。ここへ書くと拡張機能へ届く
+    Connected(mpsc::UnboundedSender<String>),
+    /// 拡張機能からの知らせ
+    Event(Value),
+    /// Chromium が終わった
     Closed,
     Shutdown(oneshot::Sender<()>),
 }
@@ -52,7 +56,7 @@ impl Handle {
     pub fn sync(&self, wants: Vec<WebWant>, download_dir: String) {
         let _ = self.tx.send(Msg::Sync(wants, download_dir));
     }
-    /// ペインの窓を KWin が取り込んだ(本当の URL へ移してよい)
+    /// ペインの窓をコンポジタの裏側が取り込んだ(本当の URL へ移してよい)
     pub fn claimed(&self, pane: u64) {
         let _ = self.tx.send(Msg::Claimed(pane));
     }
@@ -99,148 +103,163 @@ fn marker_key(tag: &str, pane: u64) -> String {
     format!("{tag}:{pane}")
 }
 
-/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる。Chromium は NixOS のモジュールが入れるので、それ以上の扱いはしない。判断 12)
-pub fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Handle> {
+/// 拡張機能の固定の id(manifest.json の key から決まる)
+const EXTENSION_ID: &str = "gopcccjkfpojcemicmiipmkbfeeeefil";
+const EXTENSION_MANIFEST: &str = include_str!("../extension/manifest.json");
+const EXTENSION_BG: &str = include_str!("../extension/bg.js");
+const HOST_NAME: &str = "org.prelude.web";
+
+/// 拡張機能と、native messaging の宣言を書き出す。`--web-host` のパスは版で変わるので、起動のたびに書く
+fn install_extension(dir: &Path, profile: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(dir.join("manifest.json"), EXTENSION_MANIFEST)?;
+    std::fs::write(dir.join("bg.js"), EXTENSION_BG)?;
+    let exe = std::env::current_exe()?;
+    let host = dir.join("web-host");
+    std::fs::write(&host, format!("#!/bin/sh\nexec '{}' --web-host\n", exe.display()))?;
+    std::fs::set_permissions(&host, std::fs::Permissions::from_mode(0o755))?;
+    let hosts = profile.join("NativeMessagingHosts");
+    std::fs::create_dir_all(&hosts)?;
+    let manifest = json!({
+        "name": HOST_NAME,
+        "description": "PRELUDE",
+        "path": host,
+        "type": "stdio",
+        "allowed_origins": [format!("chrome-extension://{EXTENSION_ID}/")],
+    });
+    std::fs::write(hosts.join(format!("{HOST_NAME}.json")), manifest.to_string())
+}
+
+/// 拡張機能が知らせたタブの様子
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabNote {
+    pub tab: i64,
+    pub url: String,
+    pub title: String,
+    /// 窓の種類(`app`・`normal`・`popup`)
+    pub win: String,
+}
+
+/// タブの知らせへの返事
+#[derive(Debug, Clone, PartialEq)]
+pub enum Decision {
+    /// 印のページ: このタブはペインの窓
+    Pane(u64),
+    /// もう要らないペインの窓、印の違う窓: 閉じる
+    Close,
+    /// ペインのタブの URL・題名が変わった
+    Update(u64),
+    /// タブ付きの窓に出たページ: 閉じて、PRELUDE の新しいタブにする
+    Capture(String),
+    /// 何もしない(URL がまだ決まっていない・ポップアップ・chrome:// など)
+    Ignore,
+}
+
+/// タブの知らせをどう扱うか。owner はこのタブのペイン(分かっていれば)
+pub fn decide(t: &TabNote, page: &str, tag: &str, owner: Option<u64>, live: &dyn Fn(u64) -> bool) -> Decision {
+    if let Some(key) = t.url.strip_prefix(&format!("file://{page}#")) {
+        let pane = key.rsplit(':').next().and_then(|s| s.parse::<u64>().ok());
+        return match pane.filter(|p| key == marker_key(tag, *p) && live(*p)) {
+            Some(p) => Decision::Pane(p),
+            None if owner.is_some() => Decision::Ignore, // 戻って印のページに来た
+            None => Decision::Close,
+        };
+    }
+    if let Some(p) = owner {
+        return if t.url.is_empty() || t.url.starts_with("file://") { Decision::Ignore } else { Decision::Update(p) };
+    }
+    if t.win == "normal" && (t.url.starts_with("http://") || t.url.starts_with("https://")) {
+        return Decision::Capture(t.url.clone());
+    }
+    Decision::Ignore
+}
+
+/// ダウンロードの移し先。同じ名前があれば「名前 (1)」にする。移さなくてよければ None
+pub fn download_target(from: &Path, dir: &str) -> Option<PathBuf> {
+    if dir.is_empty() || from.parent() == Some(Path::new(dir)) {
+        return None;
+    }
+    let name = from.file_name()?;
+    let first = Path::new(dir).join(name);
+    if !first.exists() {
+        return Some(first);
+    }
+    let (stem, ext) = (from.file_stem()?.to_string_lossy(), from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default());
+    (1..1000).map(|i| Path::new(dir).join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists())
+}
+
+/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる。Chromium は NixOS のモジュールが入れるので、それ以上の扱いはしない。判断 12)。
+/// socket は拡張機能がつなぐ Unix ソケット
+pub fn start(tag: &str, socket: PathBuf, notes: mpsc::UnboundedSender<Note>) -> Option<Handle> {
     let Some((bin, profile, page)) = locate(tag) else {
         eprintln!("prelude-core: Chromium is not installed. Web panes will not open");
         return None;
     };
-    if let Err(e) = std::fs::create_dir_all(page.parent().unwrap_or(Path::new("/"))).and_then(|_| std::fs::write(&page, PANE_PAGE)) {
-        eprintln!("prelude-core: cannot write {} ({e})", page.display());
+    let base = page.parent().unwrap_or(Path::new("/")).to_path_buf();
+    let extension = base.join(format!("prelude-extension{tag}"));
+    let ready = std::fs::create_dir_all(&base).and_then(|_| std::fs::write(&page, PANE_PAGE)).and_then(|_| install_extension(&extension, &profile));
+    if let Err(e) = ready {
+        eprintln!("prelude-core: cannot prepare Chromium ({e})");
         return None;
     }
+    let _ = std::fs::remove_file(&socket);
+    let listener = match UnixListener::bind(&socket) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("prelude-core: cannot listen on {} ({e})", socket.display());
+            return None;
+        }
+    };
     let (tx, rx) = mpsc::unbounded_channel();
+    tokio::spawn(accept(listener, tx.clone()));
     let w = Web {
         tag: tag.to_string(),
         bin,
         profile,
         page,
+        extension,
+        socket,
         tx: tx.clone(),
         notes,
-        cdp: None,
+        chromium: None,
+        out: None,
         panes: HashMap::new(),
+        captured: HashSet::new(),
+        moved: HashSet::new(),
         download_dir: String::new(),
     };
     tokio::spawn(w.run(rx));
     Some(Handle { tx })
 }
 
-// ------------------------------------------------------------------ CDP
-
-type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
-
-/// CDP の通信の口
-struct Cdp {
-    out: mpsc::UnboundedSender<Vec<u8>>,
-    pending: Pending,
-    next: AtomicU64,
-    child: tokio::process::Child,
-}
-
-impl Cdp {
-    /// コマンドを送って返事を待つ(10 秒まで)
-    async fn call(&self, method: &str, params: Value, session: Option<&str>) -> Result<Value, String> {
-        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        let mut m = json!({ "id": id, "method": method, "params": params });
-        if let Some(s) = session {
-            m["sessionId"] = json!(s);
+/// 拡張機能の橋渡しのつながりを受ける。つなぎ直したら新しいつながりを使う
+async fn accept(listener: UnixListener, tx: mpsc::UnboundedSender<Msg>) {
+    while let Ok((sock, _)) = listener.accept().await {
+        let (r, mut w) = sock.into_split();
+        let (out, mut out_rx) = mpsc::unbounded_channel::<String>();
+        if tx.send(Msg::Connected(out)).is_err() {
+            return;
         }
-        let (tx, rx) = oneshot::channel();
-        self.pending.lock().unwrap().insert(id, tx);
-        let mut bytes = serde_json::to_vec(&m).map_err(|e| e.to_string())?;
-        bytes.push(0);
-        self.out.send(bytes).map_err(|_| "Chromium closed".to_string())?;
-        match tokio::time::timeout(Duration::from_secs(10), rx).await {
-            Ok(Ok(r)) => r,
-            _ => {
-                self.pending.lock().unwrap().remove(&id);
-                Err(format!("{method}: no answer"))
-            }
-        }
-    }
-}
-
-/// 子プロセスに渡す fd(fd 3・4 にする前の、閉じないように印を外したもの)
-fn pipe() -> std::io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds = [0; 2];
-    // SAFETY: 2 つの fd を受け取る配列を渡す
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: pipe2 が作った fd で、ほかに持ち主はいない
-    Ok(unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) })
-}
-
-/// Chromium を CDP の通信の口つきで起動する。events に CDP のイベントを送る
-fn launch(bin: &str, profile: &Path, events: mpsc::UnboundedSender<Msg>) -> std::io::Result<Cdp> {
-    use std::os::fd::AsRawFd;
-    let (cmd_r, cmd_w) = pipe()?; // こちら → Chromium(fd 3)
-    let (out_r, out_w) = pipe()?; // Chromium → こちら(fd 4)
-    let (a, b) = (cmd_r.as_raw_fd(), out_w.as_raw_fd());
-    let mut c = tokio::process::Command::new(bin);
-    c.arg("--remote-debugging-pipe")
-        .arg(format!("--user-data-dir={}", profile.display()))
-        .args(["--no-first-run", "--no-default-browser-check", "--no-startup-window", "--hide-crash-restore-bubble"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .process_group(0);
-    // SAFETY: fork と exec の間で、fd を 3・4 に付け替えるだけ(dup2 は async-signal-safe)。
-    // 先に 10 以上へ写してから付け替える(元の fd が 3・4 だったときに上書きしないように)
-    unsafe {
-        c.pre_exec(move || {
-            let a2 = libc::fcntl(a, libc::F_DUPFD, 10);
-            let b2 = libc::fcntl(b, libc::F_DUPFD, 10);
-            if a2 < 0 || b2 < 0 || libc::dup2(a2, 3) < 0 || libc::dup2(b2, 4) < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let child = c.spawn()?;
-    drop((cmd_r, out_w));
-
-    let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
-    let (out, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-    let mut w = tokio::net::unix::pipe::Sender::from_owned_fd(cmd_w)?;
-    tokio::spawn(async move {
-        while let Some(b) = out_rx.recv().await {
-            if w.write_all(&b).await.is_err() {
-                break;
-            }
-        }
-    });
-    let mut r = tokio::net::unix::pipe::Receiver::from_owned_fd(out_r)?;
-    let p = pending.clone();
-    tokio::spawn(async move {
-        let mut buf = Vec::new();
-        let mut chunk = vec![0u8; 64 * 1024];
-        loop {
-            let n = match r.read(&mut chunk).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => n,
-            };
-            buf.extend_from_slice(&chunk[..n]);
-            while let Some(i) = buf.iter().position(|b| *b == 0) {
-                let line: Vec<u8> = buf.drain(..=i).collect();
-                let Ok(m) = serde_json::from_slice::<Value>(&line[..line.len() - 1]) else { continue };
-                if let Some(id) = m.get("id").and_then(Value::as_u64) {
-                    if let Some(tx) = p.lock().unwrap().remove(&id) {
-                        let r = match m.get("error") {
-                            Some(e) => Err(e.get("message").and_then(Value::as_str).unwrap_or("error").to_string()),
-                            None => Ok(m.get("result").cloned().unwrap_or(Value::Null)),
-                        };
-                        let _ = tx.send(r);
-                    }
-                } else if let Some(method) = m.get("method").and_then(Value::as_str) {
-                    let session = m.get("sessionId").and_then(Value::as_str).map(String::from);
-                    let _ = events.send(Msg::Event(method.to_string(), m.get("params").cloned().unwrap_or(Value::Null), session));
+        tokio::spawn(async move {
+            while let Some(line) = out_rx.recv().await {
+                if w.write_all(line.as_bytes()).await.is_err() || w.write_all(b"\n").await.is_err() {
+                    break;
                 }
             }
-        }
-        let _ = events.send(Msg::Closed);
-    });
-    Ok(Cdp { out, pending, next: AtomicU64::new(0), child })
+        });
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(r).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                if let Ok(v) = serde_json::from_str::<Value>(&l) {
+                    if tx.send(Msg::Event(v)).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+    }
 }
 
 // ------------------------------------------------------------------ ペイン
@@ -252,8 +271,7 @@ struct Pane {
     asked: String,
     /// Chromium が知らせた今の URL
     now: String,
-    target: Option<String>,
-    session: Option<String>,
+    tab: Option<i64>,
     claimed: bool,
 }
 
@@ -262,10 +280,19 @@ struct Web {
     bin: String,
     profile: PathBuf,
     page: PathBuf,
+    extension: PathBuf,
+    socket: PathBuf,
     tx: mpsc::UnboundedSender<Msg>,
     notes: mpsc::UnboundedSender<Note>,
-    cdp: Option<Cdp>,
+    /// 動いている Chromium の pid
+    chromium: Option<u32>,
+    /// 拡張機能へ書く口
+    out: Option<mpsc::UnboundedSender<String>>,
     panes: HashMap<u64, Pane>,
+    /// 閉じると決めたタブ(閉じるまでに知らせがまた来ても、2 度タブにしない)
+    captured: HashSet<i64>,
+    /// 移し終えたダウンロード
+    moved: HashSet<i64>,
     download_dir: String,
 }
 
@@ -273,23 +300,23 @@ impl Web {
     async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Msg>) {
         while let Some(m) = rx.recv().await {
             match m {
-                Msg::Sync(w, dl) => self.sync(w, dl).await,
+                Msg::Sync(w, dl) => self.sync(w, dl),
                 Msg::Claimed(p) => {
                     if let Some(x) = self.panes.get_mut(&p) {
                         x.claimed = true;
                     }
-                    self.navigate(p).await;
+                    self.navigate(p);
                 }
-                Msg::Go(p, g) => self.go(p, g).await,
-                Msg::Event(method, params, session) => self.event(&method, &params, session).await,
+                Msg::Go(p, g) => self.go(p, g),
+                Msg::Connected(out) => self.out = Some(out),
+                Msg::Event(v) => self.event(&v),
                 Msg::Closed => {
-                    // Chromium が終わった(落ちた・使用者が全部閉じて終わった)。窓が消えるので、ペインは取り込みの側から止まったものになる
+                    // Chromium が終わった(使用者が全部閉じた・落ちた)。窓が消えるので、ペインは取り込みの側から止まったものになる
                     eprintln!("prelude-core: Chromium exited");
-                    self.cdp = None;
-                    for p in self.panes.values_mut() {
-                        (p.target, p.session, p.claimed, p.asked) = (None, None, false, String::new());
-                    }
+                    self.chromium = None;
+                    self.out = None;
                     self.panes.clear();
+                    self.captured.clear();
                 }
                 Msg::Shutdown(done) => {
                     self.shutdown().await;
@@ -300,37 +327,18 @@ impl Web {
         }
     }
 
-    /// Chromium が動いていなければ起動する
-    async fn ensure(&mut self) -> bool {
-        if self.cdp.is_some() {
-            return true;
+    fn tell(&self, m: Value) {
+        if let Some(o) = &self.out {
+            let _ = o.send(m.to_string());
         }
-        let cdp = match launch(&self.bin, &self.profile, self.tx.clone()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("prelude-core: cannot start Chromium ({e})");
-                return false;
-            }
-        };
-        if let Err(e) = cdp.call("Target.setDiscoverTargets", json!({ "discover": true }), None).await {
-            eprintln!("prelude-core: Chromium does not answer ({e})");
-            return false;
-        }
-        self.cdp = Some(cdp);
-        self.set_download_dir().await;
-        true
     }
 
-    async fn sync(&mut self, wants: Vec<WebWant>, dl: String) {
-        if dl != self.download_dir {
-            self.download_dir = dl;
-            self.set_download_dir().await;
-        }
+    fn sync(&mut self, wants: Vec<WebWant>, dl: String) {
+        self.download_dir = dl;
         let ids: Vec<u64> = wants.iter().map(|w| w.pane).collect();
         for id in self.panes.keys().copied().filter(|id| !ids.contains(id)).collect::<Vec<_>>() {
-            let p = self.panes.remove(&id);
-            if let (Some(c), Some(t)) = (&self.cdp, p.and_then(|p| p.target)) {
-                let _ = c.call("Target.closeTarget", json!({ "targetId": t }), None).await;
+            if let Some(t) = self.panes.remove(&id).and_then(|p| p.tab) {
+                self.tell(json!({ "cmd": "close", "tab": t }));
             }
         }
         for w in wants {
@@ -338,33 +346,43 @@ impl Web {
                 Some(p) => {
                     if p.url != w.url {
                         p.url = w.url;
-                        self.navigate(w.pane).await;
+                        self.navigate(w.pane);
                     }
                 }
                 None => {
-                    if !self.ensure().await {
-                        continue;
-                    }
-                    self.panes.insert(
-                        w.pane,
-                        Pane { url: w.url, asked: String::new(), now: String::new(), target: None, session: None, claimed: false },
-                    );
+                    self.panes.insert(w.pane, Pane { url: w.url, asked: String::new(), now: String::new(), tab: None, claimed: false });
                     self.open_window(w.pane);
                 }
             }
         }
     }
 
-    /// アプリの窓を作る(動いている Chromium に頼む。頼んだプロセスはすぐ終わる)
-    fn open_window(&self, pane: u64) {
+    /// アプリの窓を作る。Chromium が動いていなければ、これで起動する。動いていれば頼むだけで、このプロセスはすぐ終わる
+    fn open_window(&mut self, pane: u64) {
         let url = format!("file://{}#{}", self.page.display(), marker_key(&self.tag, pane));
         let mut c = tokio::process::Command::new(&self.bin);
-        c.arg(format!("--user-data-dir={}", self.profile.display())).arg(format!("--app={url}"));
-        c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).process_group(0);
+        c.arg(format!("--user-data-dir={}", self.profile.display()))
+            .arg(format!("--load-extension={}", self.extension.display()))
+            .args(["--no-first-run", "--no-default-browser-check", "--hide-crash-restore-bubble"])
+            .arg(format!("--app={url}"))
+            .env("PRELUDE_WEB_SOCK", &self.socket)
+            .env_remove("CHROME_DESKTOP")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0);
+        let first = self.chromium.is_none();
         match c.spawn() {
             Ok(mut child) => {
+                if first {
+                    self.chromium = child.id();
+                }
+                let tx = self.tx.clone();
                 tokio::spawn(async move {
                     let _ = child.wait().await;
+                    if first {
+                        let _ = tx.send(Msg::Closed);
+                    }
                 });
             }
             Err(e) => eprintln!("prelude-core: cannot open a Chromium window ({e})"),
@@ -372,147 +390,162 @@ impl Web {
     }
 
     /// 取り込んだペインを、開きたい URL へ移す(今の URL と違い、まだ頼んでいなければ)
-    async fn navigate(&mut self, pane: u64) {
+    fn navigate(&mut self, pane: u64) {
         let Some(p) = self.panes.get_mut(&pane) else { return };
-        let (Some(session), true, Some(c)) = (p.session.clone(), p.claimed, &self.cdp) else { return };
+        let (Some(tab), true) = (p.tab, p.claimed) else { return };
         if p.url.is_empty() || p.url == p.now || p.url == p.asked {
             return;
         }
         p.asked = p.url.clone();
         let url = p.url.clone();
-        if let Err(e) = c.call("Page.navigate", json!({ "url": url }), Some(&session)).await {
-            eprintln!("prelude-core: cannot open {url} ({e})");
-        }
+        self.tell(json!({ "cmd": "go", "tab": tab, "url": url }));
     }
 
-    async fn go(&mut self, pane: u64, g: Go) {
-        let (Some(c), Some(session)) = (&self.cdp, self.panes.get(&pane).and_then(|p| p.session.clone())) else { return };
-        if g == Go::Reload {
-            let _ = c.call("Page.reload", json!({}), Some(&session)).await;
-            return;
-        }
-        let Ok(h) = c.call("Page.getNavigationHistory", json!({}), Some(&session)).await else { return };
-        let cur = h["currentIndex"].as_i64().unwrap_or(0);
-        let i = cur + if g == Go::Back { -1 } else { 1 };
-        if let Some(e) = h["entries"].as_array().and_then(|a| a.get(i as usize)).filter(|_| i >= 0) {
-            // 最初の印のページには戻らない
-            if !e["url"].as_str().unwrap_or("").starts_with("file://") {
-                let _ = c.call("Page.navigateToHistoryEntry", json!({ "entryId": e["id"] }), Some(&session)).await;
-            }
-        }
+    fn go(&self, pane: u64, g: Go) {
+        let Some(tab) = self.panes.get(&pane).and_then(|p| p.tab) else { return };
+        let cmd = match g {
+            Go::Back => "back",
+            Go::Forward => "forward",
+            Go::Reload => "reload",
+        };
+        self.tell(json!({ "cmd": cmd, "tab": tab }));
     }
 
-    fn pane_of_target(&self, target: &str) -> Option<u64> {
-        self.panes.iter().find(|(_, p)| p.target.as_deref() == Some(target)).map(|(id, _)| *id)
-    }
-
-    async fn event(&mut self, method: &str, params: &Value, _session: Option<String>) {
-        match method {
-            "Target.targetCreated" => {
-                let ti = &params["targetInfo"];
-                if ti["type"] != "page" {
-                    return;
-                }
-                let url = ti["url"].as_str().unwrap_or("");
-                let target = ti["targetId"].as_str().unwrap_or("").to_string();
-                // 印のページ = 頼んだペインの窓
-                let prefix = format!("file://{}#", self.page.display());
-                if let Some(key) = url.strip_prefix(&prefix) {
-                    let pane = key.rsplit(':').next().and_then(|s| s.parse::<u64>().ok());
-                    let Some(pane) = pane.filter(|p| key == marker_key(&self.tag, *p) && self.panes.contains_key(p)) else {
-                        self.close_target(&target).await; // もう要らないペインの窓
-                        return;
-                    };
-                    let Some(c) = &self.cdp else { return };
-                    let session = c.call("Target.attachToTarget", json!({ "targetId": target, "flatten": true }), None).await;
-                    if let Some(p) = self.panes.get_mut(&pane) {
-                        p.target = Some(target);
-                        p.session = session.ok().and_then(|s| s["sessionId"].as_str().map(String::from));
-                    }
-                    self.navigate(pane).await;
-                    return;
-                }
-                // ペインのページから開いた新しい窓
-                let opener = ti["openerId"].as_str().and_then(|o| self.pane_of_target(o));
-                if let Some(from) = opener {
-                    if ti["canAccessOpener"] == true {
-                        return; // opener を使う小さな窓(ログインのポップアップなど)はそのまま
-                    }
-                    // 新しいタブで開くリンク: PRELUDE の新しいタブにする。URL が決まるまで待つ(まだ about:blank のことがある)
-                    let url = if url.is_empty() || url == "about:blank" { self.wait_url(&target).await } else { url.to_string() };
-                    self.close_target(&target).await;
-                    if !url.is_empty() {
-                        let _ = self.notes.send(Note::OpenTab { url, from });
-                    }
+    fn event(&mut self, v: &Value) {
+        match v["ev"].as_str().unwrap_or("") {
+            "tab" => self.tab_note(v),
+            "removed" => {
+                let tab = v["tab"].as_i64().unwrap_or(0);
+                self.captured.remove(&tab);
+                for p in self.panes.values_mut().filter(|p| p.tab == Some(tab)) {
+                    p.tab = None;
                 }
             }
-            "Target.targetInfoChanged" => {
-                let ti = &params["targetInfo"];
-                let Some(pane) = ti["targetId"].as_str().and_then(|t| self.pane_of_target(t)) else { return };
-                let url = ti["url"].as_str().unwrap_or("").to_string();
-                let title = ti["title"].as_str().unwrap_or("").to_string();
-                if url.starts_with("file://") {
-                    return; // 印のページ
-                }
-                if let Some(p) = self.panes.get_mut(&pane) {
-                    p.now = url.clone();
-                    p.url = url.clone(); // ページの中で移った先を、開きたい URL にする(コアにも知らせる)
-                }
-                let _ = self.notes.send(Note::Web { pane, url, title });
-            }
-            "Browser.downloadWillBegin" | "Browser.downloadProgress" => {
-                let _ = self.notes.send(Note::Download(params.clone()));
-            }
+            "download" => self.download(v),
+            "error" => eprintln!("prelude-core: browser extension: {v}"),
             _ => {}
         }
     }
 
-    /// 新しいページの URL が決まるのを待つ(1 秒まで)
-    async fn wait_url(&self, target: &str) -> String {
-        let Some(c) = &self.cdp else { return String::new() };
-        for _ in 0..10 {
-            if let Ok(r) = c.call("Target.getTargetInfo", json!({ "targetId": target }), None).await {
-                let u = r["targetInfo"]["url"].as_str().unwrap_or("");
-                if !u.is_empty() && u != "about:blank" {
-                    return u.to_string();
+    fn tab_note(&mut self, v: &Value) {
+        let s = |k: &str| v[k].as_str().unwrap_or("").to_string();
+        let t = TabNote { tab: v["tab"].as_i64().unwrap_or(0), url: s("url"), title: s("title"), win: s("win") };
+        let owner = self.panes.iter().find(|(_, p)| p.tab == Some(t.tab)).map(|(id, _)| *id);
+        let page = self.page.to_string_lossy().into_owned();
+        let live = |p: u64| self.panes.contains_key(&p);
+        match decide(&t, &page, &self.tag, owner, &live) {
+            Decision::Pane(pane) => {
+                if let Some(p) = self.panes.get_mut(&pane) {
+                    p.tab = Some(t.tab);
+                }
+                self.navigate(pane);
+            }
+            Decision::Close => self.tell(json!({ "cmd": "close", "tab": t.tab })),
+            Decision::Update(pane) => {
+                if let Some(p) = self.panes.get_mut(&pane) {
+                    p.now = t.url.clone();
+                    p.url = t.url.clone(); // ページの中で移った先を、開きたい URL にする(コアにも知らせる)
+                }
+                let _ = self.notes.send(Note::Web { pane, url: t.url, title: t.title });
+            }
+            Decision::Capture(url) => {
+                if self.captured.insert(t.tab) {
+                    self.tell(json!({ "cmd": "close", "tab": t.tab }));
+                    let _ = self.notes.send(Note::OpenTab { url, from: 0 });
                 }
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        String::new()
-    }
-
-    async fn close_target(&self, target: &str) {
-        if let Some(c) = &self.cdp {
-            let _ = c.call("Target.closeTarget", json!({ "targetId": target }), None).await;
+            Decision::Ignore => {}
         }
     }
 
-    async fn set_download_dir(&self) {
-        let Some(c) = &self.cdp else { return };
-        let dir = if self.download_dir.is_empty() { None } else { Some(self.download_dir.clone()) };
-        let mut p = json!({ "behavior": "allow", "eventsEnabled": true });
-        if let Some(d) = dir {
-            p["downloadPath"] = json!(d);
+    /// 進み具合を配り、終わったら paths の download へ移す
+    fn download(&mut self, v: &Value) {
+        let _ = self.notes.send(Note::Download(v.clone()));
+        let (id, file) = (v["id"].as_i64().unwrap_or(0), v["filename"].as_str().unwrap_or(""));
+        if v["state"] != "complete" || file.is_empty() || !self.moved.insert(id) {
+            return;
         }
-        if let Err(e) = c.call("Browser.setDownloadBehavior", p, None).await {
-            eprintln!("prelude-core: cannot set the download folder ({e})");
+        let from = Path::new(file);
+        let Some(to) = download_target(from, &self.download_dir) else { return };
+        let moved = std::fs::rename(from, &to).or_else(|_| std::fs::copy(from, &to).and_then(|_| std::fs::remove_file(from)));
+        if let Err(e) = moved {
+            eprintln!("prelude-core: cannot move {} to {} ({e})", from.display(), to.display());
         }
     }
 
-    /// 終わる: ペインの窓を閉じてから、CDP の通信の口を閉じる(Chromium は口が閉じると自分で終わる)。終わるのを 3 秒まで待つ。
-    /// Browser.close は使わない(snap 版では落ちた扱いになり、次の起動で「復元しますか」が出る)
+    /// 終わる: ペインの窓を閉じる(窓が無くなると Chromium は終わる)。3 秒まで待ち、残っていれば終わらせる
     async fn shutdown(&mut self) {
-        let Some(c) = self.cdp.take() else { return };
+        let Some(pid) = self.chromium.take() else { return };
         for p in self.panes.values() {
-            if let Some(t) = &p.target {
-                let _ = c.call("Target.closeTarget", json!({ "targetId": t }), None).await;
+            if let Some(t) = p.tab {
+                self.tell(json!({ "cmd": "close", "tab": t }));
             }
         }
-        let Cdp { out, mut child, .. } = c;
-        drop(out);
-        if tokio::time::timeout(Duration::from_secs(3), child.wait()).await.is_err() {
-            eprintln!("prelude-core: Chromium did not exit");
+        let end = std::time::Instant::now() + Duration::from_secs(3);
+        while crate::procs::alive(pid) && std::time::Instant::now() < end {
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
+        if crate::procs::alive(pid) {
+            crate::procs::signal(pid, libc::SIGTERM);
+        }
+        let _ = std::fs::remove_file(&self.socket);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PAGE: &str = "/c/prelude-pane.html";
+
+    fn t(url: &str, win: &str) -> TabNote {
+        TabNote { tab: 1, url: url.into(), title: String::new(), win: win.into() }
+    }
+    fn d(n: &TabNote, owner: Option<u64>) -> Decision {
+        decide(n, PAGE, ".d1", owner, &|p| p == 5)
+    }
+
+    #[test]
+    fn 印のページはペインの窓() {
+        assert_eq!(d(&t("file:///c/prelude-pane.html#.d1:5", "app"), None), Decision::Pane(5));
+        // もう要らないペイン・印の違うコアのもの
+        assert_eq!(d(&t("file:///c/prelude-pane.html#.d1:6", "app"), None), Decision::Close);
+        assert_eq!(d(&t("file:///c/prelude-pane.html#.d2:5", "app"), None), Decision::Close);
+        // 戻って印のページに来たペインは閉じない
+        assert_eq!(d(&t("file:///c/prelude-pane.html#.d2:5", "app"), Some(5)), Decision::Ignore);
+    }
+
+    #[test]
+    fn ペインのタブは_url_を知らせる() {
+        assert_eq!(d(&t("https://a/", "app"), Some(5)), Decision::Update(5));
+        assert_eq!(d(&t("", "app"), Some(5)), Decision::Ignore);
+        assert_eq!(d(&t("file:///x", "app"), Some(5)), Decision::Ignore);
+    }
+
+    #[test]
+    fn タブ付きの窓に出たページだけ捕まえる() {
+        assert_eq!(d(&t("https://a/b", "normal"), None), Decision::Capture("https://a/b".into()));
+        assert_eq!(d(&t("http://a/", "normal"), None), Decision::Capture("http://a/".into()));
+        // URL がまだ決まっていない
+        assert_eq!(d(&t("", "normal"), None), Decision::Ignore);
+        assert_eq!(d(&t("about:blank", "normal"), None), Decision::Ignore);
+        // ログインのポップアップ・Chromium の設定はそのまま
+        assert_eq!(d(&t("https://accounts.google.com/", "popup"), None), Decision::Ignore);
+        assert_eq!(d(&t("chrome://settings/", "normal"), None), Decision::Ignore);
+    }
+
+    #[test]
+    fn ダウンロードの移し先() {
+        let d = std::env::temp_dir().join(format!("prelude-dl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let dir = d.to_str().unwrap();
+        let from = Path::new("/home/u/Downloads/a.pdf");
+        assert_eq!(download_target(from, ""), None);
+        assert_eq!(download_target(from, "/home/u/Downloads"), None);
+        assert_eq!(download_target(from, dir), Some(d.join("a.pdf")));
+        std::fs::write(d.join("a.pdf"), "x").unwrap();
+        assert_eq!(download_target(from, dir), Some(d.join("a (1).pdf")));
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }
