@@ -18,4 +18,5 @@ pub mod server;
 pub mod state;
 pub mod sway;
 pub mod web;
+pub mod webhost;
 pub mod xdg;

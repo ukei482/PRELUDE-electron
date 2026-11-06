@@ -30,6 +30,7 @@ mod kind {
     pub const GET_WORKSPACES: u32 = 1;
     pub const SUBSCRIBE: u32 = 2;
     pub const GET_TREE: u32 = 4;
+    pub const GET_INPUTS: u32 = 100;
     /// イベントは上の 1 ビットが立つ
     pub const EVENT: u32 = 0x8000_0000;
     pub const EV_WORKSPACE: u32 = EVENT;
@@ -368,6 +369,13 @@ fn quote(s: &str) -> String {
 
 // ------------------------------------------------------------------ 裏側
 
+/// 席のキーボードを決め直すコマンド(値は変えない)。fcitx5 の入力欄が閉じると、仮想キーボードが外れて席のキーボードが無くなることがある。
+/// その間に開いた窓には keymap が届かず、GPUI のアプリ(Zed など)は落ちる。sway は席にキーボードが無ければ、入力の設定を適用したときに決め直す
+pub fn keyboard_cmd(inputs: &Value) -> Option<String> {
+    let k = inputs.as_array()?.iter().find(|i| i["type"] == "keyboard" && i["repeat_delay"].is_u64())?;
+    Some(format!("input type:keyboard repeat_delay {}", k["repeat_delay"]))
+}
+
 /// 窓が出てから、外から開いた窓と決めるまでの間。起動を動いているプロセスに任せたペインは、1.5 秒後に窓を借りる
 const FOREIGN_WAIT: Duration = Duration::from_secs(2);
 
@@ -383,6 +391,8 @@ enum Msg {
     Reconcile,
     /// 選ぶ画面の大きさと場所を決める
     Dialog(i64),
+    /// 席のキーボードを決め直す
+    Keyboard,
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -523,6 +533,11 @@ impl Sway {
                         Msg::Foreign(con, tries) => self.foreign(con, tries).await,
                         Msg::Reconcile => self.reconcile().await,
                         Msg::Dialog(con) => self.ipc.run(&dialog_cmds(con)).await,
+                        Msg::Keyboard => {
+                            if let Some(c) = self.ipc.request(kind::GET_INPUTS, "").await.ok().as_ref().and_then(keyboard_cmd) {
+                                self.ipc.run(&[c]).await;
+                            }
+                        }
                         Msg::Shutdown(done) => {
                             self.shutdown().await;
                             let _ = done.send(());
@@ -734,6 +749,10 @@ impl Sway {
     /// 起動する(Web のペインは窓を web.rs が作るので、待つだけ)
     fn launch(&mut self, w: Want, old: HashSet<i64>) {
         let (mut sh, mut sh_pid) = (None, 0);
+        // ランチャーが閉じるのはこの後なので、少し待ってからも決め直す
+        for ms in [0, 250, 600] {
+            self.later(Msg::Keyboard, Duration::from_millis(ms));
+        }
         if w.marker.is_empty() {
             match launch::spawn(&w.cmd, &w.cwd) {
                 Ok(mut child) => {
@@ -1149,6 +1168,13 @@ mod tests {
     fn 選ぶ画面は真ん中に浮かせる() {
         assert_eq!(dialog_cmds(7)[0], "[con_id=7] resize set width 60 ppt height 70 ppt");
         assert_eq!(dialog_cmds(7).last().unwrap(), "[con_id=7] move position center");
+    }
+
+    #[test]
+    fn 席のキーボードを決め直すコマンド() {
+        let v = json!([{ "type": "pointer" }, { "type": "keyboard", "repeat_delay": 600, "repeat_rate": 25 }]);
+        assert_eq!(keyboard_cmd(&v).as_deref(), Some("input type:keyboard repeat_delay 600"));
+        assert_eq!(keyboard_cmd(&json!([{ "type": "pointer" }])), None);
     }
 
     #[test]

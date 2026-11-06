@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "PRELUDE",
+  "version": "1.0",
+  "description": "PRELUDE の Web のペインとコアをつなぐ",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkGEEYOzjtS6TFEBqFZiBlUzp0ZyC30p2wxjx54ORhnWFHVaAsihEJthZBkhbKvBr8O3KVbfNBArYdXEfIV/kmpfRqF+4bOO9/x9FEIJ2C6kIdNVQcdoAK5DN9vuGICau82gPRkH6MXhmno/9HdUzX2z6Esfmhb4vaEkddEsjntLyeI2EfMIhPThMDP005e1N/rHzh5LE7DWnwpnX30PnaiaEoYi4fLpAwM7Tuz6o7oh0m6c9SPYpazpmzK27TDlvPkc6e9RTSWSHICnUWM94wJqEn+/69CN6ebIRMJFdtG9qxikwrH78tGXHX1kg3d8yz0jbA6uR4053aOGNLhq7sQIDAQAB",
+  "permissions": [
+    "tabs",
+    "nativeMessaging",
+    "downloads"
+  ],
+  "background": {
+    "service_worker": "bg.js"
+  }
+}

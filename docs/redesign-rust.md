@@ -126,6 +126,18 @@ Rust の UI は Electron と違って Wayland の **layer-shell** が使える(�
 - 上の 「1 つの Chromium + CDP でアプリ窓」
 - 案: ペインごとに `chromium --app=URL` を別々に起動(今の方式。単純だが、URL やタイトルを PRELUDE が知れない)
 
+**Web のペインと CDP(2026-11-06 に変更)**
+CDP をやめて、小さな拡張機能でつなぐ。`--remote-debugging-pipe` で起動すると `navigator.webdriver` が `true` になり(普通の起動は `false`。同じ Chromium 156 で比べた)、Google のログインが「安全でないブラウザ」として拒まれる。拡張機能だけで起動すると、Google のパスワードと 2 段階の確認を経て Notion へログインできた。
+
+- 拡張機能(`crates/prelude-core/extension/`)はコアに埋め込み、起動のときに書き出す。事実を知らせて頼まれたことをするだけで、判断は `web.rs` の `decide` がする
+- つなぎ方は native messaging。Chromium が `prelude-core --web-host` を起動し、これがコアの Unix ソケット(`core.web`)へつなぐ。宣言は `<プロファイル>/NativeMessagingHosts/` に置く。id は `manifest.json` の `key` で固定する
+- 読み込みは `--load-extension`(Google 版の Chrome では外された引数なので、Chromium を使う)
+- タブ付きの窓(`normal`)に出た http(s) のページは閉じて PRELUDE のタブにする。`popup` はそのまま(ログイン)。Chromium のタブを PRELUDE の側で管理する
+- ダウンロードの保存先は絶対パスで頼めないので、終わってからコアが移す
+- Chromium は窓が無くなると終わる。次の Web のペインで起動し直す
+
+下の CDP の記述は、窓の作り方(`--app` と印のページ)を除いて古い。
+
 **Web のペインの作り方(段階 3-b で分かったこと。上の 3〜4 を具体的にしたもの)**
 - CDP の `Target.createTarget { newWindow: true }` で作る窓は、タブ・アドレスバーのある普通の窓になる(アプリの窓にする引数が無い)。そこで、動いている Chromium に同じプロファイルで `--app=<URL>` を頼む(頼んだプロセスはすぐ終わり、CDP の側に新しいページとして現れる)
 - `--app=` は `data:` や `about:blank` では窓にならない。そこで題名に印を出すだけのページ(`prelude-pane.html`。snap 版が読める `~/snap/chromium/common` に置く)を `file:///…/prelude-pane.html#<コアの印>:<ペイン>` で開く。題名が `PRELUDE-PANE:<コアの印>:<ペイン>` になるので、KWin スクリプトはその窓を取り込み、取り込んだら CDP で本当の URL へ移す

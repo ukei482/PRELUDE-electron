@@ -19,7 +19,7 @@
 - `test/` — `npm test`(Node の `node:test`)。DOM・Electron なしで動く計算だけをテストする
 - `crates/` — Rust 版(`docs/redesign-rust.md`)。`cargo test`(Rust は `~/.cargo/bin`)
   - `prelude-format`(`.prelude`・`space.toml`)。`test/fixtures/format/` は JS と Rust の両方のテストが読む
-  - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`compositor.rs` が窓を並べる相手の差し替え口、`embed.rs` と `embed.js` が KWin の裏側(アプリの窓の取り込み)、`sway.rs` が sway・SwayFX の裏側、`recipes.rs` がペインのレシピ、`portal.rs` がアプリのダイアログのポータル)、`prelude-cli`(`prelude` コマンド)
+  - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`compositor.rs` が窓を並べる相手の差し替え口、`embed.rs` と `embed.js` が KWin の裏側(アプリの窓の取り込み)、`sway.rs` が sway・SwayFX の裏側、`recipes.rs` がペインのレシピ、`portal.rs` がアプリのダイアログのポータル、`web.rs` と `extension/` と `webhost.rs` が Web のペイン)、`prelude-cli`(`prelude` コマンド)
   - 別のソケットで動かしたコアは、D-Bus の名前(`org.prelude.Core.d…`)と KWin スクリプトの名前に印が付き、ふだんのコア・Electron 版と取り合わない。窓を出さずに試すなら `--no-embed`
   - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
   - 設定は `~/.config/prelude/theme.toml`・`settings.toml`(`prelude-format` の `config`)。Electron 版からの引き継ぎは `prelude-core` の `migrate.rs`(別のソケットのコアでは動かない)

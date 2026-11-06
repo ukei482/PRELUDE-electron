@@ -18,6 +18,14 @@ fn env_path(name: &str) -> Option<PathBuf> {
 }
 
 fn main() {
+    // Chromium が起動する橋渡し(webhost.rs)
+    if std::env::args().nth(1).as_deref() == Some("--web-host") {
+        if let Err(e) = prelude_core::webhost::run() {
+            eprintln!("prelude-core: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     if env_path("PRELUDE_CORE_SOCK").is_none() {
         match migrate::run(&migrate::Places::of(&home)) {
