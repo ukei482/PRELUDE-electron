@@ -3,6 +3,8 @@
 //! - 画面の左端に layer-shell で貼り付き、場所を予約する(ほかの窓はその右に並ぶ)
 //! - コアのソケット(prelude-proto)だけでつながる。サイドバーにだけ許された操作は無い(判断 10)。`prelude` コマンドでできることしかしない
 //! - 出すもの: スペース(押すと切り替え)・ブックマーク(押すと開く。フォルダは 1 段)・タブ(押すと切り替え、× で閉じる)
+//! - 幅は「広い」と「細い列」の 2 つ。一番上の PRELUDE の行(つまみ)で切り替える。状態は `prelude_proto::sidebar` のファイルにあり、`prelude sidebar toggle` もそこを書き換える。完全に隠すのは `prelude sidebar hide` だけ
+//! - TABS の見出しの + で新しいタブ。Web は URL を打つのでランチャーを出し、ほかは種類を選べばそのまま開く
 //! - コアが落ちている・まだ動いていないときは、2 秒ごとにつなぎ直す
 //!
 //! 使い方: `prelude-sidebar [--window] [--width <px>]`(`--window` は普通の窓で出す。試す用)
@@ -19,7 +21,12 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::time::Duration;
 
-/// サイドバーの幅(Electron 版の --sbw と同じ)
+/// TABS の + で選べる新しいタブ(出す名前, ペインの種類)。web だけはランチャーを出す
+/// 細い列の幅(Electron 版の「細い列」と同じ)
+const COMPACT_WIDTH: f32 = 44.;
+
+const NEW_TAB_KINDS: [(&str, &str); 5] =
+    [("Web...", "web"), ("Folder", "files"), ("Field", "field"), ("CLI", "cli"), ("Settings", "settings")];
 
 /// コアから受け取った今の様子
 #[derive(Clone)]
@@ -35,6 +42,22 @@ enum Msg {
     Offline(String),
     /// コマンドが失敗した
     Failed(String),
+    /// 幅の状態のファイルが変わった(細い列なら true)
+    Mode(bool),
+}
+
+/// 幅の状態のファイルを見張る(別のスレッド)。`prelude sidebar toggle` で書き換えられたら知らせる
+fn watch_mode(tx: UnboundedSender<Msg>, mut last: bool) {
+    while !tx.is_closed() {
+        std::thread::sleep(Duration::from_millis(300));
+        let now = prelude_proto::sidebar::is_compact();
+        if now != last {
+            last = now;
+            if tx.unbounded_send(Msg::Mode(now)).is_err() {
+                return;
+            }
+        }
+    }
 }
 
 /// コアを見張る(別のスレッド)。状態が変わるたびに、ブックマークとスペースの一覧も取り直して送る
@@ -71,14 +94,23 @@ struct Sidebar {
     offline: Option<String>,
     error: Option<String>,
     space_menu: bool,
+    /// 新しいタブの種類の一覧(TABS の見出しの +)を出しているか
+    new_menu: bool,
     /// 閉じているブックマークのフォルダ
     folded: HashSet<String>,
     tx: UnboundedSender<Msg>,
+    /// 細い列か
+    compact: bool,
+    /// 広いときの幅
+    wide_width: f32,
+    /// layer-shell で貼り付いているか(`--window` でなければ)。幅を変えたら予約する場所も変える
+    layer: bool,
 }
 
 impl Sidebar {
-    fn apply(&mut self, m: Msg) {
+    fn apply(&mut self, m: Msg, window: &mut Window) {
         match m {
+            Msg::Mode(c) => self.set_width(c, window),
             Msg::Snapshot(s) => {
                 self.snap = Some(*s);
                 self.offline = None;
@@ -90,6 +122,65 @@ impl Sidebar {
             }
             Msg::Failed(e) => self.error = Some(e),
         }
+    }
+
+    /// 広い / 細い列に幅を変える(ファイルは書かない)
+    fn set_width(&mut self, compact: bool, window: &mut Window) {
+        if self.compact == compact {
+            return;
+        }
+        self.compact = compact;
+        self.space_menu = false;
+        self.new_menu = false;
+        let w = px(if compact { COMPACT_WIDTH } else { self.wide_width });
+        window.resize(size(w, window.viewport_size().height));
+        if self.layer {
+            window.set_exclusive_zone(w);
+        }
+    }
+
+    /// つまみ: 広い ⇄ 細い列。ファイルに書いて、次の起動でも同じ幅で始まる
+    fn render_handle(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let r = row("handle", false).on_click(cx.listener(|this, _, window, cx| {
+            let c = !this.compact;
+            if let Err(e) = prelude_proto::sidebar::set_compact(c) {
+                this.error = Some(e);
+            }
+            this.set_width(c, window);
+            cx.notify();
+        }));
+        if self.compact { r.justify_center().child(badge("»")) } else { r.child(label("PRELUDE")).child(badge("«")) }
+    }
+
+    /// 細い列: つまみ・ブックマーク(名前の 1 文字目)・+・タブ(番号)
+    fn render_compact(&self, snap: &Snapshot, cx: &mut Context<Self>) -> impl IntoElement {
+        let open: HashSet<&str> = snap.state.tabs.iter().filter_map(|t| t.bookmark.as_deref()).collect();
+        let mut bms = div().id("bookmarks").flex().flex_col().max_h(relative(0.4)).overflow_y_scroll();
+        for (i, b) in snap.bookmarks.iter().enumerate() {
+            let first: String = b.title.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
+            let path = b.path.clone();
+            let mut r = row(("bm", i), false).justify_center().child(first);
+            if open.contains(b.path.as_str()) {
+                r = r.text_color(color::text()).font_weight(gpui::FontWeight::BOLD);
+            }
+            bms = bms.child(r.on_click(cx.listener(move |this, _, _, _| this.send("bookmark.open", json!({ "path": path })))));
+        }
+        let plus = row("new-tab", false).justify_center().text_color(color::dim()).child("+").on_click(cx.listener(|this, _, _, cx| {
+            // 細い列には種類の一覧が入らないので、ランチャーで選んでもらう
+            this.spawn("prelude-launcher", &[]);
+            cx.notify();
+        }));
+        let mut tabs = div().id("tabs").flex().flex_col().flex_1().min_h(px(0.)).overflow_y_scroll();
+        for t in &snap.state.tabs {
+            let (id, active) = (t.id, Some(t.id) == snap.state.active);
+            tabs = tabs.child(
+                row(("tab", id), active)
+                    .justify_center()
+                    .child(t.num.to_string())
+                    .on_click(cx.listener(move |this, _, _, _| this.send("tab.activate", json!({ "tab": { "id": id } })))),
+            );
+        }
+        div().flex().flex_col().flex_1().min_h(px(0.)).child(bms).child(rule()).child(plus).child(tabs)
     }
 
     /// コマンドを送る(別のスレッド)。結果は状態のイベントで返ってくるので、失敗だけを知らせる
@@ -129,6 +220,49 @@ impl Sidebar {
             }
         }
         col
+    }
+
+    /// TABS の見出し。右の + で新しいタブの種類の一覧を開く
+    fn render_tabs_title(&self, snap: &Snapshot, cx: &mut Context<Self>) -> impl IntoElement {
+        let plus = div()
+            .id("new-tab")
+            .flex_none()
+            .px(px(6.))
+            .cursor_pointer()
+            .text_size(px(14.))
+            .when(self.new_menu, |d| d.text_color(color::text()))
+            .hover(|s| s.text_color(color::text()).bg(color::panel2()))
+            .child("+")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.new_menu = !this.new_menu;
+                cx.notify();
+            }));
+        section_title(format!("TABS {}", snap.state.tabs.len())).justify_between().pr(px(0.)).child(plus)
+    }
+
+    /// 新しいタブの種類の一覧。選ぶと一番上に新しいタブを開く
+    fn render_new_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut col = div().flex().flex_col().pb(px(2.));
+        for (i, (name, kind)) in NEW_TAB_KINDS.iter().enumerate() {
+            col =
+                col.child(row(("new-tab-kind", i), false).pl(px(18.)).child(label(*name)).on_click(cx.listener(move |this, _, _, cx| {
+                    this.new_menu = false;
+                    match *kind {
+                        // Web は URL か検索の言葉が要るので、ランチャーで打ってもらう
+                        "web" => this.spawn("prelude-launcher", &[]),
+                        k => this.send("tab.open", json!({ "pane": { "type": k } })),
+                    }
+                    cx.notify();
+                })));
+        }
+        col
+    }
+
+    /// 別のプログラムを起動する。失敗だけを知らせる
+    fn spawn(&mut self, prog: &str, args: &[&str]) {
+        if let Err(e) = std::process::Command::new(prog).args(args).spawn() {
+            self.error = Some(format!("{prog}: {e}"));
+        }
     }
 
     fn render_bookmarks(&self, snap: &Snapshot, cx: &mut Context<Self>) -> impl IntoElement {
@@ -211,8 +345,11 @@ impl Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut root = prelude_ui::root().p(px(6.)).gap(px(2.)).border_r_1().border_color(color::panel());
+        let pad = px(if self.compact { 4. } else { 6. });
+        let mut root = prelude_ui::root().p(pad).gap(px(2.)).border_r_1().border_color(color::panel()).child(self.render_handle(cx));
         match self.snap.clone() {
+            Some(snap) if self.compact => root = root.child(self.render_compact(&snap, cx)),
+            None if self.compact => root = root.child(div().flex_1()),
             Some(snap) => {
                 root = root
                     .child(section_title("SPACE"))
@@ -220,13 +357,13 @@ impl Render for Sidebar {
                     .child(section_title(format!("BOOKMARKS {}", snap.bookmarks.len())))
                     .child(self.render_bookmarks(&snap, cx))
                     .child(rule())
-                    .child(section_title(format!("TABS {}", snap.state.tabs.len())))
+                    .child(self.render_tabs_title(&snap, cx))
+                    .when(self.new_menu, |d| d.child(self.render_new_menu(cx)))
                     .child(self.render_tabs(&snap, cx));
             }
             None => {
                 let why = self.offline.clone().unwrap_or_else(|| "connecting...".into());
                 root = root
-                    .child(section_title("PRELUDE"))
                     .child(div().px(px(6.)).child("prelude-core is not running"))
                     .child(div().px(px(6.)).text_color(color::dim()).text_size(px(11.)).child(why))
                     .child(div().flex_1());
@@ -263,10 +400,16 @@ fn main() {
     application().run(move |cx: &mut App| {
         prelude_ui::init(cx);
         let (tx, mut rx) = unbounded();
+        let compact = prelude_proto::sidebar::is_compact();
         {
             let tx = tx.clone();
             std::thread::spawn(move || watch(tx));
         }
+        {
+            let tx = tx.clone();
+            std::thread::spawn(move || watch_mode(tx, compact));
+        }
+        let start_width = if compact { COMPACT_WIDTH } else { width };
         let kind = if window_mode {
             WindowKind::Normal
         } else {
@@ -274,7 +417,7 @@ fn main() {
                 namespace: "prelude-sidebar".into(),
                 layer: Layer::Top,
                 anchor: Anchor::LEFT | Anchor::TOP | Anchor::BOTTOM,
-                exclusive_zone: Some(px(width)),
+                exclusive_zone: Some(px(start_width)),
                 keyboard_interactivity: KeyboardInteractivity::OnDemand,
                 ..Default::default()
             })
@@ -284,12 +427,25 @@ fn main() {
         let opened = cx.open_window(
             WindowOptions {
                 titlebar: None,
-                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(width), px(height)), cx))),
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(start_width), px(height)), cx))),
                 app_id: Some("prelude-sidebar".into()),
                 kind,
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| Sidebar { snap: None, offline: None, error: None, space_menu: false, folded: HashSet::new(), tx }),
+            |_, cx| {
+                cx.new(|_| Sidebar {
+                    snap: None,
+                    offline: None,
+                    error: None,
+                    space_menu: false,
+                    new_menu: false,
+                    folded: HashSet::new(),
+                    tx,
+                    compact,
+                    wide_width: width,
+                    layer: !window_mode,
+                })
+            },
         );
         let window = match opened {
             Ok(w) => w,
@@ -299,11 +455,10 @@ fn main() {
                 return;
             }
         };
-        let view = window.update(cx, |_, _, cx| cx.entity()).expect("sidebar view");
         cx.spawn(async move |cx| {
             while let Some(m) = rx.next().await {
-                view.update(cx, |v, cx| {
-                    v.apply(m);
+                let _ = window.update(cx, |v, window, cx| {
+                    v.apply(m, window);
                     cx.notify();
                 });
             }
