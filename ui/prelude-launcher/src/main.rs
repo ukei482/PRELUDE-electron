@@ -4,7 +4,8 @@
 //! - 候補と点数はコアが出す(`item.list`。タブが先、ほかは最近 + よく使う順)。開くのは `item.open`(点数も上がる)
 //! - 絞り込みは Electron 版のランチャーと同じ: 名前の始まり → 言葉の始まり → 含む、の順。数字だけならその番号のタブを一番上に
 //! - 最後の行は「Web で開く / 検索」。URL らしければその URL、フォルダならフォルダのペイン、それ以外は検索
-//! - Ctrl+Enter: Web・フォルダの行を、今のタブの右に分割して開く
+//! - Ctrl+→ / Ctrl+↓: 選んだ行を、今のペインの右 / 下に分割して開く(Ctrl+Enter・Ctrl+クリックは右)
+//! - 名前に PRELUDE を付けない(ランチャーは PRELUDE の中のものなので)
 //! - `--pane <id> --url <URL>`: その Web のペインの今の URL を入れた状態で開き、Enter で同じペインに開く(判断 12)
 //!
 //! 使い方: `prelude-launcher [--window] [--pane <id> --url <URL>]`(`--window` は普通の窓で出す。試す用)
@@ -19,7 +20,7 @@ use prelude_ui::{TextInput, badge, color, label, row, section_title};
 use serde_json::{Value, json};
 use std::path::Path;
 
-actions!(launcher, [Up, Down, Confirm, ConfirmSplit, Cancel]);
+actions!(launcher, [Up, Down, Confirm, SplitRight, SplitDown, Cancel]);
 
 const WIDTH: f32 = 640.;
 const HEIGHT: f32 = 460.;
@@ -55,10 +56,10 @@ enum Command {
 
 const COMMANDS: [(&str, &str, Command); 7] = [
     ("Settings", "colors, search, folders", Command::Settings),
-    ("PRELUDE CLI", "commands", Command::Cli),
+    ("CLI", "commands", Command::Cli),
     ("Toggle sidebar", "show / hide", Command::Sidebar),
-    ("Split right", "open something beside this pane", Command::SplitRight),
-    ("Split down", "open something below this pane", Command::SplitDown),
+    ("Split right", "ctrl+→ on a row", Command::SplitRight),
+    ("Split down", "ctrl+↓ on a row", Command::SplitDown),
     ("Close pane", "this pane", Command::ClosePane),
     ("Close tab", "this tab", Command::CloseTab),
 ];
@@ -235,17 +236,19 @@ impl Launcher {
                 .recipes
                 .iter()
                 .filter(|(kind, name)| q.is_empty() || match_rank(&format!("{name} {kind}"), &q).is_some())
-                .map(|(kind, name)| Entry { group: "PANES", label: name.clone().into(), detail: "".into(), target: Target::Pane(kind.clone()) })
+                .map(|(kind, name)| Entry {
+                    group: "PANES",
+                    label: name.clone().into(),
+                    detail: "".into(),
+                    target: Target::Pane(kind.clone()),
+                })
                 .collect();
             panes.append(&mut self.list);
             self.list = panes;
         } else if self.pane.is_none() {
             // 打った言葉に合う操作は一番上(`set` で同じ名前のアプリより設定が開くように)。何も打っていなければ下に並べる
-            let at = if self.query.trim().is_empty() {
-                self.list.iter().position(|e| e.group == "OPEN").unwrap_or(self.list.len())
-            } else {
-                0
-            };
+            let at =
+                if self.query.trim().is_empty() { self.list.iter().position(|e| e.group == "OPEN").unwrap_or(self.list.len()) } else { 0 };
             self.list.splice(at..at, commands(&self.query));
         }
         self.selected = 0;
@@ -260,14 +263,19 @@ impl Launcher {
         cx.notify();
     }
 
-    /// 操作を実行して終わる
-    fn command(&mut self, c: Command, cx: &mut Context<Self>) {
+    /// 操作を実行して終わる。split: 設定・CLI を今のペインの右(row)・下(col)に分割して開く
+    fn command(&mut self, c: Command, split: Option<&'static str>, cx: &mut Context<Self>) {
         let pane = self.state.as_ref().and_then(|s| s.tabs.iter().find(|t| Some(t.id) == s.active)).map(|t| t.active_pane);
-        let spawn = |prog: &str, args: &[&str]| std::process::Command::new(prog).args(args).spawn().map(|_| ()).map_err(|e| format!("{prog}: {e}"));
+        let spawn =
+            |prog: &str, args: &[&str]| std::process::Command::new(prog).args(args).spawn().map(|_| ()).map_err(|e| format!("{prog}: {e}"));
         let call = |cmd: &str, args: Value| Client::connect("prelude-launcher", false).and_then(|mut c| c.call(cmd, args)).map(|_| ());
+        let open_pane = |kind: &str| match (split, pane) {
+            (Some(dir), Some(p)) => call("pane.split", json!({ "pane": p, "dir": dir, "new": { "type": kind } })),
+            _ => call("tab.open", json!({ "pane": { "type": kind } })),
+        };
         let r = match c {
-            Command::Settings => call("tab.open", json!({ "pane": { "type": "settings" } })),
-            Command::Cli => call("tab.open", json!({ "pane": { "type": "cli" } })),
+            Command::Settings => open_pane("settings"),
+            Command::Cli => open_pane("cli"),
             Command::Sidebar => spawn("prelude", &["sidebar", "toggle"]),
             Command::SplitRight => spawn("prelude-launcher", &["--split", "row"]),
             Command::SplitDown => spawn("prelude-launcher", &["--split", "col"]),
@@ -286,11 +294,12 @@ impl Launcher {
         }
     }
 
-    /// 選んだ行を開いて終わる。split: 今のタブの右に分割して開く(`--split` なら、いつもその向きに分割する)
-    fn open(&mut self, ix: usize, split: bool, cx: &mut Context<Self>) {
+    /// 選んだ行を開いて終わる。split: 今のペインの右(row)・下(col)に分割して開く(`--split` なら、いつもその向きに分割する)
+    fn open(&mut self, ix: usize, split: Option<&'static str>, cx: &mut Context<Self>) {
         let Some(e) = self.list.get(ix).cloned() else { return };
+        let split = split.or(self.split);
         if let Target::Command(c) = e.target {
-            self.command(c, cx);
+            self.command(c, split, cx);
             return;
         }
         let active_pane = self.state.as_ref().and_then(|s| s.tabs.iter().find(|t| Some(t.id) == s.active)).map(|t| t.active_pane);
@@ -300,8 +309,8 @@ impl Launcher {
             Target::Pane(kind) => Some(json!({ "type": kind })),
             Target::Item(_) | Target::Command(_) => None,
         };
-        let dir = self.split.unwrap_or("row");
-        let split_at = (split || self.split.is_some()).then_some(active_pane).flatten();
+        let dir = split.unwrap_or("row");
+        let split_at = split.and(active_pane);
         let (cmd, args): (&str, Value) = match (&e.target, &self.pane, split_at) {
             (Target::Web(u), Some((pane, _)), _) if e.group == "THIS PANE" => {
                 ("pane.update", json!({ "pane": pane, "fields": { "url": u } }))
@@ -349,7 +358,9 @@ impl Render for Launcher {
                             cx.notify();
                         }
                     }))
-                    .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, _, cx| this.open(ix, ev.modifiers().control, cx))),
+                    .on_click(
+                        cx.listener(move |this, ev: &gpui::ClickEvent, _, cx| this.open(ix, ev.modifiers().control.then_some("row"), cx)),
+                    ),
             );
         }
         if self.list.is_empty() {
@@ -360,8 +371,9 @@ impl Render for Launcher {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &Up, _, cx| this.move_by(-1, cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.move_by(1, cx)))
-            .on_action(cx.listener(|this, _: &Confirm, _, cx| this.open(this.selected, false, cx)))
-            .on_action(cx.listener(|this, _: &ConfirmSplit, _, cx| this.open(this.selected, true, cx)))
+            .on_action(cx.listener(|this, _: &Confirm, _, cx| this.open(this.selected, None, cx)))
+            .on_action(cx.listener(|this, _: &SplitRight, _, cx| this.open(this.selected, Some("row"), cx)))
+            .on_action(cx.listener(|this, _: &SplitDown, _, cx| this.open(this.selected, Some("col"), cx)))
             .on_action(cx.listener(|_, _: &Cancel, _, cx| cx.quit()))
             .border_1()
             .border_color(color::line())
@@ -441,7 +453,9 @@ fn main() {
             KeyBinding::new("ctrl-p", Up, c),
             KeyBinding::new("ctrl-n", Down, c),
             KeyBinding::new("enter", Confirm, c),
-            KeyBinding::new("ctrl-enter", ConfirmSplit, c),
+            KeyBinding::new("ctrl-enter", SplitRight, c),
+            KeyBinding::new("ctrl-right", SplitRight, c),
+            KeyBinding::new("ctrl-down", SplitDown, c),
             KeyBinding::new("escape", Cancel, c),
         ]);
         let kind = if window_mode {

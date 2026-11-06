@@ -22,7 +22,7 @@ use std::time::Duration;
 
 /// TABS の + で選べる新しいタブ(出す名前, ペインの種類)。web だけはランチャーを出す
 const NEW_TAB_KINDS: [(&str, &str); 5] =
-    [("Web...", "web"), ("Folder", "files"), ("Field", "field"), ("PRELUDE CLI", "cli"), ("Settings", "settings")];
+    [("Web...", "web"), ("Folder", "files"), ("Field", "field"), ("CLI", "cli"), ("Settings", "settings")];
 
 /// コアから受け取った今の様子
 #[derive(Clone)]

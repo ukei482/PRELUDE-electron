@@ -48,7 +48,7 @@ fn builtin() -> Vec<Recipe> {
         class: class.into(),
     };
     vec![
-        r("cli", "PRELUDE CLI", "konsole --workdir {paths.terminal} -e prelude shell", "org.kde.konsole"),
+        r("cli", "CLI", "konsole --workdir {paths.terminal} -e prelude shell", "org.kde.konsole"),
         r("console", "Console", "konsole --workdir {paths.terminal}", "org.kde.konsole"),
         r("settings", "Settings", "prelude-settings", "prelude-settings"),
         r("files", "Files", "prelude-filer --pane {pane} {path}", "prelude-filer"),
