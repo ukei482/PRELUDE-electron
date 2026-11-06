@@ -8,7 +8,8 @@
 //! - URL・題名は拡張機能が知らせる(コアはペインの url を書き換えて残す。起動し直すとその URL で開く)
 //! - 新しい窓: タブ付きの普通の窓に出たページは閉じて PRELUDE の新しいタブにする。ポップアップ(ログインなど)はそのまま
 //! - ダウンロードの保存先は Chromium に絶対パスで頼めないので、終わってからコアが paths の download へ移す
-//! - Chromium は窓が無くなると終わる。次のペインで起動し直す
+//! - Chromium は窓が無くなると終わる。次のペインで起動し直す。起動したプロセスは、同じプロファイルの Chromium が既に動いていると
+//!   頼むだけで終わるので、本体はプロファイルの `SingletonLock`(`<ホスト名>-<pid>` へのリンク)で見分ける
 use crate::compositor::Note;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -129,6 +130,17 @@ fn install_extension(dir: &Path, profile: &Path) -> std::io::Result<()> {
         "allowed_origins": [format!("chrome-extension://{EXTENSION_ID}/")],
     });
     std::fs::write(hosts.join(format!("{HOST_NAME}.json")), manifest.to_string())
+}
+
+/// `SingletonLock` のリンク先から本体の pid を読む
+pub fn singleton_pid(link: &str) -> Option<u32> {
+    link.rsplit('-').next()?.parse().ok()
+}
+
+/// 動いている Chromium の本体の pid
+fn browser_pid(profile: &Path) -> Option<u32> {
+    let link = std::fs::read_link(profile.join("SingletonLock")).ok()?;
+    singleton_pid(&link.to_string_lossy()).filter(|p| crate::procs::alive(*p))
 }
 
 /// 拡張機能が知らせたタブの様子
@@ -377,12 +389,17 @@ impl Web {
                 if first {
                     self.chromium = child.id();
                 }
-                let tx = self.tx.clone();
+                let (tx, profile) = (self.tx.clone(), self.profile.clone());
                 tokio::spawn(async move {
                     let _ = child.wait().await;
-                    if first {
-                        let _ = tx.send(Msg::Closed);
+                    if !first {
+                        return;
                     }
+                    // 既に動いている本体へ頼んだだけなら、本体が終わるまで見張る
+                    while browser_pid(&profile).is_some() {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                    let _ = tx.send(Msg::Closed);
                 });
             }
             Err(e) => eprintln!("prelude-core: cannot open a Chromium window ({e})"),
@@ -475,7 +492,10 @@ impl Web {
 
     /// 終わる: ペインの窓を閉じる(窓が無くなると Chromium は終わる)。3 秒まで待ち、残っていれば終わらせる
     async fn shutdown(&mut self) {
-        let Some(pid) = self.chromium.take() else { return };
+        if self.chromium.take().is_none() {
+            return;
+        }
+        let Some(pid) = browser_pid(&self.profile) else { return };
         for p in self.panes.values() {
             if let Some(t) = p.tab {
                 self.tell(json!({ "cmd": "close", "tab": t }));
@@ -503,6 +523,13 @@ mod tests {
     }
     fn d(n: &TabNote, owner: Option<u64>) -> Decision {
         decide(n, PAGE, ".d1", owner, &|p| p == 5)
+    }
+
+    #[test]
+    fn 本体の_pid_を読む() {
+        assert_eq!(singleton_pid("ukeiyamada-cflv11-12345"), Some(12345));
+        assert_eq!(singleton_pid("host-1"), Some(1));
+        assert_eq!(singleton_pid("host"), None);
     }
 
     #[test]
