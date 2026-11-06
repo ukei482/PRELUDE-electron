@@ -3,6 +3,7 @@
 //! - 画面の左端に layer-shell で貼り付き、場所を予約する(ほかの窓はその右に並ぶ)
 //! - コアのソケット(prelude-proto)だけでつながる。サイドバーにだけ許された操作は無い(判断 10)。`prelude` コマンドでできることしかしない
 //! - 出すもの: スペース(押すと切り替え)・ブックマーク(押すと開く。フォルダは 1 段)・タブ(押すと切り替え、× で閉じる)
+//! - TABS の見出しの + で新しいタブ。Web は URL を打つのでランチャーを出し、ほかは種類を選べばそのまま開く
 //! - コアが落ちている・まだ動いていないときは、2 秒ごとにつなぎ直す
 //!
 //! 使い方: `prelude-sidebar [--window] [--width <px>]`(`--window` は普通の窓で出す。試す用)
@@ -19,7 +20,9 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::time::Duration;
 
-/// サイドバーの幅(Electron 版の --sbw と同じ)
+/// TABS の + で選べる新しいタブ(出す名前, ペインの種類)。web だけはランチャーを出す
+const NEW_TAB_KINDS: [(&str, &str); 5] =
+    [("Web...", "web"), ("Folder", "files"), ("Field", "field"), ("PRELUDE CLI", "cli"), ("Settings", "settings")];
 
 /// コアから受け取った今の様子
 #[derive(Clone)]
@@ -71,6 +74,8 @@ struct Sidebar {
     offline: Option<String>,
     error: Option<String>,
     space_menu: bool,
+    /// 新しいタブの種類の一覧(TABS の見出しの +)を出しているか
+    new_menu: bool,
     /// 閉じているブックマークのフォルダ
     folded: HashSet<String>,
     tx: UnboundedSender<Msg>,
@@ -129,6 +134,49 @@ impl Sidebar {
             }
         }
         col
+    }
+
+    /// TABS の見出し。右の + で新しいタブの種類の一覧を開く
+    fn render_tabs_title(&self, snap: &Snapshot, cx: &mut Context<Self>) -> impl IntoElement {
+        let plus = div()
+            .id("new-tab")
+            .flex_none()
+            .px(px(6.))
+            .cursor_pointer()
+            .text_size(px(14.))
+            .when(self.new_menu, |d| d.text_color(color::text()))
+            .hover(|s| s.text_color(color::text()).bg(color::panel2()))
+            .child("+")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.new_menu = !this.new_menu;
+                cx.notify();
+            }));
+        section_title(format!("TABS {}", snap.state.tabs.len())).justify_between().pr(px(0.)).child(plus)
+    }
+
+    /// 新しいタブの種類の一覧。選ぶと一番上に新しいタブを開く
+    fn render_new_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut col = div().flex().flex_col().pb(px(2.));
+        for (i, (name, kind)) in NEW_TAB_KINDS.iter().enumerate() {
+            col =
+                col.child(row(("new-tab-kind", i), false).pl(px(18.)).child(label(*name)).on_click(cx.listener(move |this, _, _, cx| {
+                    this.new_menu = false;
+                    match *kind {
+                        // Web は URL か検索の言葉が要るので、ランチャーで打ってもらう
+                        "web" => this.spawn("prelude-launcher", &[]),
+                        k => this.send("tab.open", json!({ "pane": { "type": k } })),
+                    }
+                    cx.notify();
+                })));
+        }
+        col
+    }
+
+    /// 別のプログラムを起動する。失敗だけを知らせる
+    fn spawn(&mut self, prog: &str, args: &[&str]) {
+        if let Err(e) = std::process::Command::new(prog).args(args).spawn() {
+            self.error = Some(format!("{prog}: {e}"));
+        }
     }
 
     fn render_bookmarks(&self, snap: &Snapshot, cx: &mut Context<Self>) -> impl IntoElement {
@@ -214,7 +262,8 @@ impl Render for Sidebar {
                     .child(section_title(format!("BOOKMARKS {}", snap.bookmarks.len())))
                     .child(self.render_bookmarks(&snap, cx))
                     .child(rule())
-                    .child(section_title(format!("TABS {}", snap.state.tabs.len())))
+                    .child(self.render_tabs_title(&snap, cx))
+                    .when(self.new_menu, |d| d.child(self.render_new_menu(cx)))
                     .child(self.render_tabs(&snap, cx));
             }
             None => {
@@ -283,7 +332,17 @@ fn main() {
                 kind,
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| Sidebar { snap: None, offline: None, error: None, space_menu: false, folded: HashSet::new(), tx }),
+            |_, cx| {
+                cx.new(|_| Sidebar {
+                    snap: None,
+                    offline: None,
+                    error: None,
+                    space_menu: false,
+                    new_menu: false,
+                    folded: HashSet::new(),
+                    tx,
+                })
+            },
         );
         let window = match opened {
             Ok(w) => w,
