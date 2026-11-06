@@ -31,7 +31,8 @@ usage: prelude <command> [args]
   watch                  Print state events as JSON lines
   watch --bar            One JSON line per change for a bar (waybar's custom module, return-type json).
                          Keeps running and reconnects while prelude-core is not running
-  sidebar [show|hide|toggle|restart]  Show or hide the sidebar (default: toggle)
+  sidebar [show|hide|toggle|wide|compact|restart]
+                         Toggle the sidebar between wide and compact (default: toggle). hide stops it
   shell                  Type these commands one after another (the PRELUDE CLI)
   raw <cmd> [args-json]  Send a command and print the result as JSON
 
@@ -289,17 +290,23 @@ fn sidebar(what: &str) -> Result<(), String> {
             sidebar_stop(&pids);
             Ok(())
         }
+        // 広い ⇄ 細い列。動いていなければ起動する(完全に隠すのは hide だけ)
         "toggle" if pids.is_empty() => sidebar_start(),
-        "toggle" => {
-            sidebar_stop(&pids);
-            Ok(())
+        "toggle" => prelude_proto::sidebar::set_compact(!prelude_proto::sidebar::is_compact()),
+        "wide" | "compact" => {
+            prelude_proto::sidebar::set_compact(what == "compact")?;
+            if pids.is_empty() {
+                sidebar_start()
+            } else {
+                Ok(())
+            }
         }
         "restart" => {
             sidebar_stop(&pids);
             std::thread::sleep(std::time::Duration::from_millis(300));
             sidebar_start()
         }
-        _ => Err("Usage: prelude sidebar [show|hide|toggle|restart]".into()),
+        _ => Err("Usage: prelude sidebar [show|hide|toggle|wide|compact|restart]".into()),
     }
 }
 
