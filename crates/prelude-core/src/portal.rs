@@ -29,7 +29,7 @@ fn builtin() -> Recipe {
     Recipe {
         kind: "chooser".into(),
         name: "Chooser".into(),
-        run: "prelude-filer --choose {mode} --output {output} --name {name} --title {title} {path}".into(),
+        run: "prelude-filer --choose {mode} --output {output} --name {name} --title {title} --filter {filter} {path}".into(),
         class: String::new(),
     }
 }
@@ -53,8 +53,42 @@ pub struct Ask {
     pub multiple: bool,
     pub directory: bool,
     pub name: String,
-    /// 今のファイル(保存し直すとき)のフォルダ
+    /// 今のファイル(保存し直すとき)のフォルダか、アプリが頼んだ最初のフォルダ
     pub folder: Option<String>,
+    /// ファイルの種類。`名前:*.png;*.jpg|名前:*.pdf` の形(選ぶ画面の `{filter}`)。MIME の型だけの種類は入れない
+    pub filter: String,
+    /// `SaveFiles`: 保存する名前(選ぶのはフォルダ)
+    pub files: Vec<String>,
+}
+
+fn bytes_of(v: &Value) -> Option<String> {
+    let Value::Array(a) = v else { return None };
+    let b: Vec<u8> = a.iter().filter_map(|x| if let Value::U8(b) = x { Some(*b) } else { None }).collect();
+    Some(String::from_utf8_lossy(&b).trim_end_matches('\0').to_string())
+}
+
+/// `filters`(`a(sa(us))`)を `{filter}` の文字にする。種類 0 が glob、1 が MIME の型
+fn filter_text(v: &Value) -> String {
+    let Value::Array(list) = v else { return String::new() };
+    let mut out = vec![];
+    for f in list.iter() {
+        let Value::Structure(s) = f else { continue };
+        let [Value::Str(name), Value::Array(rules)] = s.fields() else { continue };
+        let globs: Vec<String> = rules
+            .iter()
+            .filter_map(|r| match r {
+                Value::Structure(r) => match r.fields() {
+                    [Value::U32(0), Value::Str(g)] => Some(g.to_string()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        if !globs.is_empty() {
+            out.push(format!("{}:{}", name.replace(['|', ':'], " "), globs.join(";")));
+        }
+    }
+    out.join("|")
 }
 
 fn bytes_path(v: &OwnedValue) -> Option<String> {
@@ -80,7 +114,32 @@ impl Ask {
             }
             a.folder = p.parent().map(|d| d.to_string_lossy().into_owned());
         }
+        if a.folder.is_none() {
+            a.folder = o.get("current_folder").and_then(bytes_path);
+        }
+        if let Some(f) = o.get("filters") {
+            a.filter = filter_text(f);
+        }
         a
+    }
+
+    /// `SaveFiles` の頼み: 選ぶのはフォルダで、名前はアプリが決めている
+    pub fn parse_files(o: &HashMap<String, OwnedValue>) -> Ask {
+        let mut a = Ask::parse(false, o);
+        a.directory = true;
+        a.multiple = false;
+        if let Some(Value::Array(l)) = o.get("files").map(|v| &**v) {
+            a.files = l.iter().filter_map(bytes_of).filter(|n| !n.is_empty()).collect();
+        }
+        a
+    }
+
+    /// 選ばれたパスから、アプリへ返すパス
+    fn results(&self, picked: Vec<String>) -> Vec<String> {
+        match picked.first() {
+            Some(dir) if !self.files.is_empty() => self.files.iter().map(|n| format!("{}/{n}", dir.trim_end_matches('/'))).collect(),
+            _ => picked,
+        }
     }
 
     fn mode(&self) -> &'static str {
@@ -101,6 +160,7 @@ pub fn command(r: &Recipe, a: &Ask, folder: &str, title: &str, output: &Path) ->
         "name" => Some(a.name.clone()),
         "title" => Some(title.to_string()),
         "output" => Some(output.to_string_lossy().into_owned()),
+        "filter" => Some(a.filter.clone()),
         _ => None,
     };
     recipes::expand(&r.run, &vars)
@@ -200,7 +260,7 @@ impl FileChooser {
         if paths.is_empty() {
             return (CANCELLED, HashMap::new());
         }
-        let uris: Vec<String> = paths.iter().map(|p| to_uri(p)).collect();
+        let uris: Vec<String> = a.results(paths).iter().map(|p| to_uri(p)).collect();
         let mut res = HashMap::new();
         match OwnedValue::try_from(Value::from(uris)) {
             Ok(v) => {
@@ -241,6 +301,18 @@ impl FileChooser {
         options: HashMap<String, OwnedValue>,
     ) -> (u32, HashMap<String, OwnedValue>) {
         self.ask(server, handle, title, Ask::parse(true, &options)).await
+    }
+
+    async fn save_files(
+        &self,
+        #[zbus(object_server)] server: &ObjectServer,
+        handle: ObjectPath<'_>,
+        _app_id: &str,
+        _parent_window: &str,
+        title: &str,
+        options: HashMap<String, OwnedValue>,
+    ) -> (u32, HashMap<String, OwnedValue>) {
+        self.ask(server, handle, title, Ask::parse_files(&options)).await
     }
 }
 
@@ -292,10 +364,38 @@ mod tests {
     }
 
     #[test]
+    fn ファイルの種類とフォルダ() {
+        let val = |v: Value| OwnedValue::try_from(v).unwrap();
+        let filters: Vec<(&str, Vec<(u32, &str)>)> = vec![
+            ("画像", vec![(0, "*.png"), (0, "*.JPG"), (1, "image/gif")]),
+            ("型だけ", vec![(1, "text/plain")]),
+            ("a:b|c", vec![(0, "*")]),
+        ];
+        let mut o = HashMap::new();
+        o.insert("filters".to_string(), val(Value::from(filters)));
+        o.insert("current_folder".to_string(), val(Value::from(b"/w/x\0".to_vec())));
+        let a = Ask::parse(false, &o);
+        assert_eq!(a.filter, "画像:*.png;*.JPG|a b c:*");
+        assert_eq!(a.folder.as_deref(), Some("/w/x"));
+    }
+
+    #[test]
+    fn 複数のファイルを保存する() {
+        let val = |v: Value| OwnedValue::try_from(v).unwrap();
+        let mut o = HashMap::new();
+        o.insert("files".to_string(), val(Value::from(vec![b"a.png\0".to_vec(), b"b c.png\0".to_vec()])));
+        let a = Ask::parse_files(&o);
+        assert_eq!((a.directory, a.mode()), (true, "directory"));
+        assert_eq!(a.results(vec!["/w/d".into()]), ["/w/d/a.png", "/w/d/b c.png"]);
+        assert_eq!(a.results(vec![]), Vec::<String>::new());
+        assert_eq!(Ask::default().results(vec!["/x".into()]), ["/x"]);
+    }
+
+    #[test]
     fn コマンドと結果() {
         let a = Ask { save: true, name: "it's.txt".into(), ..Ask::default() };
         let c = command(&builtin(), &a, "/w/保存", "Save", Path::new("/run/o"));
-        assert_eq!(c, r"prelude-filer --choose 'save' --output '/run/o' --name 'it'\''s.txt' --title 'Save' '/w/保存'");
+        assert_eq!(c, r"prelude-filer --choose 'save' --output '/run/o' --name 'it'\''s.txt' --title 'Save' --filter '' '/w/保存'");
         assert_eq!(to_uri("/a b/議.txt"), "file:///a%20b/%E8%AD%B0.txt");
         assert_eq!(read_output("/a\n\nnot a path\n/b c\n"), ["/a", "/b c"]);
     }

@@ -312,6 +312,14 @@ pub struct BookmarkOpened {
     pub held: Vec<String>,
 }
 
+/// 配置(`TabInfo::layout`)の中の、ペインの文字の項目
+pub fn pane_str<'a>(layout: &'a serde_json::Value, pane: u64, key: &str) -> Option<&'a str> {
+    if layout["k"] == "split" {
+        return pane_str(&layout["a"], pane, key).or_else(|| pane_str(&layout["b"], pane, key));
+    }
+    (layout["id"].as_u64() == Some(pane)).then(|| layout[key].as_str()).flatten().filter(|s| !s.is_empty())
+}
+
 /// 分割して開く場所(`item.open`)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SplitAt {

@@ -12,14 +12,14 @@
 //!   Esc・Cancel・窓を閉じると何も書かずに終わる(取り消し)。消す・移すなどの操作はできない。
 //!   `open`(ファイル 1 つ)・`open-multiple`(Ctrl+クリックなどで複数。Ctrl+Enter で確定)・`directory`(今のフォルダ)・`save`(下の欄に名前。あるファイルは確かめる)
 //!
-//! 使い方: `prelude-filer [--pane <id>] [--view list|field] [--choose <種類> --output <ファイル> [--name <名前>] [--title <題名>]] [フォルダ]`(フォルダを省くとホーム)
+//! 使い方: `prelude-filer [--pane <id>] [--view list|field] [--choose <種類> --output <ファイル> [--name <名前>] [--title <題名>] [--filter <種類>]] [フォルダ]`(フォルダを省くとホーム)
 use gpui::{
     App, Bounds, ClipboardItem, Context, Entity, FocusHandle, Focusable, KeyBinding, Window, WindowBounds, WindowOptions, actions, div,
     prelude::*, px, size,
 };
 use gpui_platform::application;
 use prelude_filer::ops::{self, Mode};
-use prelude_filer::{DirState, FilerCommand, FilerView, views};
+use prelude_filer::{DirState, FilerCommand, FilerView, parse_filters, views};
 use prelude_proto::Client;
 use prelude_ui::{TextInput, badge, color};
 use serde_json::json;
@@ -87,6 +87,9 @@ struct Choose {
     title: String,
     /// 確かめた上書き先(もう一度確定すると置き換える)
     overwrite: Option<PathBuf>,
+    /// ファイルの種類(名前と glob)。押すと次の種類に替わる
+    filters: Vec<(String, Vec<String>)>,
+    filter: usize,
 }
 
 struct Filer {
@@ -211,6 +214,18 @@ impl Filer {
             input.update(cx, |i, cx| i.set_text(e.name, cx));
         }
         window.focus(&input.focus_handle(cx), cx);
+    }
+
+    /// 選ぶ画面: 次のファイルの種類にする
+    fn next_filter(&mut self) {
+        let Some(c) = &mut self.choose else { return };
+        if c.filters.is_empty() {
+            return;
+        }
+        c.filter = (c.filter + 1) % c.filters.len();
+        self.dir.filter = c.filters[c.filter].1.clone();
+        let path = self.dir.path.clone();
+        self.dir.load(&path);
     }
 
     /// 選ぶ画面: 今の選びで確定する。選んだパスを書いて終わる
@@ -587,6 +602,7 @@ impl Render for Filer {
                     .hover(|s| s.bg(color::panel2()))
                     .child(t)
             };
+            let kind = c.filters.get(c.filter).map(|(name, _)| gpui::SharedString::from(format!("Type: {name}")));
             root = root.child(
                 div()
                     .flex()
@@ -594,6 +610,13 @@ impl Render for Filer {
                     .gap(px(8.))
                     .flex_none()
                     .p(px(6.))
+                    .when_some(kind, |d, k| {
+                        d.child(button("filter", k).on_click(cx.listener(|f, _, _, cx| {
+                            f.next_filter();
+                            cx.notify();
+                        })))
+                        .child(div().flex_1())
+                    })
                     .child(button("cancel", "Cancel".into()).on_click(cx.listener(|_, _, _, cx| cx.quit())))
                     .child(button("confirm", text).on_click(cx.listener(|f, _, w, cx| {
                         f.choose_confirm(w, cx);
@@ -625,6 +648,7 @@ fn main() {
     let usage = "usage: prelude-filer [--pane ID] [--view list|field] [--choose open|open-multiple|directory|save --output FILE [--name NAME] [--title TITLE]] [FOLDER]";
     let (mut choose_mode, mut output, mut save_name, mut title) = (None::<ChooseMode>, None::<PathBuf>, String::new(), String::new());
     let (mut pane, mut view_name, mut path) = (None::<u64>, "list".to_string(), None::<PathBuf>);
+    let mut filters: Vec<(String, Vec<String>)> = vec![];
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -645,6 +669,7 @@ fn main() {
             "--output" => output = args.next().map(PathBuf::from),
             "--name" => save_name = args.next().unwrap_or_default(),
             "--title" => title = args.next().unwrap_or_default(),
+            "--filter" => filters = parse_filters(&args.next().unwrap_or_default()),
             "-h" | "--help" => {
                 println!("{usage}");
                 return;
@@ -657,8 +682,9 @@ fn main() {
         }
     }
     let start = path.map(|p| if p.is_absolute() { p } else { std::env::current_dir().unwrap_or_default().join(p) }).unwrap_or_else(home);
+    let first_filter: Vec<String> = filters.first().map(|(_, g)| g.clone()).unwrap_or_default();
     let choose = match (choose_mode, output) {
-        (Some(mode), Some(output)) => Some(Choose { mode, output, title, overwrite: None }),
+        (Some(mode), Some(output)) => Some(Choose { mode, output, title, overwrite: None, filters: filters.clone(), filter: 0 }),
         (None, _) => None,
         (Some(_), None) => {
             eprintln!("{usage}");
@@ -716,7 +742,11 @@ fn main() {
             |window, cx| {
                 cx.new(|cx| {
                     let mut f = Filer {
-                        dir: DirState { show_hidden: prelude_ui::SETTINGS.show_hidden, ..DirState::default() },
+                        dir: DirState {
+                            show_hidden: prelude_ui::SETTINGS.show_hidden,
+                            filter: first_filter.clone(),
+                            ..DirState::default()
+                        },
                         view,
                         missing_view,
                         pane: None, // 最初のフォルダは知らせない(コアが渡したもの)

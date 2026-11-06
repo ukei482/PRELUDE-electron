@@ -44,6 +44,7 @@ enum Target {
 /// ランチャーから行う操作
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Command {
+    ChangeUrl,
     Settings,
     Cli,
     Sidebar,
@@ -53,7 +54,8 @@ enum Command {
     CloseTab,
 }
 
-const COMMANDS: [(&str, &str, Command); 7] = [
+const COMMANDS: [(&str, &str, Command); 8] = [
+    ("Change URL", "this web pane", Command::ChangeUrl),
     ("Settings", "colors, search, folders", Command::Settings),
     ("PRELUDE CLI", "commands", Command::Cli),
     ("Toggle sidebar", "show / hide", Command::Sidebar),
@@ -63,11 +65,12 @@ const COMMANDS: [(&str, &str, Command); 7] = [
     ("Close tab", "this tab", Command::CloseTab),
 ];
 
-/// 打った言葉に合う操作
-fn commands(query: &str) -> Vec<Entry> {
+/// 打った言葉に合う操作。`Change URL` は今のペインが Web のときだけ
+fn commands(query: &str, web: bool) -> Vec<Entry> {
     let q = query.trim().to_lowercase();
     COMMANDS
         .iter()
+        .filter(|(_, _, c)| web || *c != Command::ChangeUrl)
         .filter(|(name, _, _)| q.is_empty() || match_rank(name, &q).is_some())
         .map(|(name, what, c)| Entry { group: "COMMANDS", label: (*name).into(), detail: (*what).into(), target: Target::Command(*c) })
         .collect()
@@ -246,7 +249,8 @@ impl Launcher {
             } else {
                 0
             };
-            self.list.splice(at..at, commands(&self.query));
+            let web = self.web_pane().is_some();
+            self.list.splice(at..at, commands(&self.query, web));
         }
         self.selected = 0;
     }
@@ -260,12 +264,23 @@ impl Launcher {
         cx.notify();
     }
 
+    /// 今のペインが Web なら、その id と URL
+    fn web_pane(&self) -> Option<(u64, String)> {
+        let s = self.state.as_ref()?;
+        let t = s.tabs.iter().find(|t| Some(t.id) == s.active)?;
+        Some((t.active_pane, prelude_proto::pane_str(&t.layout, t.active_pane, "url")?.to_string()))
+    }
+
     /// 操作を実行して終わる
     fn command(&mut self, c: Command, cx: &mut Context<Self>) {
         let pane = self.state.as_ref().and_then(|s| s.tabs.iter().find(|t| Some(t.id) == s.active)).map(|t| t.active_pane);
         let spawn = |prog: &str, args: &[&str]| std::process::Command::new(prog).args(args).spawn().map(|_| ()).map_err(|e| format!("{prog}: {e}"));
         let call = |cmd: &str, args: Value| Client::connect("prelude-launcher", false).and_then(|mut c| c.call(cmd, args)).map(|_| ());
         let r = match c {
+            Command::ChangeUrl => match self.web_pane() {
+                Some((p, url)) => spawn("prelude-launcher", &["--pane", &p.to_string(), "--url", &url]),
+                None => Ok(()),
+            },
             Command::Settings => call("tab.open", json!({ "pane": { "type": "settings" } })),
             Command::Cli => call("tab.open", json!({ "pane": { "type": "cli" } })),
             Command::Sidebar => spawn("prelude", &["sidebar", "toggle"]),
@@ -533,11 +548,14 @@ mod tests {
 
     #[test]
     fn 操作の候補() {
-        assert_eq!(commands("").len(), COMMANDS.len());
-        assert_eq!(commands("set").first().map(|e| e.target.clone()), Some(Target::Command(Command::Settings)));
-        assert_eq!(commands("side").first().map(|e| e.target.clone()), Some(Target::Command(Command::Sidebar)));
-        assert_eq!(commands("split").len(), 2);
-        assert!(commands("xyz").is_empty());
+        assert_eq!(commands("", true).len(), COMMANDS.len());
+        assert_eq!(commands("", false).len(), COMMANDS.len() - 1);
+        assert_eq!(commands("url", true).first().map(|e| e.target.clone()), Some(Target::Command(Command::ChangeUrl)));
+        assert!(commands("change", false).is_empty());
+        assert_eq!(commands("set", false).first().map(|e| e.target.clone()), Some(Target::Command(Command::Settings)));
+        assert_eq!(commands("side", false).first().map(|e| e.target.clone()), Some(Target::Command(Command::Sidebar)));
+        assert_eq!(commands("split", false).len(), 2);
+        assert!(commands("xyz", false).is_empty());
     }
 
     const G: &str = "https://www.google.com/search?q=%s";
