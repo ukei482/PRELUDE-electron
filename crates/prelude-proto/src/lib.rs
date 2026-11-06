@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 use std::path::PathBuf;
 
 pub mod client;
+pub mod sidebar;
 pub use client::Client;
 
 /// 今の約束の版
