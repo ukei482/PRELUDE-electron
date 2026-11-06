@@ -11,13 +11,16 @@ let
   systemctl = "${config.systemd.package}/bin/systemctl";
   # sway のセッションの始まりと終わり。セッションの環境(WAYLAND_DISPLAY・SWAYSOCK・PATH・入力メソッドなど)を systemd に渡し、
   # 前のセッションのコアが残っていても入れ替わるように restart する。コアは SWAYSOCK を見て sway の裏側を使う。
-  # sway が終わったらコアを止め、SWAYSOCK を消す(user のサービスの環境はログアウトしても残り、Plasma のアプリにも渡ってしまう)
+  # sway が終わったらコアを止め、SWAYSOCK を消す(user のサービスの環境はログアウトしても残り、Plasma のアプリにも渡ってしまう)。
+  # コアが止まるのに時間がかかる間に次の sway が始まることがあるので、片付けるのは SWAYSOCK がまだ自分のものであるときだけ。
+  # そうしないと、次のセッションが渡した SWAYSOCK を消してしまい、そのコアは sway を見つけられず窓を開けない
   swaySession = pkgs.writeShellScript "prelude-sway-session" ''
     ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all
     ${systemctl} --user restart prelude-core.service
     ${config.programs.sway.package}/bin/swaymsg -t subscribe '["shutdown"]' >/dev/null 2>&1
-    ${systemctl} --user stop prelude-core.service
-    ${systemctl} --user unset-environment SWAYSOCK I3SOCK
+    mine() { ${systemctl} --user show-environment | ${pkgs.gnugrep}/bin/grep -qxF "SWAYSOCK=$SWAYSOCK"; }
+    mine && ${systemctl} --user stop prelude-core.service
+    mine && ${systemctl} --user unset-environment SWAYSOCK I3SOCK
   '';
   swayConf = ''
     # PRELUDE(services.prelude が置く。nix/module.nix)
