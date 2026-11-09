@@ -1,0 +1,64 @@
+/* 通知とクイック設定(swaync)を PRELUDE の色に。色は ~/.config/prelude/theme.toml と手で合わせる(bg #524832・accent #ffe6c2・danger #ff8080) */
+* {
+  font-family: "VCR OSD Mono", "DotGothic16", "Noto Sans CJK JP", sans-serif;
+  font-size: 13px;
+  border-radius: 0;
+}
+
+.control-center,
+.floating-notifications .notification,
+.control-center .notification {
+  background: #524832;
+  color: #ffffff;
+  border: 2px solid #ffe6c2;
+  box-shadow: none;
+}
+
+.control-center .notification-row .notification-background,
+.floating-notifications.background .notification-row .notification-background {
+  background: #524832;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.notification .summary,
+.widget-title > label,
+.widget-label > label {
+  color: #ffe6c2;
+}
+
+/* 通知の × と、全部消す・ボタン: [ ] の形で、乗せると反転(Electron 版の上のバーのボタン) */
+.close-button {
+  background: #ffe6c2;
+  color: #524832;
+  border-radius: 0;
+}
+.close-button:hover {
+  background: #ff8080;
+  color: #524832;
+}
+
+.widget-title > button,
+.widget-buttons-grid flowboxchild > button {
+  background: transparent;
+  color: #ffe6c2;
+  border: 1px solid #ffe6c2;
+  border-radius: 0;
+  box-shadow: none;
+}
+.widget-title > button:hover,
+.widget-buttons-grid flowboxchild > button:hover,
+.widget-buttons-grid flowboxchild > button.toggle:checked {
+  background: #ffe6c2;
+  color: #524832;
+}
+
+.widget-dnd > switch:checked,
+.widget-volume scale highlight,
+.widget-backlight scale highlight {
+  background: #ffe6c2;
+}
+
+.widget-label {
+  margin: 8px 8px 0;
+}

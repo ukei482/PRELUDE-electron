@@ -28,6 +28,19 @@ const COMPACT_WIDTH: f32 = 44.;
 const NEW_TAB_KINDS: [(&str, &str); 5] =
     [("Web...", "web"), ("Folder", "files"), ("Field", "field"), ("CLI", "cli"), ("Settings", "settings")];
 
+/// ペインの種類の印(Electron 版のアイコンの代わり)
+fn kind_glyph(kind: &str) -> &'static str {
+    match kind {
+        "web" => "◎",
+        "files" => "▸",
+        "field" => "◇",
+        "app" => "▢",
+        "cli" | "console" | "home" => ">",
+        "settings" => "⚙",
+        _ => "·",
+    }
+}
+
 /// コアから受け取った今の様子
 #[derive(Clone)]
 struct Snapshot {
@@ -173,10 +186,14 @@ impl Sidebar {
         let mut tabs = div().id("tabs").flex().flex_col().flex_1().min_h(px(0.)).overflow_y_scroll();
         for t in &snap.state.tabs {
             let (id, active) = (t.id, Some(t.id) == snap.state.active);
+            let n = prelude_proto::panes(&t.layout).len();
             tabs = tabs.child(
                 row(("tab", id), active)
                     .justify_center()
+                    .relative()
                     .child(t.num.to_string())
+                    // 分割したタブは、ペインの数を右下に出す
+                    .when(n > 1, |r| r.child(div().absolute().right(px(1.)).bottom(px(1.)).text_size(px(9.)).child(format!("+{}", n - 1))))
                     .on_click(cx.listener(move |this, _, _, _| this.send("tab.activate", json!({ "tab": { "id": id } })))),
             );
         }
@@ -321,14 +338,88 @@ impl Sidebar {
                     cx.stop_propagation();
                     this.send("tab.close", json!({ "tab": { "id": id } }));
                 }));
-            list = list.child(
+            let panes = prelude_proto::panes(&t.layout);
+            let activate = cx.listener(move |this, _, _, _| this.send("tab.activate", json!({ "tab": { "id": id } })));
+            let r = if panes.len() > 1 {
+                // 分割したタブは、1 行をペインの数で分けて、それぞれの印と名前を出す(押すとそのペインへ。Electron 版と同じ)。
+                // 7 枚以上は 6 枚まで出して残りは +N。今のペインは必ず出す
+                let mut shown: Vec<&prelude_proto::PaneView> = panes.iter().take(if panes.len() > 7 { 6 } else { panes.len() }).collect();
+                if !shown.iter().any(|p| p.id == t.active_pane)
+                    && let Some(cur) = panes.iter().find(|p| p.id == t.active_pane)
+                {
+                    *shown.last_mut().unwrap() = cur;
+                }
+                let hidden = panes.len() - shown.len();
+                let mut r = div()
+                    .id(("tab", id))
+                    .group(group)
+                    .flex()
+                    .items_center()
+                    .h(prelude_ui::ROW_HEIGHT)
+                    .flex_none()
+                    .pl(px(6.))
+                    .pr(px(2.))
+                    .gap(px(2.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(color::panel2()))
+                    .child(num(t.num.to_string(), false));
+                for (k, p) in shown.iter().enumerate() {
+                    let cur = active && p.id == t.active_pane;
+                    let pane = p.id;
+                    let seg = div()
+                        .id(("seg", pane))
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .flex_1()
+                        .min_w(px(0.))
+                        .h(px(24.))
+                        .px(px(4.))
+                        .when(k > 0, |d| d.border_l_1().border_color(color::line()))
+                        .when(cur, |d| d.bg(color::accent()).text_color(color::bg()))
+                        .when(!cur, |d| d.hover(|s| s.bg(color::panel())))
+                        .when(p.stopped && !cur, |d| d.text_color(color::dim()))
+                        .child(div().flex_none().text_size(px(11.)).child(kind_glyph(&p.kind)))
+                        .child(label(SharedString::from(p.title.clone())))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.send("pane.focus", json!({ "pane": pane }));
+                        }));
+                    r = r.child(seg);
+                }
+                if hidden > 0 {
+                    r = r.child(badge(format!("+{hidden}")));
+                }
+                r.child(close).on_click(activate)
+            } else {
+                let kind = panes.first().map(|p| p.kind.as_str()).unwrap_or("");
                 row(("tab", id), active)
                     .group(group)
                     .child(num(t.num.to_string(), active))
+                    .child(div().flex_none().text_size(px(11.)).child(kind_glyph(kind)))
                     .child(label(t.title.clone()))
                     .child(close)
-                    .on_click(cx.listener(move |this, _, _, _| this.send("tab.activate", json!({ "tab": { "id": id } })))),
-            );
+                    .on_click(activate)
+            };
+            list = list.child(r);
+            // 今のタブが分割していれば、ペインを 1 行ずつ全部の名前で出す(分けた行では名前が切れるので、分割した後に探しやすく)
+            if active && panes.len() > 1 {
+                for p in &panes {
+                    let (pane, cur) = (p.id, p.id == t.active_pane);
+                    list = list.child(
+                        row(("pane", pane), false)
+                            .h(px(24.))
+                            .pl(px(28.))
+                            .text_size(px(12.))
+                            .when(cur, |r| r.text_color(color::accent()))
+                            .when(!cur, |r| r.text_color(color::dim()))
+                            .child(div().flex_none().w(px(10.)).child(if cur { "›" } else { "" }))
+                            .child(div().flex_none().text_size(px(11.)).child(kind_glyph(&p.kind)))
+                            .child(label(SharedString::from(p.title.clone())))
+                            .on_click(cx.listener(move |this, _, _, _| this.send("pane.focus", json!({ "pane": pane })))),
+                    );
+                }
+            }
             // 今のペインが Web なら URL を出す(アドレスバーが無いので。判断 12)
             if let Some(url) = prelude_proto::pane_str(&t.layout, t.active_pane, "url").filter(|_| active) {
                 list = list.child(
