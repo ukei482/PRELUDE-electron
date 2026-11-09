@@ -423,6 +423,9 @@ PRELUDE の開発を止めても Ubuntu を使い続ける利点は薄いので�
 - メモリの節約にはならない(この PC で使っているのはアプリで、減るのは Discover と snapd の 130MB ほど)。スワップの不足は zram で補う
 - この PC では仮想マシンを使わない(メモリ 7.6GB に 3.5GB を割り当てて、OOM で落ちた)
 - 2026-11-05: NixOS を `nvme0n1p3` に入れ、起動・ログイン・`nixos-rebuild` まで確かめた(Kubuntu は `nvme0n1p2` に残っている)。Claude のデスクトップアプリは公式の .deb を `nix/claude-desktop.nix` で包む(Kubuntu の上の Nix で起動を確認)。pCloud は nixpkgs にある。open-pdf-studio も公式の .deb を `nix/open-pdf-studio.nix` で包む(MCP は 9223 番で答える)。ペンタブレットのドライバ(xppenlinux)は入れない
+- 2026-11-05: NixOS の上で確かめた。Electron 44 で PRELUDE の画面まで読み込み、GL のエラーは出ない。`npm test`(47)、コアのテスト、GPUI のビルド(2 並列で 17 分 42 秒)とファイラのテストが通る。ファイラはドライバの指定なしで Iris Xe の Vulkan を選ぶ。コアの窓の取り込みは KWin で動き、プロセス名が `.konsole-wrapped` でも見分けられる。Open PDF Studio は MCP の口で PDF の表示・文字の取り出しまで動く
+- 反映は `sudo nixos-rebuild switch --flake ~/PRELUDE-electron#prelude`。`/etc/nixos` から反映すると、リポジトリで足したものが消える
+- まだ確かめていないこと: Electron 版の取り込み(`appembed.js`)、ホームの端末、シェルモード、ロック画面と SDDM のテーマ、人からもらったブックマークの `/nix/store` の起動コマンド、Electron 版の更新の仕組み、コンポジタの候補(SwayFX・Hyprland)
 - flake は `path:` で指さない(リポジトリ全体、ビルド結果の 16GB までストアにコピーされる)。`.#…` なら git の追跡分だけ
 - nixos-26.05 の既定は rustc 1.95・electron 43 で、PRELUDE には古い。`flake.nix` で `rust-overlay` の配布済みの 1.98.1(GPUI の指定に合わせる)と `electron_44` を選ぶ
 - Kubuntu の上の Nix で確かめた(`nix develop`。2026-11-04): コアとコマンドのテスト、`npm test`(47)、GPUI の 3 つのビルド(2 並列で 8 分半)が通り、ファイラは Nix の Mesa を `VK_DRIVER_FILES` で指定すると Iris Xe の Vulkan で動く。Electron 44 は PRELUDE の画面まで読み込む。Kubuntu の上では GL のドライバが見つからないエラーが出る(`/run/opengl-driver` が無いため。NixOS で確かめる)
