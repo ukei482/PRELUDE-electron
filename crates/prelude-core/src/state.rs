@@ -595,10 +595,13 @@ impl Core {
                 } else if let Some(r) = self.recipes.iter().find(|r| r.kind == l.kind) {
                     let p = paths.get_or_insert_with(|| self.paths(Some(t)));
                     let get = |k: &str| p.get(k).and_then(Json::as_str).unwrap_or(&self.home).to_string();
-                    // {path} はペインのフォルダ(ファイラの枠)。無ければ paths の files
+                    // {path} はペインのフォルダ(ファイラの枠)。無ければ paths の files。
+                    // ペインに cwd があれば paths.terminal の代わり(ファイラの「ここで端末を開く」)
+                    let cwd = Some(l.str("cwd")).filter(|s| !s.is_empty()).map(str::to_string);
                     let vars = |n: &str| match n {
                         "path" => Some(Some(l.str("path")).filter(|s| !s.is_empty()).map(str::to_string).unwrap_or_else(|| get("files"))),
                         "pane" => Some(id.to_string()),
+                        "paths.terminal" if cwd.is_some() => cwd.clone(),
                         _ => n.strip_prefix("paths.").filter(|k| !k.is_empty()).map(get),
                     };
                     (recipes::expand(&r.run, &vars), r.class.clone())
@@ -610,7 +613,10 @@ impl Core {
                     continue;
                 }
                 let p = paths.get_or_insert_with(|| self.paths(Some(t)));
-                let cwd = p.get("terminal").and_then(Json::as_str).unwrap_or(&self.home).to_string();
+                let cwd = Some(l.str("cwd"))
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| p.get("terminal").and_then(Json::as_str).unwrap_or(&self.home).to_string());
                 out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied(), marker: String::new(), window });
             }
         }

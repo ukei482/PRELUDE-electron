@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+pub mod info;
 pub mod ops;
 pub mod views;
 
@@ -66,6 +67,10 @@ pub struct DirState {
     pub marked: BTreeSet<String>,
     /// Shift で範囲を選ぶときの起点
     pub anchor: Option<usize>,
+    /// 並べ方(見出しを押して替える)
+    pub sort: info::Sort,
+    /// 切り取ったもの(名前。薄く出す)。枠がクリップボードの控えから決める
+    pub cut: BTreeSet<String>,
 }
 
 impl DirState {
@@ -83,6 +88,7 @@ impl DirState {
             Ok(v) => {
                 let shown = |e: &Entry| e.is_dir || self.filter.is_empty() || self.filter.iter().any(|g| glob_match(g, &e.name));
                 self.entries = v.into_iter().filter(|e| (self.show_hidden || !e.hidden) && shown(e)).collect();
+                info::sort_entries(&mut self.entries, self.sort);
                 self.error = None;
             }
             Err(e) => {
@@ -133,6 +139,16 @@ impl DirState {
         }
     }
 
+    /// 囲んで選ぶ(Electron 版の bandSelect): base(Ctrl なら始める前の選び)に lo..=hi を足す。選んでいる位置は cur
+    pub fn mark_band(&mut self, base: &BTreeSet<String>, lo: usize, hi: usize, cur: usize) {
+        let mut m = base.clone();
+        m.extend(self.entries.iter().skip(lo).take(hi.saturating_sub(lo) + 1).map(|e| e.name.clone()));
+        self.marked = m;
+        if cur < self.entries.len() {
+            self.selected = Some(cur);
+        }
+    }
+
     pub fn mark_all(&mut self) {
         self.marked = self.entries.iter().map(|e| e.name.clone()).collect();
     }
@@ -148,6 +164,39 @@ impl DirState {
 
     pub fn is_marked(&self, i: usize) -> bool {
         self.entries.get(i).is_some_and(|e| self.marked.contains(&e.name))
+    }
+
+    /// 並べ方を変える。選んでいるもの・複数選びは同じファイルに残す
+    pub fn set_sort(&mut self, sort: info::Sort) {
+        let cur = self.selected_entry().map(|e| e.name.clone());
+        self.sort = sort;
+        info::sort_entries(&mut self.entries, sort);
+        if let Some(n) = cur {
+            self.select_name(&n);
+        }
+        self.anchor = self.selected;
+    }
+
+    /// 選びを変えずに、選んでいる位置だけを d 動かす(Ctrl+↑↓)。それまで 1 つだけ選んでいたら、それを複数選びに入れて残す
+    pub fn move_cursor_only(&mut self, d: isize) {
+        if self.marked.is_empty()
+            && let Some(n) = self.selected_entry().map(|e| e.name.clone())
+        {
+            self.marked.insert(n);
+        }
+        self.move_by(d);
+    }
+
+    /// 下の行の件数(Electron 版の updateStatus): 「12 items (3 folders)」、選んでいれば「2 selected (1.5 KB) / 12 items」
+    pub fn status_text(&self) -> String {
+        let n = self.entries.len();
+        if self.marked.is_empty() {
+            let dirs = self.entries.iter().filter(|e| e.is_dir).count();
+            return if dirs > 0 { format!("{n} items ({dirs} folders)") } else { format!("{n} items") };
+        }
+        let size: u64 = self.entries.iter().filter(|e| !e.is_dir && self.marked.contains(&e.name)).map(|e| e.size).sum();
+        let size = if size > 0 { format!(" ({})", human_size(size)) } else { String::new() };
+        format!("{} selected{size} / {n} items", self.marked.len())
     }
 
     /// 読み直す(隠しファイルの切り替え・フォルダが変わったとき)
@@ -297,6 +346,14 @@ pub enum FilerCommand {
     Range(usize),
     /// その位置を開く(フォルダなら入る、ファイルならアプリで開く)
     Open(usize),
+    /// その位置で右クリック(選んでいなければ 1 つだけ選び、メニューを出す。None は空いた所)
+    Menu(Option<usize>, gpui::Point<gpui::Pixels>),
+    /// 並べ方を変える(見出しを押した)
+    Sort(info::SortKey),
+    /// 戻る・進む(マウスの横のボタン)
+    History(bool),
+    /// 囲んで選ぶ途中: かかった行の範囲・選んでいる位置・Ctrl を押していたか。None で終わり
+    Band(Option<(usize, usize, usize, bool)>),
     /// フォルダへ移る
     Go(PathBuf),
 }
@@ -378,6 +435,38 @@ mod tests {
         // 読めないフォルダ
         s.load(&d.join("none"));
         assert!(s.error.is_some() && s.entries.is_empty() && s.selected.is_none());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn 並べ方を変えても同じものを選ぶ_件数() {
+        let d = tmp("sort");
+        std::fs::write(d.join("a.txt"), "1").unwrap();
+        std::fs::write(d.join("b.txt"), "12345").unwrap();
+        std::fs::create_dir(d.join("sub")).unwrap();
+        let mut s = DirState::default();
+        s.load(&d);
+        assert_eq!(s.status_text(), "3 items (1 folders)");
+        s.select_name("a.txt");
+        s.set_sort(info::Sort { key: info::SortKey::Size, desc: true });
+        let names: Vec<&str> = s.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["sub", "b.txt", "a.txt"]);
+        assert_eq!(s.selected_entry().unwrap().name, "a.txt");
+        // 読み直しても並べ方は残る
+        s.reload();
+        assert_eq!(s.entries[1].name, "b.txt");
+        // Ctrl+↑: 選びを変えずに位置だけ動かす
+        s.move_cursor_only(-1);
+        assert_eq!(s.selected, Some(1));
+        assert_eq!(s.targets(), [d.join("a.txt")]);
+        s.toggle_mark(1);
+        assert_eq!(s.status_text(), "2 selected (6 B) / 3 items");
+        // 囲んで選ぶ: Ctrl なしは囲んだものだけ、Ctrl ありは前の選びに足す
+        s.mark_band(&BTreeSet::new(), 0, 1, 1);
+        assert_eq!(s.marked.iter().map(String::as_str).collect::<Vec<_>>(), ["b.txt", "sub"]);
+        s.mark_band(&["a.txt".to_string()].into(), 0, 0, 0);
+        assert_eq!(s.marked.len(), 2);
+        assert_eq!(s.selected, Some(0));
         let _ = std::fs::remove_dir_all(&d);
     }
 
