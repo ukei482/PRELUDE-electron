@@ -233,6 +233,16 @@ pub fn clip_is_cut(note: &Path, paths: &[PathBuf]) -> bool {
     v["cut"] == true && noted.len() == paths.len() && noted.iter().all(|p| paths.contains(p))
 }
 
+/// 切り取ったパス(控えが切り取りのときだけ。一覧で薄く出す)
+pub fn cut_paths(note: &Path) -> Vec<PathBuf> {
+    let Ok(t) = std::fs::read_to_string(note) else { return vec![] };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else { return vec![] };
+    if v["cut"] != true {
+        return vec![];
+    }
+    v["paths"].as_array().into_iter().flatten().filter_map(|p| p.as_str().map(PathBuf::from)).collect()
+}
+
 /// 切り取りを貼り付け終えたら、控えを消す(同じものをもう一度移さない)
 pub fn clip_consumed(note: &Path) {
     let _ = std::fs::remove_file(note);
@@ -323,11 +333,13 @@ mod tests {
         let note = d.join("clip.json");
         clip_note(&note, std::slice::from_ref(&a), true);
         assert!(clip_is_cut(&note, std::slice::from_ref(&a)));
+        assert_eq!(cut_paths(&note), vec![a.clone()]);
         assert!(!clip_is_cut(&note, &[]));
         clip_consumed(&note);
         assert!(!clip_is_cut(&note, std::slice::from_ref(&a)));
         clip_note(&note, std::slice::from_ref(&a), false);
         assert!(!clip_is_cut(&note, std::slice::from_ref(&a)));
+        assert!(cut_paths(&note).is_empty());
         let _ = std::fs::remove_dir_all(&d);
     }
 }

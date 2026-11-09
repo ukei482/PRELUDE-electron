@@ -278,6 +278,13 @@ fn 取り込むペイン_レシピ_止まったペイン() {
     );
     assert!(w.iter().all(|w| w.marker.is_empty()));
     assert_eq!(ok(&mut c, Command::RecipeList {}), json!([{ "type": "console", "name": "Console" }]));
+    // cwd のあるコンソール(ファイラの「ここで端末を開く」)は paths.terminal の代わりにそこで開く
+    let here = ok(&mut c, Command::PaneSplit { pane: console, dir: prelude_proto::Dir::Col, new: spec(json!({ "type": "console", "cwd": "/data/x y" })) });
+    let here = here.as_u64().unwrap();
+    let w = c.wants();
+    let h = w.iter().find(|w| w.pane == here).unwrap();
+    assert_eq!((h.cmd.as_str(), h.cwd.as_str()), ("konsole --workdir '/data/x y'", "/data/x y"));
+    ok(&mut c, Command::PaneClose { pane: here });
 
     // 窓が閉じたペインは残して止まったものにし、取り込まない。タブを開き直すと起動し直す
     assert!(c.note_exited(kate));
