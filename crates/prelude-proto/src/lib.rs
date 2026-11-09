@@ -321,6 +321,47 @@ pub fn pane_str<'a>(layout: &'a serde_json::Value, pane: u64, key: &str) -> Opti
     (layout["id"].as_u64() == Some(pane)).then(|| layout[key].as_str()).flatten().filter(|s| !s.is_empty())
 }
 
+/// 配置の中のペイン 1 つ(サイドバーで、分割したタブのペインを並べて出すため)
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaneView {
+    pub id: u64,
+    /// ペインの種類(`web`・`files`・`app` など)
+    pub kind: String,
+    /// 出す名前: 窓の題名 → URL のホスト・フォルダの名前・アプリの名前 → 種類
+    pub title: String,
+    /// 窓が閉じて止まっている
+    pub stopped: bool,
+}
+
+/// 配置(`TabInfo::layout`)のペインを、左上から順に(分割の a が先)
+pub fn panes(layout: &serde_json::Value) -> Vec<PaneView> {
+    fn go(l: &serde_json::Value, out: &mut Vec<PaneView>) {
+        if l["k"] == "split" {
+            go(&l["a"], out);
+            go(&l["b"], out);
+            return;
+        }
+        let Some(id) = l["id"].as_u64() else { return };
+        let s = |k: &str| l[k].as_str().unwrap_or("").to_string();
+        let kind = s("type");
+        let base = |p: &str| p.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
+        let place = match kind.as_str() {
+            "web" => {
+                let u = s("url");
+                u.split("://").nth(1).unwrap_or(&u).split('/').next().unwrap_or("").to_string()
+            }
+            "files" | "field" => base(&s("path")),
+            "app" => s("name"),
+            _ => String::new(),
+        };
+        let title = [s("window_title"), s("title"), place].into_iter().find(|t| !t.is_empty()).unwrap_or_else(|| kind.clone());
+        out.push(PaneView { id, kind, title, stopped: l["stopped"] == true });
+    }
+    let mut out = vec![];
+    go(layout, &mut out);
+    out
+}
+
 /// 分割して開く場所(`item.open`)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SplitAt {
@@ -363,6 +404,19 @@ pub struct BookmarkInfo {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn 配置のペインを並べる() {
+        let l = json!({ "k": "split", "dir": "row", "ratio": 0.5,
+            "a": { "k": "leaf", "id": 1, "type": "web", "url": "https://example.com/a" },
+            "b": { "k": "split", "dir": "col", "ratio": 0.5,
+                "a": { "k": "leaf", "id": 2, "type": "app", "name": "kate", "window_title": "x.txt - Kate" },
+                "b": { "k": "leaf", "id": 3, "type": "files", "path": "/home/me/doc/", "stopped": true } } });
+        let v = panes(&l);
+        let t: Vec<(u64, &str, &str, bool)> = v.iter().map(|p| (p.id, p.kind.as_str(), p.title.as_str(), p.stopped)).collect();
+        assert_eq!(t, [(1, "web", "example.com", false), (2, "app", "x.txt - Kate", false), (3, "files", "doc", true)]);
+        assert_eq!(panes(&json!({ "k": "leaf", "id": 9, "type": "cli" }))[0].title, "cli");
+    }
 
     #[test]
     fn コマンドの形() {

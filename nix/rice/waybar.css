@@ -38,3 +38,28 @@ window#waybar {
   background: #524832;
   color: #ffe6c2;
 }
+
+/* 今のペインの操作(分割・閉じる)と、通知の印。押せるところは乗せると反転する(Electron 版の上のバー) */
+#custom-split-row,
+#custom-split-col,
+#custom-close-pane,
+#custom-notification,
+#network,
+#battery,
+#pulseaudio,
+#clock {
+  padding: 0 4px;
+}
+
+#custom-split-row:hover,
+#custom-split-col:hover,
+#custom-close-pane:hover,
+#custom-notification:hover,
+#custom-prelude:hover,
+#network:hover,
+#battery:hover,
+#pulseaudio:hover,
+#clock:hover {
+  background: #524832;
+  color: #ffe6c2;
+}

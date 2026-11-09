@@ -12,6 +12,7 @@ usage: prelude <command> [args]
   tabs                   List tabs (* = current)
   tab <n>                Switch to tab n
   close [n]              Close tab n (default: current)
+  pane close [id]        Close a pane (default: the current pane of the current tab)
   open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name
                          (--run: also run commands that do not match an installed app)
   open [--run]           Read one line from stdin: a line of `prelude items`, or a target as above
@@ -390,6 +391,16 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         ["close", n] => {
             Conn::open(false)?.call("tab.close", json!({ "tab": num_arg(n)? }))?;
+        }
+        ["pane", "close"] => {
+            let mut c = Conn::open(false)?;
+            let s = c.state()?;
+            let pane = s.tabs.iter().find(|t| Some(t.id) == s.active).map(|t| t.active_pane).ok_or("No tab")?;
+            c.call("pane.close", json!({ "pane": pane }))?;
+        }
+        ["pane", "close", id] => {
+            let pane: u64 = id.parse().map_err(|_| format!("Not a pane id: {id}"))?;
+            Conn::open(false)?.call("pane.close", json!({ "pane": pane }))?;
         }
         ["open"] => open_stdin(false)?,
         ["open", "--run"] => open_stdin(true)?,

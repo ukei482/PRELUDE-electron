@@ -56,7 +56,14 @@ waybar の例(タブの番号は `sway/workspaces` が出すので、PRELUDE の
 ## この PC の rice(`nix/rice.nix`)
 PRELUDE の外にある好みの部分は、モジュールではなく `nix/rice.nix` に置く。ほかの PC では丸ごと替えてよい。
 
-- バーは waybar(`nix/rice/waybar.css`。色は `theme.toml` と手で合わせる)、通知は mako
+- バーは waybar(`nix/rice/waybar.css`。色は `theme.toml` と手で合わせる)
+  - 左: 今のタブの題名(押すとランチャー)と、今のペインの操作 `[ ◫ ]` 左右に分割・`[ ⊟ ]` 上下に分割(ランチャーを分割の向きで開き、出すものを選ぶ)・`[ × ]` 今のペインを閉じる(`prelude pane close`)。Electron 版のペインの見出しのボタンにあたる
+  - 右: Wi-Fi・電池・音量・時計を押すと、通知とクイック設定(swaync)が開く。未読の通知があれば `[ * ]`(右クリックで通知を止める)。音量の右クリックで消音
+- 通知とクイック設定は swaync(`nix/rice/swaync.css`)。Electron 版の通知センターとクイック設定にあたる
+  - 通知は × (乗せると出る)で 1 つずつ、Clear all で全部消せる。Do not disturb、メディア、音量・明るさ
+  - QUICK: Wi-Fi・Bluetooth の入/切、ネットワークの設定、スクリーンショット(範囲・画面全体。`~/Pictures` に保存してクリップボードへ)、PRELUDE の設定
+  - SESSION: Lock・Sleep・Log out・Restart・Shut down
+  - Wi-Fi の一覧と接続はトレイの nm-applet、Bluetooth の機器はトレイの blueman
 - タイトルバーを出さない、sway の素のバーを隠す、キー配列、fcitx5、鍵の保管庫(`pam_kwallet_init`)
 - **分割は sway の機能を使う:** `$mod+b`(次の窓を右へ)・`$mod+v`(次の窓を下へ)の後に開いた窓は、その場所のペインになり、配置はコアに戻る
 
