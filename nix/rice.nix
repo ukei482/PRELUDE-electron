@@ -175,6 +175,9 @@ in
     # Wi-Fi の一覧(トレイ)。sway は xdg の自動起動を動かさない
     exec ${pkgs.networkmanagerapplet}/bin/nm-applet --indicator
 
+    # Bluetooth のトレイ。sway は xdg の自動起動を動かさない
+    exec ${pkgs.blueman}/bin/blueman-applet
+
     # キー配列。sway は services.xserver.xkb を読まない
     input type:keyboard xkb_layout "${config.services.xserver.xkb.layout}"
     ${lib.optionalString (im.enable && im.type == "fcitx5") ''

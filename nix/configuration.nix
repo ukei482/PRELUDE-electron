@@ -42,6 +42,11 @@
   # GPU のドライバ(/run/opengl-driver)。GPUI・Electron が使う
   hardware.graphics.enable = true;
 
+  # Bluetooth。イヤホンの音は PipeWire(WirePlumber)が受け持つ。sway では blueman のトレイから操作する(nix/rice.nix)
+  hardware.bluetooth.enable = true;
+  hardware.bluetooth.powerOnBoot = true;
+  services.blueman.enable = true;
+
   # 画面(今と同じ KDE Plasma の Wayland)
   services.desktopManager.plasma6.enable = true;
   services.displayManager.sddm.enable = true;
