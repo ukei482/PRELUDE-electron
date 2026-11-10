@@ -321,6 +321,22 @@ impl Sidebar {
         list
     }
 
+    /// 分割したペインを 1 つだけ閉じる × (乗せると出る)。最後のペインならタブごと閉じる
+    fn pane_close_button(&self, id: (&'static str, u64), pane: u64, group: SharedString, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .id(id)
+            .flex_none()
+            .px(px(3.))
+            .invisible()
+            .group_hover(group, |s| s.visible())
+            .hover(|s| s.text_color(color::danger()))
+            .child("×")
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.send("pane.close", json!({ "pane": pane }));
+            }))
+    }
+
     fn render_tabs(&self, snap: &Snapshot, cx: &mut Context<Self>) -> impl IntoElement {
         let mut list = div().id("tabs").flex().flex_col().flex_1().min_h(px(0.)).overflow_y_scroll();
         for t in &snap.state.tabs {
@@ -379,8 +395,10 @@ impl Sidebar {
                         .when(cur, |d| d.bg(color::accent()).text_color(color::bg()))
                         .when(!cur, |d| d.hover(|s| s.bg(color::panel())))
                         .when(p.stopped && !cur, |d| d.text_color(color::dim()))
+                        .group(SharedString::from(format!("seg-{pane}")))
                         .child(div().flex_none().text_size(px(11.)).child(kind_glyph(&p.kind)))
                         .child(label(SharedString::from(p.title.clone())))
+                        .child(self.pane_close_button(("seg-x", pane), pane, SharedString::from(format!("seg-{pane}")), cx))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             this.send("pane.focus", json!({ "pane": pane }));
@@ -406,8 +424,10 @@ impl Sidebar {
             if active && panes.len() > 1 {
                 for p in &panes {
                     let (pane, cur) = (p.id, p.id == t.active_pane);
+                    let group = SharedString::from(format!("pane-row-{pane}"));
                     list = list.child(
                         row(("pane", pane), false)
+                            .group(group.clone())
                             .h(px(24.))
                             .pl(px(28.))
                             .text_size(px(12.))
@@ -416,6 +436,7 @@ impl Sidebar {
                             .child(div().flex_none().w(px(10.)).child(if cur { "›" } else { "" }))
                             .child(div().flex_none().text_size(px(11.)).child(kind_glyph(&p.kind)))
                             .child(label(SharedString::from(p.title.clone())))
+                            .child(self.pane_close_button(("pane-x", pane), pane, group, cx))
                             .on_click(cx.listener(move |this, _, _, _| this.send("pane.focus", json!({ "pane": pane })))),
                     );
                 }

@@ -171,8 +171,8 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                         if !had_window {
                             eprintln!("prelude-core: no window found for pane {pane}");
                         }
-                        if core.note_exited(pane) {
-                            shared.changed(core, true); // 外から開いた窓は、ペインごと無くなる
+                        if core.note_exited(pane, had_window) {
+                            shared.changed(core, true); // 窓を閉じたペインは、ペインごと無くなる
                             shared.sync_embed(core); // 止まった Web のペインを閉じる
                         }
                     }

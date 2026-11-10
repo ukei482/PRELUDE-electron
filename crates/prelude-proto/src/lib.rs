@@ -301,7 +301,7 @@ pub struct TabInfo {
     pub bookmark: Option<String>,
     pub active_pane: u64,
     /// 配置。`.prelude` の `[layout]` と同じ形で、ペインに `id` が付く。
-    /// 窓を取り込むペインには、今の様子も付く: `window_title`(本体の窓の題名)、`stopped`(窓が閉じて止まっている。タブを開き直すと起動し直す)
+    /// 窓を取り込むペインには、今の様子も付く: `window_title`(本体の窓の題名)、`stopped`(窓が一度も出ずに止まっている。タブを開き直すと起動し直す。窓を閉じたペインは残らない)
     pub layout: Value,
 }
 
@@ -329,7 +329,7 @@ pub struct PaneView {
     pub kind: String,
     /// 出す名前: 窓の題名 → URL のホスト・フォルダの名前・アプリの名前 → 種類
     pub title: String,
-    /// 窓が閉じて止まっている
+    /// 窓が一度も出ずに止まっている
     pub stopped: bool,
 }
 

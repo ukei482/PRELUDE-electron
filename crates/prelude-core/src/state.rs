@@ -645,10 +645,13 @@ impl Core {
         }
     }
 
-    /// 取り込んだ窓が無くなった。ペインは残して止まったものにする(外から開いた窓はペインごと消す)。変われば true
-    pub fn note_exited(&mut self, pane: u64) -> bool {
+    /// ペインの窓が無くなった。had_window: 一度は窓があった(使用者かアプリが窓を閉じた)ならペインを閉じる(最後のペインならタブも)。
+    /// 窓が一度も出なかった(起動に失敗した)ペインは、止まったものとして残す(タブを開き直すと起動し直す)。
+    /// 外から開いた窓のペインは、いつも閉じる。変われば true
+    pub fn note_exited(&mut self, pane: u64, had_window: bool) -> bool {
         self.titles.remove(&pane);
-        if self.windows.contains_key(&pane) {
+        if had_window || self.windows.contains_key(&pane) {
+            self.stopped.remove(&pane);
             return self.pane_close(pane).is_ok();
         }
         self.find_pane(pane).is_ok() && self.stopped.insert(pane)

@@ -461,6 +461,7 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Hand
         want_focus: (None, None),
         echoes: vec![],
         quiet_until: Instant::now(),
+        ending: false,
     };
     s.recover().await;
     tokio::spawn(s.run(rx));
@@ -510,6 +511,8 @@ struct Sway {
     echoes: Vec<(u64, Option<u64>, Instant)>,
     /// 自分で窓を動かした直後は、選ばれた知らせをコアに送らない
     quiet_until: Instant,
+    /// sway かコアが終わる途中(窓が閉じてもペインを閉じない)
+    ending: bool,
 }
 
 impl Sway {
@@ -559,8 +562,10 @@ impl Sway {
                             }
                         }
                         Msg::Gone(pane) => {
-                            if self.panes.get(&pane).is_some_and(|p| p.con.is_none()) {
-                                self.close_pane(pane).await;
+                            // 使用者かアプリが窓を閉じた。プロセスは終わらせない(トレイに残るアプリは、次の起動で窓を出し直す)。
+                            // sway が終わる途中の窓の片付けでは、ペインを閉じない(次のセッションでタブを開き直す)
+                            if !self.ending && self.panes.get(&pane).is_some_and(|p| p.con.is_none()) {
+                                self.panes.remove(&pane);
                                 let _ = self.notes.send(Note::Exited { pane, had_window: true });
                             }
                         }
@@ -1028,7 +1033,10 @@ impl Sway {
                     let _ = self.notes.send(Note::Focus { tab, pane: None });
                 }
             }
-            kind::EV_SHUTDOWN => eprintln!("prelude-core: sway is shutting down"),
+            kind::EV_SHUTDOWN => {
+                eprintln!("prelude-core: sway is shutting down");
+                self.ending = true;
+            }
             _ => {}
         }
     }
@@ -1063,21 +1071,20 @@ impl Sway {
         }
     }
 
-    /// ペインの窓を閉じ、起動したプロセスを終わらせる。借りた窓は印だけ外す
+    /// ペインを閉じる。窓があれば窓を閉じるだけにし、その後はアプリに任せる(窓の × と同じ。トレイに残るアプリは残る)。
+    /// 借りた窓は印だけ外す。窓がまだ出ていない(起動の途中・窓が出なかった)ペインは、起動したプロセスを終わらせる
     async fn close_pane(&mut self, id: u64) {
         let Some(p) = self.panes.remove(&id) else { return };
-        let mut pids: Vec<u32> = p.sh.map(procs::descendants).unwrap_or_default();
-        pids.extend(p.owned.iter().copied());
-        pids.sort_unstable();
-        pids.dedup();
         if let Some(c) = p.con {
             let borrowed = p.adopt && p.old.contains(&c);
             let cmd = if borrowed { format!("[con_id={c}] unmark {}", quote(&self.mark(id))) } else { format!("[con_id={c}] kill") };
             self.ipc.run(&[cmd]).await;
-            if borrowed {
-                return;
-            }
+            return;
         }
+        let mut pids: Vec<u32> = p.sh.map(procs::descendants).unwrap_or_default();
+        pids.extend(p.owned.iter().copied());
+        pids.sort_unstable();
+        pids.dedup();
         for pid in pids.into_iter().rev() {
             procs::signal(pid, libc::SIGTERM);
         }
@@ -1085,6 +1092,7 @@ impl Sway {
 
     /// 終わる: 起動したアプリを閉じ、3 秒まで待つ。残ったものだけ強制終了する
     async fn shutdown(&mut self) {
+        self.ending = true;
         // 外から開いた窓は PRELUDE のものではないので、印だけ外して残す
         for (id, p) in self.panes.iter().filter(|(_, p)| p.foreign) {
             if let Some(c) = p.con {
@@ -1100,6 +1108,10 @@ impl Sway {
         }
         for id in self.panes.keys().copied().collect::<Vec<_>>() {
             self.close_pane(id).await;
+        }
+        // 窓を閉じても残るアプリ(トレイ)も終わらせる。コアが終わるときは起動したものを残さない
+        for p in &pids {
+            procs::signal(*p, libc::SIGTERM);
         }
         let end = Instant::now() + Duration::from_secs(3);
         while pids.iter().any(|p| procs::alive(*p)) && Instant::now() < end {
