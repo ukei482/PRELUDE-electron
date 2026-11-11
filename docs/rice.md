@@ -1,6 +1,6 @@
 # rice とつなぐ(Rust 版・NixOS)
 
-判断 10 で、バー・通知・OSD・トレイ・ロック・壁紙などのウィジェット類は rice の部品に任せることにした。PRELUDE が持つのは自分の層(スペース・ブックマーク・タブ・paths)だけで、つなぐための出口と設定の断片を出す。これが移行の段階 6。
+バー・通知・OSD・トレイ・ロック・壁紙などのウィジェット類は rice の部品に任せる(`redesign-rust.md` の「環境に任せるもの」)。PRELUDE が持つのは自分の層(スペース・ブックマーク・タブ・paths)だけで、つなぐための出口と設定の断片を出す。これが移行の段階 6。
 
 ## NixOS のモジュール(`nix/module.nix`)
 
@@ -25,7 +25,7 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 - sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す
 - `$mod+d` でランチャー(`services.prelude.launcher`。既定は `prelude items | fuzzel --dmenu | prelude open`。GPUI のランチャーを入れたら `prelude-launcher` に替える)
 - タブ = 作業領域で、作業領域の名前はタブの番号。`$mod+数字`(sway の既定)でタブを切り替える
-- 親のある窓(ダイアログ・ポップアップ)は浮かせる(判断 12)。足したい決まりは `services.prelude.sway.extraConfig`
+- 親のある窓(ダイアログ・ポップアップ)は浮かせる(`redesign-rust.md` の「PRELUDE を通さずに開いた窓」)。足したい決まりは `services.prelude.sway.extraConfig`
 - `~/.config/sway/config` を自分で書いたときは、`/etc/sway/config.d/*` を include する(sway の既定の設定はしている)。`$mod` もそこで決める
 
 ## バー: `prelude watch --bar`
@@ -68,13 +68,13 @@ PRELUDE の外にある好みの部分は、モジュールではなく `nix/ric
 - **分割は sway の機能を使う:** `$mod+b`(次の窓を右へ)・`$mod+v`(次の窓を下へ)の後に開いた窓は、その場所のペインになり、配置はコアに戻る
 
 ## まだのもの
-- GPUI の UI(`ui/`。サイドバー・ランチャー・ファイラ)の Nix のパッケージ。GPUI は Zed のリポジトリを git で使うので、`cargoLock.outputHashes` が要る。手元でのビルドが重い(判断 9 の「nix-daemon のビルドには上限が効かない」)ので、GitHub Actions でビルドしてキャッシュで配るとき(段階 8)にまとめる
+- GPUI の UI(`ui/`。サイドバー・ランチャー・ファイラ)の Nix のパッケージ。GPUI は Zed のリポジトリを git で使うので、`cargoLock.outputHashes` が要る。手元でのビルドが重い(下の「nix-daemon のビルドには上限が効かない」)ので、GitHub Actions でビルドしてキャッシュで配るとき(段階 8)にまとめる
 - Hyprland の断片(裏側と一緒に)
 - コンポジタ自身のタブの見た目を隠す断片(sway はタブを使わないので要らない。Hyprland のグループのバー)
 
-## この PC の OS: NixOS(判断 9 の記録)
+## この PC の OS: NixOS
 
-`docs/redesign-rust.md` の判断 9 から移した。判断 15 で、PRELUDE は OS を前提にしないことにしたので、これは作者の PC の決めごと。文中の「判断 N」は `docs/redesign-rust.md` の判断。
+PRELUDE は OS を前提にしない(`redesign-rust.md` の「環境に任せるもの」)。これは作者の PC を NixOS にした理由と記録。
 
 PRELUDE が頼っているのは **KDE Plasma 6 + Wayland(KWin)** で、Ubuntu そのものではない。Ubuntu に固有なのは snap 版の Chromium の扱いと、SDDM の設定ファイルの名前くらいで、どれも得をしていない。
 そこで、乗る先を PRELUDE の思想に照らして選び直し、**NixOS** にする。ディストリビューションを自分で作ることはしない(カーネル・ドライバ・KDE の保守まで持つことになる)。
@@ -83,11 +83,11 @@ PRELUDE が頼っているのは **KDE Plasma 6 + Wayland(KWin)** で、Ubuntu �
 
 | 思想 | 出どころ | NixOS では |
 |---|---|---|
-| 任せられるものは任せる。PRELUDE は自分の層だけを持つ | shell-design.md 1章、判断 3 | KDE・Chromium・カーネルは nixpkgs が保守する。PRELUDE はモジュール 1 つ |
-| ファイルには使用者が決めたことだけを書く。PRELUDE が変えるものは別に置く | 判断 5 | OS 全体を 1 つの設定で宣言する。`.prelude` と同じ考え方 |
-| 落ちても・失敗しても戻れる | 判断 1-b、release.md | 前の世代へ戻せる(起動の画面でも選べる)。`release.sh switch` が OS ごとになる |
-| 土台と付け替える部分を分ける | 判断 1・4 | 読み取り専用の `/nix/store` と、使用者の設定 |
-| ミニマル | 判断 0・2 | 書いたものしか入らない |
+| 任せられるものは任せる。PRELUDE は自分の層だけを持つ | shell-design.md 1章、Web のペイン | KDE・Chromium・カーネルは nixpkgs が保守する。PRELUDE はモジュール 1 つ |
+| ファイルには使用者が決めたことだけを書く。PRELUDE が変えるものは別に置く | スペースとブックマーク | OS 全体を 1 つの設定で宣言する。`.prelude` と同じ考え方 |
+| 落ちても・失敗しても戻れる | コアと UI の境目、release.md | 前の世代へ戻せる(起動の画面でも選べる)。`release.sh switch` が OS ごとになる |
+| 土台と付け替える部分を分ける | 全体の形・UI の付け替え | 読み取り専用の `/nix/store` と、使用者の設定 |
+| ミニマル | 目的 | 書いたものしか入らない |
 
 比べた候補: Kubuntu(手で積み重ねる・snap・Plasma が遅れる)、Fedora KDE、Arch(戻せない)、Fedora Kinoite + bootc(思想にはよく合い、移行中の Electron 版も普通に動く。NixOS が合わなかったときの次の候補)。
 
@@ -101,7 +101,7 @@ PRELUDE が頼っているのは **KDE Plasma 6 + Wayland(KWin)** で、Ubuntu �
 | `systemd/prelude-shell*.service`、`scripts/shell-mode.sh` | モジュールの `systemd.user.services` |
 | `release.sh` + `sys/update.js`(タグから作って切り替え・前の版に戻す) | flake の入力をタグに合わせて `nixos-rebuild switch`。戻すのは NixOS の世代 |
 | 「Kubuntu に戻る」 | 「plasmashell に戻る」(中身は同じ) |
-| 判断 8 の配布(GitHub Actions でビルドしてリリースに添付) | このリポジトリの `flake.nix` と NixOS のモジュール(`services.prelude.enable`)。ビルドの結果は Nix のキャッシュで配れる |
+| 以前の配布の案(GitHub Actions でビルドしてリリースに添付) | このリポジトリの `flake.nix` と NixOS のモジュール(`services.prelude.enable`)。ビルドの結果は Nix のキャッシュで配れる |
 
 ### 確かめること(NixOS を試すとき)
 
@@ -125,6 +125,6 @@ PRELUDE の開発を止めても Ubuntu を使い続ける利点は薄いので�
 
 ### 順番
 
-1. 今の Kubuntu のまま準備する: 決め打ちのパスを無くす(済)、この判断を書く(済)
+1. 今の Kubuntu のまま準備する: 決め打ちのパスを無くす(済)、この設計を書く(済)
 2. NixOS を別の区画か USB に入れて、上の「確かめること」を試す。`flake.nix`(Electron 版・Rust 版のパッケージ、`nix develop`)はここで作る(NixOS の上で確かめないと動くか分からないため)
 3. NixOS のモジュールを書き、シェルとして常用する。更新の仕組みを世代に置き換える

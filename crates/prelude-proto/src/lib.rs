@@ -1,4 +1,4 @@
-//! コアと UI・`prelude` コマンド・プラグインの間の約束(docs/redesign-rust.md の判断 1-b・4-a)。
+//! コアと UI・`prelude` コマンド・プラグインの間の約束(docs/redesign-rust.md の「コアと UI の境目」「ソケットの約束」)。
 //!
 //! - Unix ソケット([`socket_path`])の上に、1 行 1 つの JSON を流す
 //! - 送る側: [`Request`] `{"id": 1, "cmd": "tab.open", "args": {...}}`。返事は同じ `id` の [`Response`]
@@ -151,7 +151,7 @@ pub enum Command {
     /// ペインを含む一番近い分割の比率(0〜1。a の側の割合)
     #[serde(rename = "split.ratio")]
     SplitRatio { pane: u64, ratio: f64 },
-    /// UI が決めたペインの場所を知らせる(判断 1-b ②)。見えているペインを全部送る。送られなかったペインは隠れている
+    /// UI が決めたペインの場所を知らせる(KWin のつなぎで使う。「窓のつなぎ」)。見えているペインを全部送る。送られなかったペインは隠れている
     #[serde(rename = "pane.place")]
     PanePlace { rects: Vec<PaneRect> },
 

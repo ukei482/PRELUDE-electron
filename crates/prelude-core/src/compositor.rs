@@ -1,4 +1,4 @@
-//! 窓を並べる相手(コンポジタ)の差し替え口(docs/redesign-rust.md の判断 10・11)。
+//! 窓を並べる相手(コンポジタ)の差し替え口(docs/redesign-rust.md の「窓のつなぎ」)。
 //!
 //! コアは「どのペインに何の窓を出すか」と「タブごとの配置の木」([`Scene`])を渡し、窓が無くなった・題名が変わったなどを [`Note`] で受けるだけ。
 //! 裏側が KWin(窓をペインの場所に重ねる。今の [`crate::embed`])でも、sway・Hyprland(コンポジタに並べさせる)でも、コアは変わらない。
@@ -34,7 +34,7 @@ pub enum Tree {
     Pane(u64),
 }
 
-/// タブ 1 つ(= コンポジタの作業領域 1 つ。判断 12)
+/// タブ 1 つ(= コンポジタの作業領域 1 つ。「タブ」)
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabScene {
     pub id: u64,
@@ -64,7 +64,7 @@ pub enum Note {
     Claimed { pane: u64 },
     /// 使用者がコンポジタでタブ(作業領域)・ペイン(窓)を選んだ。pane が無ければタブだけ
     Focus { tab: u64, pane: Option<u64> },
-    /// PRELUDE を通さずに開いた普通の窓がタブに出てきた。tree はそのタブの今の並びで、この窓はペイン 0(判断 12)
+    /// PRELUDE を通さずに開いた普通の窓がタブに出てきた。tree はそのタブの今の並びで、この窓はペイン 0(「PRELUDE を通さずに開いた窓」)
     Foreign { tab: u64, con: i64, app: String, title: String, focused: bool, tree: Tree },
     /// 使用者がコンポジタで窓を動かした。タブの番号と、そのタブの今の並び(窓のあるペインだけ)。無ければ窓が無くなった。
     /// 知らない番号はコンポジタで作った作業領域なので、新しいタブにする
@@ -77,7 +77,7 @@ pub enum Note {
     Download(serde_json::Value),
 }
 
-/// コンポジタの裏側。部品のトレイトなので版は付けない(判断 12)
+/// コンポジタの裏側。部品のトレイトなので版は付けない(「トレイトの版」)
 pub trait Compositor: Send + Sync {
     /// 裏側の名前(ログ用)
     fn name(&self) -> &'static str;
@@ -90,7 +90,7 @@ pub trait Compositor: Send + Sync {
 /// 裏側の種類
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    /// KDE Plasma 6 の Wayland。KWin スクリプトで窓をペインの場所に重ねる(移行の間だけ。判断 12)
+    /// KDE Plasma 6 の Wayland。KWin スクリプトで窓をペインの場所に重ねる(KDE で使う人のため。「窓のつなぎ」)
     Kwin,
     /// sway・SwayFX(i3 の IPC)
     Sway,

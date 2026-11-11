@@ -1,4 +1,4 @@
-# PRELUDE の NixOS モジュール(docs/redesign-rust.md の判断 6 の段階 6・判断 9)。
+# PRELUDE の NixOS モジュール(docs/redesign-rust.md の移行の段階 6。作者の環境の設定は docs/rice.md)。
 # PRELUDE は自分の層(コア・コマンド・ダイアログ)だけを持ち、バー・通知などは rice に任せる。ここで出すのは、つなぐための断片:
 #   - コアの systemd の user サービス(prelude-core.service)
 #   - GPUI の UI(サイドバー・ランチャー・ファイラ・設定)
@@ -37,7 +37,7 @@ let
 
     # PRELUDE のタブ = 作業領域(名前はタブの番号)。$mod+数字(sway の既定のキー)でタブを切り替える
 
-    # 親のある窓(ダイアログ・ログインのポップアップ・確認の窓)は浮かせる。タブのペインにはしない(判断 12)
+    # 親のある窓(ダイアログ・ログインのポップアップ・確認の窓)は浮かせる。タブのペインにはしない(「PRELUDE を通さずに開いた窓」)
     for_window [window_type="dialog"] floating enable
     for_window [window_role="dialog"] floating enable
     for_window [window_role="pop-up"] floating enable
@@ -97,7 +97,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Web のペインは Chromium そのもの(判断 3-b。無いときの扱いは作らない)
+    # Web のペインは Chromium そのもの(「Web のペイン」。無いときの扱いは作らない)
     environment.systemPackages = [ cfg.package pkgs.chromium ] ++ lib.optional cfg.ui.enable cfg.ui.package;
 
     systemd.user.services.prelude-core = {

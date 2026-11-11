@@ -52,7 +52,7 @@
   services.displayManager.sddm.enable = true;
   services.displayManager.sddm.wayland.enable = true;
 
-  # SwayFX(判断 11 の第一候補。sway + 角丸・ぼかし・影)。SDDM のセッションで Plasma と選べる。
+  # SwayFX(作者の環境のコンポジタ。sway + 角丸・ぼかし・影)。SDDM のセッションで Plasma と選べる。
   # sway の中で動かした prelude-core は SWAYSOCK を見て sway の裏側(crates/prelude-core/src/sway.rs)を使う
   programs.sway = {
     enable = true;

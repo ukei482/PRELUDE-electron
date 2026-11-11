@@ -1,4 +1,4 @@
-//! PRELUDE のファイラの枠(docs/redesign-rust.md の判断 10、移行の段階 5)。コアの `files`・`field` のペインのレシピの既定で、ペインごとに 1 つの窓として起動する。
+//! PRELUDE のファイラの枠(docs/redesign-rust.md の「ファイラ」、移行の段階 5。外のファイラに任せるので消す予定)。コアの `files`・`field` のペインのレシピの既定で、ペインごとに 1 つの窓として起動する。
 //! Electron 版のフォルダのペイン(`src/files.js`)と同じ操作にそろえる。F1 でキーの一覧。
 //!
 //! - 見せ方は `--view` で選ぶ部品([`FilerView`])。今あるのは `list`(`field` はまだ無いので `list` で出す)
@@ -11,7 +11,7 @@
 //! - 移ったフォルダはコアに知らせる(`pane.update` の `path`)。タブを開き直すとそのフォルダで開く
 //! - フォルダの中が変わったら(ほかのアプリでファイルを足したなど)、1 秒以内に読み直す
 //!
-//! - 選ぶ画面(`--choose`): アプリの「開く」「保存」のダイアログとして動く(判断 12)。Enter・ボタンで、選んだパスを `--output` のファイルに書いて終わる。
+//! - 選ぶ画面(`--choose`): アプリの「開く」「保存」のダイアログとして動く(「アプリのダイアログ」)。Enter・ボタンで、選んだパスを `--output` のファイルに書いて終わる。
 //!   Esc・Cancel・窓を閉じると何も書かずに終わる(取り消し)。消す・移すなどの操作はできない。
 //!   `open`(ファイル 1 つ)・`open-multiple`(Ctrl+クリックなどで複数。Ctrl+Enter で確定)・`directory`(今のフォルダ)・`save`(下の欄に名前。あるファイルは確かめる。Ctrl+S でも確定)
 //!
@@ -319,7 +319,7 @@ impl Filer {
         self.open_files(list, false, window, cx);
     }
 
-    /// ファイルをアプリで開く(xdg-open)。11 個からは確かめる。開いた窓はコアが今のタブのペインにする(判断 12)
+    /// ファイルをアプリで開く(xdg-open)。11 個からは確かめる。開いた窓はコアが今のタブのペインにする(「PRELUDE を通さずに開いた窓」)
     fn open_files(&mut self, list: Vec<PathBuf>, confirmed: bool, window: &mut Window, cx: &mut Context<Self>) {
         let files: Vec<PathBuf> = list.into_iter().filter(|p| !p.is_dir()).collect();
         if files.len() > 10 && !confirmed {

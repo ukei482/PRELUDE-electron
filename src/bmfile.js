@@ -1,6 +1,6 @@
 'use strict';
 // ブックマークのファイル(.prelude)の読み書き(計算だけの部分。DOM・IPC には触らない)。
-// ファイルは TOML: version = 2, title, [paths], [layout](docs/redesign-rust.md の判断 5)。layout はタブの配置(app.js の serNode の形)で、
+// ファイルは TOML: version = 2, title, [paths], [layout](docs/redesign-rust.md の「スペースとブックマーク」)。layout はタブの配置(app.js の serNode の形)で、
 // 1つのペインだけのブックマーク(Web・フォルダ・アプリ)も、ペイン1つの配置として書く。
 // 文字列 ⇔ 中身はメインプロセス(bmcodec.js)が受け持ち、ここは中身(オブジェクト)だけを扱う。Rust 版(crates/prelude-format)も同じ形。
 // 0.11 までの JSON の形 { prelude: 'bookmark', version: 1, title, paths, root } も読める(書き直すと TOML になる)。

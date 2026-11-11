@@ -1,4 +1,4 @@
-//! xdg-desktop-portal の FileChooser のバックエンド(docs/redesign-rust.md の判断 5-a・12、移行の段階 7)。
+//! xdg-desktop-portal の FileChooser のバックエンド(docs/redesign-rust.md の「アプリのダイアログ」、移行の段階 7)。
 //!
 //! - アプリの「開く」「保存」のダイアログを受ける。コアが決めるのは最初のフォルダ(今のタブの paths の `open` / `save`)だけ
 //! - 選ぶ画面は別のプログラム。`~/.config/prelude/chooser.toml` の `run` で替えられる(既定は `prelude-filer --choose …`)。

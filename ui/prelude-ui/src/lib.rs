@@ -1,4 +1,4 @@
-//! PRELUDE の UI の共通の見た目と部品(docs/redesign-rust.md の判断 11)。サイドバー・ランチャー・ファイラが同じ色・書体・行の形になるように、ここにまとめる。
+//! PRELUDE の UI の共通の見た目と部品(docs/redesign-rust.md の「UI」)。サイドバー・ランチャー・ファイラが同じ色・書体・行の形になるように、ここにまとめる。
 //! 見た目は Electron 版(src/style.css)に合わせる: 青地に白い文字、角丸なし、英数字は VCR OSD Mono・日本語は DotGothic16。
 use gpui::{App, Div, ElementId, FontFallbacks, Hsla, Pixels, SharedString, Stateful, div, font, prelude::*, px, rgb};
 use prelude_format::config::{Settings, Theme, parse_color};

@@ -1,4 +1,4 @@
-//! Web のペイン(docs/redesign-rust.md の判断 3)。Chromium を PRELUDE 専用のプロファイルで 1 つだけ動かし、小さな拡張機能とやり取りする。
+//! Web のペイン(docs/redesign-rust.md の「Web のペイン」)。Chromium を PRELUDE 専用のプロファイルで 1 つだけ動かし、小さな拡張機能とやり取りする。
 //!
 //! - CDP は使わない。`--remote-debugging-pipe` で起動すると `navigator.webdriver` が true になり、Google のログインに拒まれる
 //! - 拡張機能(`extension/`)は事実を知らせて頼まれたことをするだけで、判断はここでする([`decide`])。起動のときにファイルへ書き出す
@@ -201,7 +201,7 @@ pub fn download_target(from: &Path, dir: &str) -> Option<PathBuf> {
     (1..1000).map(|i| Path::new(dir).join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists())
 }
 
-/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる。Chromium は NixOS のモジュールが入れるので、それ以上の扱いはしない。判断 12)。
+/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる。Chromium はパッケージが入れるので、それ以上の扱いはしない。「Web のペイン」)。
 /// socket は拡張機能がつなぐ Unix ソケット
 pub fn start(tag: &str, socket: PathBuf, notes: mpsc::UnboundedSender<Note>) -> Option<Handle> {
     let Some((bin, profile, page)) = locate(tag) else {

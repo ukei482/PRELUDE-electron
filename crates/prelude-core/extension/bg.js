@@ -1,4 +1,4 @@
-// Web のペインとコアをつなぐ拡張機能(docs/redesign-rust.md の判断 3)。
+// Web のペインとコアをつなぐ拡張機能(docs/redesign-rust.md の「Web のペイン」)。
 // 事実を知らせて、頼まれたことをするだけ。どの窓を閉じてタブにするかは、コア(web.rs)が決める。
 let port = null;
 

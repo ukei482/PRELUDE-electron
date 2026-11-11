@@ -1,4 +1,4 @@
-//! ブックマーク(`.prelude`)とスペース(`space.toml`)の読み書き(docs/redesign-rust.md の判断 5)。
+//! ブックマーク(`.prelude`)とスペース(`space.toml`)の読み書き(docs/redesign-rust.md の「スペースとブックマーク」)。
 //!
 //! Electron 版(`src/bmfile.js`・`bmcodec.js`)と同じ形を読み書きする。両方のテストが `test/fixtures/format/` の同じファイルを読む。
 //!
@@ -92,7 +92,7 @@ impl Paths {
     }
 }
 
-/// 使うフォルダを決める。項目ごとに ブックマーク → スペース → 代わりの項目 → ホーム の順(判断 5)。
+/// 使うフォルダを決める。項目ごとに ブックマーク → スペース → 代わりの項目 → ホーム の順(「どの paths を使うか」)。
 /// 代わりの項目: `download` → `save` → `files`、ほか(知らない項目も)→ `files`。
 /// `get` はどこにも無ければ `None`(使う側が既定を決める。Electron 版の `bmFilePaths` と同じ)、`resolve` はホームにする。
 /// 相対パスは、ブックマークのものは `.prelude` があるフォルダ、スペースのものはスペースのフォルダから数える

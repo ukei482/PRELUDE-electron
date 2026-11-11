@@ -1,4 +1,4 @@
-# Rust 版 PRELUDE の UI(GPUI。docs/redesign-rust.md の判断 10・11、移行の段階 4)。
+# Rust 版 PRELUDE の UI(GPUI。docs/redesign-rust.md の「UI」、移行の段階 4)。
 # GPUI のビルドが重いので、ルートのワークスペース(コア・コマンド)とは分け、`cargo test` に巻き込まない
 [workspace]
 resolver = "2"

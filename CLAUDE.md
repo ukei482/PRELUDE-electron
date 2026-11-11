@@ -25,7 +25,7 @@
   - 設定は `~/.config/prelude/theme.toml`・`settings.toml`(`prelude-format` の `config`)。Electron 版からの引き継ぎは `prelude-core` の `migrate.rs`(別のソケットのコアでは動かない)
 - `ui/` — Rust 版の UI(GPUI。段階 4)。ルートとは別のワークスペース。`prelude-ui`(共通の見た目と部品。入力欄 `TextInput` も)・`prelude-sidebar`(サイドバー)・`prelude-launcher`(ランチャー)・`prelude-filer`(ファイラ。見せ方は `FilerView` のトレイト)・`prelude-settings`(設定の画面)。コアの `files`・`field` のペインは既定で `prelude-filer` を起動するので、試すときは `PATH` に `proto/gpui/target/debug` などを足す。ビルドは `cd ui && cargo build`(GPUI の初回のビルドは重い。`CARGO_TARGET_DIR=../proto/gpui/target` で試作のビルド結果を使い回せる)
 - `proto/gpui/` — GPUI の試作(段階 0)。ルートのワークスペースの外。ビルドには開発用のライブラリが要る(`docs/redesign-rust.md` の「GPUI の試作で分かったこと」)
-- `flake.nix`・`nix/` — NixOS へ移るための開発環境(`nix develop`)と OS の設定(判断 9)。`nix/prelude.nix` はコア・コマンドのパッケージ、`nix/module.nix` は NixOS のモジュール(`services.prelude`。コアのサービス・sway の断片・ダイアログ)。rice とのつなぎ方は `docs/rice.md`
+- `flake.nix`・`nix/` — NixOS へ移るための開発環境(`nix develop`)と作者の PC の OS の設定(`docs/rice.md`。PRELUDE の設計は `docs/redesign-rust.md`)。`nix/prelude.nix` はコア・コマンドのパッケージ、`nix/module.nix` は NixOS のモジュール(`services.prelude`。コアのサービス・sway の断片・ダイアログ)。rice とのつなぎ方は `docs/rice.md`
 - `docs/release.md` — リリースと更新の詳しい手順
 
 ## 開発版を試す

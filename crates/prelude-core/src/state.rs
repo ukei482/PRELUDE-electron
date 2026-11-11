@@ -277,7 +277,7 @@ pub struct Tabs {
 
 // ------------------------------------------------------------------ 書き出す形
 
-/// 残す状態(`~/.local/state/prelude/core.json`)。使用者が決めたものではないので、スペースのフォルダには書かない(判断 5)
+/// 残す状態(`~/.local/state/prelude/core.json`)。使用者が決めたものではないので、スペースのフォルダには書かない(「スペースとブックマーク」の決めごと)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Saved {
     pub space: String,
@@ -424,7 +424,7 @@ impl Core {
     }
 
     fn save_tabs(&self, t: &Tabs) -> SavedTabs {
-        // 開き直せない窓は書かない(判断 12)。それだけのタブも残さない
+        // 開き直せない窓は書かない(「PRELUDE を通さずに開いた窓」)。それだけのタブも残さない
         let keep = |id: u64, l: &Leaf| !(self.windows.contains_key(&id) && l.str("cmd").is_empty());
         let kept: Vec<(&Tab, Layout)> = t.tabs.iter().filter_map(|tab| Some((tab, tab.layout.filtered(&keep)?))).collect();
         let active = t.active.and_then(|a| kept.iter().position(|(x, _)| x.id == a)).unwrap_or(0);
@@ -663,7 +663,7 @@ impl Core {
         true
     }
 
-    /// PRELUDE を通さずに開いた窓を、タブのペインにする(判断 12)。tree はコンポジタの今の並びで、この窓はペイン 0。
+    /// PRELUDE を通さずに開いた窓を、タブのペインにする(「PRELUDE を通さずに開いた窓」)。tree はコンポジタの今の並びで、この窓はペイン 0。
     /// インストール済みのアプリなら開き直せるように起動コマンドを持つ。変われば true
     pub fn note_foreign(&mut self, tab: u64, con: i64, app: &str, title: &str, focused: bool, tree: &Tree) -> bool {
         let Some(num) = self.tabs.tabs.iter().find(|t| t.id == tab).map(|t| t.num) else { return false };

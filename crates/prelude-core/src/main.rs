@@ -3,7 +3,7 @@
 //! 使い方: `prelude-core [--socket <パス>] [--state <パス>] [--spaces <フォルダ>] [--recipes <フォルダ>] [--no-embed]`
 //! - ソケット: 既定は `$XDG_RUNTIME_DIR/prelude/core.sock`(環境変数 `PRELUDE_CORE_SOCK` でも変えられる)
 //! - 残す状態: 既定は `$XDG_STATE_HOME/prelude/core.json`(`PRELUDE_CORE_STATE`)
-//! - スペースのフォルダ: `PRELUDE_SPACES`、`settings.toml` の `space_dir`、`~/スペース` の順。Electron 版と同じフォルダを使う(判断 8)
+//! - スペースのフォルダ: `PRELUDE_SPACES`、`settings.toml` の `space_dir`、`~/スペース` の順。Electron 版と同じフォルダを使う(移行の「引き継ぎ」)
 //! - 最初の起動で Electron 版の設定を引き継ぐ(`migrate.rs`)。別のソケットで試しているコアでは動かさない
 //! - ペインのレシピ: 既定は `$XDG_CONFIG_HOME/prelude/panes`
 //! - `--no-embed`: アプリを起動せず、窓も取り込まない(状態だけを試す)
