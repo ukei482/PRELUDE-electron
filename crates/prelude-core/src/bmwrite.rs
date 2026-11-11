@@ -208,7 +208,7 @@ impl Core {
         let p = self.space_bookmark(path)?;
         let root = self.space_dir();
         let rel = |q: &Path| q.strip_prefix(&root).map(s).unwrap_or_default();
-        let folder = |q: &Path| q.parent().map(&rel).unwrap_or_default();
+        let folder = |q: &Path| q.parent().map(rel).unwrap_or_default();
         // 今の並び(全部)。動かすものを抜いて、before の前(無ければ同じフォルダの最後)に入れる
         let mut all: Vec<String> = self.bookmarks().iter().map(|b| rel(Path::new(&b.path))).collect();
         let me = rel(&p);
