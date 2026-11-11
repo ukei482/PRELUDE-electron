@@ -1,0 +1,11 @@
+// 決まりを破ったサイドバーの見本(tests/contract.rs が「コンパイルで止まる」ことを確かめる。ビルドには入れない)
+import { Prelude } from "prelude.slint";
+
+export component Broken inherits Window {
+    // 名前の間違い(tabs ではない)
+    for t in Prelude.tab: Text { text: t.title; }
+    // 型の間違い(space は string)
+    property <int> n: Prelude.space;
+    // 決まりに無い頼みごと
+    TouchArea { clicked => { Prelude.delete-everything(); } }
+}

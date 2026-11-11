@@ -367,6 +367,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | 8 | 引き継ぎ(`migrate.rs`)、配布、Rust 版をリリースにして Electron 版を消す | 引き継ぎは済(8-a)。残り: 配布の仕上げ(8-b)、Electron 版を消す(8-c) |
 
 ### これから
+0. **UI の技術を見直している**: GPUI の代わりに Slint を試す(`proto/slint`)。サイドバーの決まりは `.slint` の `global` で書き、破るとビルドで止まる。日本語入力などをこの PC で確かめてから、下の「UI」の「GPUI」を書き直す
 1. **ファイラを外す**: コアの `files`・`field` の名指しを消す、`field` を `files` の別名にする、`prelude pane path`、既定の `files` のレシピを yazi に、`ui/prelude-filer`(と `FilerView`)を消す、サイドバーの + の Field と種類の印の `field` を外す、テストの見本(`test/fixtures/format/full.prelude`)から `sort`・`[ui.field]` を外す
 2. **アプリのダイアログ**: 最初のフォルダの優先順を変える、既定の選ぶ画面を yazi(`prelude-choose`)に、ポータルを別のプログラムに分ける
 3. **つなぎ無しでも動く**: つなぎが無くても起動する(段 0。今の `--no-embed` はアプリも起動しない)、タブを論理の単位にして作業領域との対応を sway のつなぎへ寄せる、つなぎが段を名乗る、アプリの一覧を差し替えられる形にする
