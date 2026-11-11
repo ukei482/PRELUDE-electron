@@ -378,6 +378,85 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 
 ---
 
+## 設定
+
+どこまで PRELUDE に任せるか、どの道具を使うかを、使用者が環境に合わせて選べるようにする。Omarchy から学んだこと(既定が見える、自分の変更は最小限で済む、1 つの台帳から全部を作る)を取り入れる(2026-11-11)。
+
+### 決めごと
+- **設定はテキスト(TOML)。** 使用者が決めることは `~/.config/prelude/`、PRELUDE が変えるもの(前回のタブ・幅など)は `~/.local/state/prelude/`(今までどおり)
+- **設定の項目の台帳を 1 か所に置く。** 項目ごとに、名前・型・既定・説明・反映のしかた(すぐ反映 / 起動し直し)を書く。設定を読む処理・`prelude config`・設定の画面・MCP・スキルの設定の一覧・確かめ(型の合わない値を断る)は、すべてこの台帳から作る。コマンドの台帳(「Omarchy から学んだこと」)と同じ考え方
+- **既定は見える。** 既定はコードの奥に置かず、台帳から「既定の設定ファイル」(説明のコメントつき)を作って見せる(`prelude config defaults`)。使用者のファイルには、変えたい項目だけを書けばよい
+- **使用者のファイルを壊さない。** `prelude config set` で書くときも、知らない項目とコメントは残す(コメントを残して書き換えられる TOML のライブラリを使う)。読めない値はその項目だけ既定にし、理由を出す
+- **変えたら反映する。** コアは設定のファイルを見張り(ブックマークのフォルダと同じく、中身の印を比べる)、すぐ反映できる項目は読み直して使う。反映できない項目は「起動し直すと効く」と知らせる
+- **版を書く。** `version = 1`。形を変えるときは、古い版の設定を新しい形に移す(Omarchy の移し替えと同じ考え方)
+
+### 層
+項目ごとに、後の層ほど優先する。
+
+| 層 | 置き場所 | 中身 |
+|---|---|---|
+| 1. 既定 | 台帳(コード) | どの環境でも無難な値 |
+| 2. おすすめの組み合わせ | `profiles/<名前>.toml`(PRELUDE が配る) | 環境ごとのおすすめ(sway・KDE・Omarchy…)。settings.toml と同じ形 |
+| 3. 使用者 | `~/.config/prelude/settings.toml` | 使用者が変えた項目だけ |
+
+- 組み合わせは `profile = "auto"`(環境から決める)か、名前で選ぶ。`prelude config list` は、項目ごとに今の値と、どの層の値かを出す
+- 環境の側の断片(キーの割り当て・メニューの項目・テーマのフック)は PRELUDE の設定ではないので、組み合わせの説明として配り、入れるのは使用者(または作者の rice)
+
+### 項目(案)
+```toml
+version = 1
+profile = "auto"            # おすすめの組み合わせ(auto・none・sway・kde・omarchy…)
+
+# 今ある項目(そのまま)
+search_engine = "https://www.google.com/search?q=%s"
+show_hidden   = false
+space_dir     = ""          # 空なら ~/スペース
+download_dir  = ""
+
+# 道具
+terminal = "auto"           # 端末。auto は PATH から foot・kitty・ghostty・alacritty・wezterm・konsole の順
+agent    = "auto"           # 既定の AI。auto は PRELUDE_AGENT、無ければ claude・codex・gemini・opencode の順
+
+[windows]                   # 窓のつなぎ(「窓のつなぎ」)
+backend  = "auto"           # auto・sway・kwin・hyprland・none
+level    = "auto"           # 任せる段の上限: auto(つなぎの最大)・launch・workspace・arrange・read・follow
+adopt    = "tabs"           # PRELUDE を通さずに開いた窓: tabs(タブの作業領域のものは引き取る)・none
+workspace_prefix = ""       # タブの作業領域の名前の頭(環境の作業領域と分けたいとき)
+floating = []               # いつも浮かせる窓(app_id・クラス)
+ignore   = []               # PRELUDE が触らない窓
+
+[sidebar]
+side = "left"               # left・right
+surface = "auto"            # auto(layer-shell があればそれ)・layer・window
+
+[tabs]
+links = "tab"               # Web のペインから新しく開くリンク: tab(新しいタブ)・split(右に分割)
+closed_max = 20             # 覚えておく閉じたタブの数
+```
+- `level` は **上限**。つなぎがもっと上の段を持っていても、そこまでしかしない。`workspace` は「作業領域だけ指定する形」(「窓のつなぎ」)
+- 端末は、端末ごとに作業フォルダとコマンドの渡し方が違う(`foot --working-directory=…`、`konsole --workdir … -e`、`wezterm start --cwd … --` など)。その違いは PRELUDE の 1 か所(`prelude term [--cwd <フォルダ>] [-- <コマンド>…]`)だけが知り、既定のレシピ(`files`・`console`・`cli`・`agent`)と `prelude choose` は `prelude term` を使う。窓の名前(app_id)も、端末ごとの表から決める
+- テーマ(`theme.toml`)は別のファイルのまま。環境のテーマについていくのは、組み合わせ(例: Omarchy のテーマのフックで `theme.toml` を書く)で行う
+
+### `prelude config`
+```bash
+prelude config list              # 全部の項目: 今の値・どの層か・説明
+prelude config get windows.level
+prelude config set windows.level arrange    # 台帳で確かめてから settings.toml に書く(コメント・知らない項目は残す)
+prelude config unset windows.level          # 使用者の値を消す(組み合わせ・既定に戻る)
+prelude config defaults          # 既定の設定ファイル(説明のコメントつき)
+prelude config path              # settings.toml の場所
+```
+- MCP にも `config_get`・`config_set` を出す。スキルの設定の一覧は台帳から作る
+
+### 作る順番(案)
+1. 台帳・層・`prelude config`・反映(コアとコマンド。画面なしでテストできる)
+2. `prelude term`(端末の表)と、既定のレシピ・選ぶ画面をそれに替える
+3. `[windows]`(任せる段の上限・引き取り・浮かせる・触らない)
+4. おすすめの組み合わせ(まず sway と Omarchy)
+5. 設定の画面(Slint の `prelude-settings`。台帳から作る)
+
+---
+
 ## 環境に任せるもの
 
 | 役割 | 扱い |
@@ -474,7 +553,7 @@ Omarchy は OS ごと持つことで完成形を作っている。PRELUDE は同
 ### これから
 済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目、ブックマークのフォルダの監視、ダイアログのポータルを別のプロセスに(`prelude-core --portal`)、CI で Rust のテスト・clippy・整形、アプリの一覧を差し替えられる形に(`AppSource`)
 
-- 次にすること(2026-11-11 に決めた順): **AI 連携**(スキル → MCP → AI のペイン)→ **設定の設計**。そのあと「Omarchy から学んだこと」の、命令の台帳・フック・段 0 の小さな直し・おすすめの組み合わせ・説明書・複数の画面
+- 次にすること: **設定**(「設定」の「作る順番」)。AI 連携(スキル・MCP・AI のペイン)と設定の設計は済(2026-11-11)。そのあと「Omarchy から学んだこと」の、命令の台帳・フック・段 0 の小さな直し・おすすめの組み合わせ・説明書・複数の画面
 - 画面のある PC で確かめること: `prelude choose` の保存・フォルダを選ぶ操作、yazi のプラグインの例、拡張機能の消音とファビコン
 
 1. **Slint で layer-shell を使えるかの試作**: `proto/slint` に、Slint の自前のプラットフォーム + smithay-client-toolkit の layer-shell の面を足す。左端に貼り付く・場所を予約する・幅を変える・日本語入力・キーボード(名前の変更のときだけ取る)を確かめる。だめなら普通のウィンドウで出し、コンポジタの決まりで端に固定する
