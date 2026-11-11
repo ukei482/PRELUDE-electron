@@ -36,6 +36,15 @@ usage: prelude <command> [args]
   space <name>           Switch to a space
   space new <name>       Create a space
   bookmarks              List bookmarks of this space
+  bookmark save <title> [<folder>]   Save the current tab as a bookmark (in <folder> of this space)
+  bookmark overwrite     Overwrite the current tab's bookmark with its current layout
+  bookmark rename <bookmark> <title>
+  bookmark move <bookmark> [<folder>]  Move a bookmark into <folder> (default: the top of the space)
+  bookmark trash <bookmark>          Move a bookmark to the trash
+                         <bookmark> is a .prelude path or a name as `prelude bookmarks` shows it (folder/title)
+  folder new <name>      Create a bookmark folder in this space
+  folder rename <folder> <name>
+  folder remove <folder> Remove a bookmark folder; its contents move to the top of the space
   paths [n]              Folders used by tab n (files, open, save, download, terminal)
   watch                  Print state events as JSON lines
   watch --bar            One JSON line per change for a bar (waybar's custom module, return-type json).
@@ -106,6 +115,37 @@ fn pane_path(id: Option<&str>, folder: &str) -> Result<(), String> {
     };
     let path = abs(folder);
     c.call("pane.update", json!({ "pane": pane, "fields": { "path": path.to_string_lossy() } }))?;
+    Ok(())
+}
+
+/// ブックマークのパス。.prelude のファイルならそのパス、ほかは `prelude bookmarks` の名前(フォルダ/題名、または題名)
+fn bookmark_path(c: &mut Client, b: &str) -> Result<String, String> {
+    if b.ends_with(".prelude") && Path::new(b).is_file() {
+        return Ok(abs(b).to_string_lossy().into_owned());
+    }
+    let list: Vec<BookmarkInfo> = serde_json::from_value(c.call("bookmark.list", json!({}))?).map_err(|e| e.to_string())?;
+    let name = |x: &BookmarkInfo| if x.folder.is_empty() { x.title.clone() } else { format!("{}/{}", x.folder, x.title) };
+    let hits: Vec<&BookmarkInfo> = list.iter().filter(|x| name(x) == b).collect();
+    let hits = if hits.is_empty() { list.iter().filter(|x| x.title == b).collect() } else { hits };
+    match hits.as_slice() {
+        [one] => Ok(one.path.clone()),
+        [] => Err(format!("No such bookmark: {b}")),
+        _ => Err(format!("More than one bookmark is named {b}; give it as folder/title")),
+    }
+}
+
+/// ブックマークのフォルダのパス。フォルダならそのパス、ほかは今のスペースの中の名前
+fn folder_path(c: &mut Client, f: &str) -> Result<String, String> {
+    if f.contains('/') && Path::new(f).is_dir() {
+        return Ok(abs(f).to_string_lossy().into_owned());
+    }
+    Ok(Path::new(&c.state()?.space_dir).join(f).to_string_lossy().into_owned())
+}
+
+fn bm_save(title: &str, folder: &str) -> Result<(), String> {
+    let mut c = Conn::open(false)?;
+    let folder = if folder.is_empty() { String::new() } else { folder_path(&mut c, folder)? };
+    println!("{}", c.call("bookmark.save", json!({ "title": title, "folder": folder }))?.as_str().unwrap_or(""));
     Ok(())
 }
 
@@ -518,6 +558,43 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         ["space", name @ ..] if !name.is_empty() => {
             Conn::open(false)?.call("space.switch", json!({ "name": name.join(" ") }))?;
+        }
+        ["bookmark", "save", title] => bm_save(title, "")?,
+        ["bookmark", "save", title, folder] => bm_save(title, folder)?,
+        ["bookmark", "overwrite"] => {
+            println!("{}", Conn::open(false)?.call("bookmark.overwrite", json!({}))?.as_str().unwrap_or(""));
+        }
+        ["bookmark", "rename", b, title] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            println!("{}", c.call("bookmark.rename", json!({ "path": path, "title": title }))?.as_str().unwrap_or(""));
+        }
+        ["bookmark", "move", b] | ["bookmark", "move", b, _] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            let folder = match a.get(3) {
+                Some(f) => folder_path(&mut c, f)?,
+                None => String::new(),
+            };
+            println!("{}", c.call("bookmark.move", json!({ "path": path, "folder": folder }))?.as_str().unwrap_or(""));
+        }
+        ["bookmark", "trash", b] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            c.call("bookmark.trash", json!({ "path": path }))?;
+        }
+        ["folder", "new", name] => {
+            println!("{}", Conn::open(false)?.call("folder.create", json!({ "name": name }))?.as_str().unwrap_or(""));
+        }
+        ["folder", "rename", f, name] => {
+            let mut c = Conn::open(false)?;
+            let path = folder_path(&mut c, f)?;
+            println!("{}", c.call("folder.rename", json!({ "path": path, "name": name }))?.as_str().unwrap_or(""));
+        }
+        ["folder", "remove", f] => {
+            let mut c = Conn::open(false)?;
+            let path = folder_path(&mut c, f)?;
+            c.call("folder.remove", json!({ "path": path }))?;
         }
         ["bookmarks"] => {
             let list: Vec<BookmarkInfo> =

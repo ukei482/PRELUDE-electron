@@ -3,7 +3,7 @@ use prelude_core::recipes::Recipe;
 use prelude_core::state::{Core, SPACE_DEFAULT};
 use prelude_proto::{Command, Dir, ErrorCode, PaneSpec, State, TabRef};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const HOME: &str = "/home/u";
 
@@ -534,6 +534,88 @@ fn タブを複製する_番号を変える_閉じたタブを開き直す() {
     assert_eq!(state(&c).closed, 0);
     ok(&mut c, Command::SpaceSwitch { name: "Main".into() });
     assert_eq!(state(&c).closed, 1);
+}
+
+#[test]
+fn ブックマークを書く_保存_上書き_名前_移動_ゴミ箱() {
+    let root = spaces("bmwrite");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    c.set_trash_dir(root.join("Trash"));
+    let d = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let read = |p: &str| prelude_format::Bookmark::parse(&std::fs::read_to_string(p).unwrap(), HOME).unwrap();
+    let rev = |c: &Core| state(c).bookmarks_rev;
+
+    // 保存: タブの配置を書き、タブはそのブックマークを開いたものになる。書いたら知らせる
+    let tab = ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None }).as_u64().unwrap();
+    let r0 = rev(&c);
+    let o = c.handle(Command::BookmarkSave { tab: None, title: "論文/下書き".into(), folder: String::new() });
+    assert!(o.changed);
+    let p = o.reply.unwrap().as_str().unwrap().to_string();
+    assert_eq!(p, d("論文-下書き.prelude"));
+    assert_eq!(read(&p).title, "論文/下書き");
+    assert_eq!(state(&c).tabs[0].bookmark.as_deref(), Some(p.as_str()));
+    assert_eq!(state(&c).tabs[0].title, "論文/下書き");
+    assert!(rev(&c) > r0);
+    // 同じ名前なら「(2)」
+    ok(&mut c, Command::TabOpen { pane: web("https://b/"), index: Some(9) });
+    let p2 = ok(&mut c, Command::BookmarkSave { tab: Some(TabRef::Num { num: 2 }), title: "論文/下書き".into(), folder: String::new() });
+    assert_eq!(p2, json!(d("論文-下書き (2).prelude")));
+
+    // 上書き: 題名・paths・知らない項目は残し、配置だけを替える
+    std::fs::write(&p, "version = 2\ntitle = \"下書き\"\nmemo = \"残す\"\n[paths]\nsave = \"/out\"\n[layout]\nk = \"leaf\"\ntype = \"web\"\nurl = \"https://old/\"\n").unwrap();
+    let mut f = serde_json::Map::new();
+    f.insert("url".into(), json!("https://new/"));
+    let pane = pane_ids(&state(&c).tabs[0].layout)[0];
+    ok(&mut c, Command::PaneUpdate { pane, fields: f });
+    ok(&mut c, Command::BookmarkOverwrite { tab: Some(TabRef::Id { id: tab }) });
+    let bm = read(&p);
+    assert_eq!((bm.title.as_str(), bm.paths.get("save"), bm.rest.get("memo").and_then(|v| v.as_str())), ("下書き", Some("/out"), Some("残す")));
+    assert!(std::fs::read_to_string(&p).unwrap().contains("https://new/"));
+    assert_eq!(c.handle(Command::BookmarkOverwrite { tab: Some(TabRef::Num { num: 9 }) }).reply.unwrap_err().0, ErrorCode::NotFound);
+
+    // 名前の変更: ファイル名と題名が変わり、開いているタブも追う
+    let p3 = ok(&mut c, Command::BookmarkRename { path: p.clone(), title: "本文".into() }).as_str().unwrap().to_string();
+    assert_eq!(p3, d("本文.prelude"));
+    assert!(!Path::new(&p).exists());
+    assert_eq!(read(&p3).title, "本文");
+    assert_eq!((state(&c).tabs[0].bookmark.as_deref(), state(&c).tabs[0].title.as_str()), (Some(p3.as_str()), "本文"));
+    let p2s = p2.as_str().unwrap().to_string();
+    assert_eq!(c.handle(Command::BookmarkRename { path: p2s.clone(), title: "本文".into() }).reply.unwrap_err().0, ErrorCode::Conflict);
+
+    // フォルダを作って移す・フォルダの名前を変える(中のブックマークを開いたタブも追う)
+    let f1 = ok(&mut c, Command::FolderCreate { name: "執筆".into() }).as_str().unwrap().to_string();
+    assert_eq!(c.handle(Command::FolderCreate { name: "執筆".into() }).reply.unwrap_err().0, ErrorCode::Conflict);
+    let p4 = ok(&mut c, Command::BookmarkMove { path: p3.clone(), folder: f1.clone() }).as_str().unwrap().to_string();
+    assert_eq!(p4, d("執筆/本文.prelude"));
+    assert_eq!(state(&c).tabs[0].bookmark.as_deref(), Some(p4.as_str()));
+    let f2 = ok(&mut c, Command::FolderRename { path: f1.clone(), name: "原稿".into() }).as_str().unwrap().to_string();
+    assert_eq!(state(&c).tabs[0].bookmark.as_deref(), Some(d("原稿/本文.prelude").as_str()));
+    assert_eq!(state(&c).tabs[0].title, "本文");
+
+    // フォルダを消す: 中身は直下へ(同じ名前は「(2)」にして、題名も合わせる)
+    std::fs::write(dir.join("本文.prelude"), "version = 2\ntitle = \"本文\"\n[layout]\nk = \"leaf\"\ntype = \"web\"\nurl = \"https://x/\"\n").unwrap();
+    ok(&mut c, Command::FolderRemove { path: f2.clone() });
+    assert!(!Path::new(&f2).exists());
+    assert_eq!(state(&c).tabs[0].bookmark.as_deref(), Some(d("本文 (2).prelude").as_str()));
+    assert_eq!(state(&c).tabs[0].title, "本文 (2)");
+
+    // ゴミ箱: ファイルはゴミ箱へ、タブは残って結び付きだけが外れる
+    let p5 = d("本文 (2).prelude");
+    ok(&mut c, Command::BookmarkTrash { path: p5.clone() });
+    assert!(!Path::new(&p5).exists());
+    assert!(root.join("Trash/files/本文 (2).prelude").exists());
+    assert_eq!((state(&c).tabs[0].id, state(&c).tabs[0].bookmark.clone()), (tab, None));
+
+    // スペースの外・隠しフォルダ・ブックマークでないものは断る
+    let outside = root.join("外.prelude");
+    std::fs::write(&outside, "x").unwrap();
+    for bad in [outside.to_string_lossy().into_owned(), "relative.prelude".into(), d("a.txt")] {
+        assert!(c.handle(Command::BookmarkTrash { path: bad.clone() }).reply.is_err(), "{bad}");
+    }
+    assert_eq!(c.handle(Command::BookmarkMove { path: p2s.clone(), folder: root.to_string_lossy().into_owned() }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    assert!(Path::new(&p2s).exists());
 }
 
 #[test]

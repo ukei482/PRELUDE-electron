@@ -18,6 +18,7 @@ pub mod recipes;
 pub mod server;
 pub mod state;
 pub mod sway;
+pub mod trash;
 pub mod web;
 pub mod webhost;
 pub mod xdg;

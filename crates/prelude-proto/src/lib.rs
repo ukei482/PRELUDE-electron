@@ -99,6 +99,44 @@ pub enum Command {
         allow: Vec<String>,
     },
     /// ペインのレシピ(窓を取り込むペインの種類) → `[`[`RecipeInfo`]`]`
+    /// タブをブックマークにする(配置を `.prelude` に書く)。folder はスペースの中のフォルダのパス(空ならスペースの直下)。
+    /// 同じ名前があれば「題名 (2)」にする。タブはそのブックマークを開いたものになる → 書いたファイルのパス
+    #[serde(rename = "bookmark.save")]
+    BookmarkSave {
+        #[serde(default)]
+        tab: Option<TabRef>,
+        title: String,
+        #[serde(default)]
+        folder: String,
+    },
+    /// タブの今の配置で、そのタブを開いたブックマークを上書きする(題名・paths・知らない項目は残す)
+    #[serde(rename = "bookmark.overwrite")]
+    BookmarkOverwrite {
+        #[serde(default)]
+        tab: Option<TabRef>,
+    },
+    /// ブックマークの題名(とファイル名)を変える → 新しいパス
+    #[serde(rename = "bookmark.rename")]
+    BookmarkRename { path: String, title: String },
+    /// ブックマークを別のフォルダへ移す(folder が空ならスペースの直下) → 新しいパス
+    #[serde(rename = "bookmark.move")]
+    BookmarkMove {
+        path: String,
+        #[serde(default)]
+        folder: String,
+    },
+    /// ブックマークをゴミ箱へ移す。開いていたタブはそのまま残り、ブックマークとの結び付きだけが外れる
+    #[serde(rename = "bookmark.trash")]
+    BookmarkTrash { path: String },
+    /// スペースの直下にブックマークのフォルダを作る → パス
+    #[serde(rename = "folder.create")]
+    FolderCreate { name: String },
+    /// ブックマークのフォルダの名前を変える → 新しいパス
+    #[serde(rename = "folder.rename")]
+    FolderRename { path: String, name: String },
+    /// ブックマークのフォルダを消す。中身はスペースの直下へ出す(同じ名前があれば「名前 (2)」)
+    #[serde(rename = "folder.remove")]
+    FolderRemove { path: String },
     #[serde(rename = "recipe.list")]
     RecipeList {},
 
@@ -311,6 +349,9 @@ pub struct State {
     /// 開き直せる閉じたタブの数(今のスペース)
     #[serde(default)]
     pub closed: usize,
+    /// ブックマークのファイルをコアが書くたびに増える数。変わったら `bookmark.list` を読み直す
+    #[serde(default)]
+    pub bookmarks_rev: u64,
 }
 
 /// 窓のつなぎ(docs/redesign-rust.md の「窓のつなぎ」)。UI は level を見て、分割で開くなどを出すか決める

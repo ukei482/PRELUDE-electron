@@ -253,6 +253,10 @@ fn replace_pane(t: &Tree, from: u64, to: u64) -> Tree {
 
 // ------------------------------------------------------------------ タブ
 
+// ブックマークのファイルを書く命令(bookmark.save など)
+#[path = "bmwrite.rs"]
+mod bmwrite;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tab {
     pub id: u64,
@@ -355,6 +359,10 @@ pub struct Core {
     backend: Windows,
     /// 閉じたタブ(スペースの名前 → 新しいものが後ろ)。開き直すため。残さない
     closed: BTreeMap<String, Vec<Closed>>,
+    /// ブックマークのファイルを書いた回数(状態の bookmarks_rev)
+    bookmarks_rev: u64,
+    /// ゴミ箱(テストで差し替える)
+    trash_dir: PathBuf,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
@@ -395,6 +403,8 @@ impl Core {
             recipes: vec![],
             backend: Windows::default(),
             closed: BTreeMap::new(),
+            bookmarks_rev: 0,
+            trash_dir: crate::trash::dir(),
             stopped: HashSet::new(),
             titles: HashMap::new(),
             download_dir: String::new(),
@@ -502,6 +512,7 @@ impl Core {
                 .collect(),
             windows: self.backend.clone(),
             closed: self.closed.get(&self.space).map_or(0, Vec::len),
+            bookmarks_rev: self.bookmarks_rev,
         }
     }
 
@@ -529,6 +540,11 @@ impl Core {
     /// 窓のつなぎの名前と段(状態の `windows` に出す)
     pub fn set_windows(&mut self, backend: &str, level: u8) {
         self.backend = Windows { backend: backend.to_string(), level };
+    }
+
+    /// ゴミ箱のフォルダ(テスト用)
+    pub fn set_trash_dir(&mut self, d: PathBuf) {
+        self.trash_dir = d;
     }
 
     pub fn set_recipes(&mut self, r: Vec<Recipe>) {
@@ -786,9 +802,10 @@ impl Core {
 
     /// コマンドを 1 つ処理する(`hello` はソケットの側で受ける)
     pub fn handle(&mut self, cmd: Command) -> Outcome {
-        let before = self.saved();
+        let (before, rev) = (self.saved(), self.bookmarks_rev);
         let reply = self.run(cmd);
-        let changed = reply.is_ok() && self.saved() != before;
+        // ブックマークのファイルを書いただけでも、UI が一覧を読み直せるように知らせる
+        let changed = reply.is_ok() && (self.saved() != before || self.bookmarks_rev != rev);
         Outcome { reply, changed }
     }
 
@@ -803,6 +820,14 @@ impl Core {
             Command::BookmarkOpen { path, allow } => self.bookmark_open(&path, &allow),
             Command::ItemList {} => Ok(json!(self.items())),
             Command::ItemOpen { key, allow, split } => self.item_open(&key, &allow, split),
+            Command::BookmarkSave { tab, title, folder } => self.bookmark_save(tab, &title, &folder),
+            Command::BookmarkOverwrite { tab } => self.bookmark_overwrite(tab),
+            Command::BookmarkRename { path, title } => self.bookmark_rename(&path, &title),
+            Command::BookmarkMove { path, folder } => self.bookmark_move(&path, &folder),
+            Command::BookmarkTrash { path } => self.bookmark_trash(&path),
+            Command::FolderCreate { name } => self.folder_create(&name),
+            Command::FolderRename { path, name } => self.folder_rename(&path, &name),
+            Command::FolderRemove { path } => self.folder_remove(&path),
             Command::RecipeList {} => {
                 Ok(json!(self.recipes.iter().map(|r| RecipeInfo { kind: r.kind.clone(), name: r.name.clone() }).collect::<Vec<_>>()))
             }

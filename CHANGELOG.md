@@ -13,6 +13,7 @@
   - 対応するコンポジタが無いデスクトップでも、ペインのアプリを起動する(つなぎ無し。窓の置き場所はデスクトップに任せる)。今のつなぎの名前と段は状態の `windows` に出す
   - sway のつなぎは、PRELUDE のサイドバー・ランチャーの窓をタブのペインに引き取らない
   - タブの命令: `tab.duplicate`(すぐ下に複製)・`tab.renumber`(番号を変える。使われていれば入れ替える)・`tab.reopen`(閉じたタブを開き直す。スペースごとに 20 個まで覚える)。状態に `closed`(開き直せる数)。コマンドは `prelude tab dup [n]`・`prelude tab renumber <n> <new>`・`prelude reopen`
+  - ブックマークを書く命令: `bookmark.save`(タブを保存。同じ名前は「(2)」)・`bookmark.overwrite`(今の配置で上書き。題名・paths・知らない項目は残す)・`bookmark.rename`・`bookmark.move`・`bookmark.trash`(freedesktop のゴミ箱へ)、フォルダの `folder.create`・`folder.rename`・`folder.remove`(中身はスペースの直下へ)。書けるのは今のスペースの中だけ。開いているタブ・閉じたタブ・ランチャーの点数が指すパスも合わせる。書いたら状態の `bookmarks_rev` が増える。コマンドは `prelude bookmark save|overwrite|rename|move|trash`・`prelude folder new|rename|remove`
 - Rust 版(sway)の使いやすさ。ふだんの PRELUDE(Electron 版)には入らない
   - この PC の rice(`nix/rice.nix`): 通知を mako から swaync に替えた。バーの Wi-Fi・電池・音量・時計を押すと、通知(× で消す・全部消す・通知を止める)とクイック設定(音量・明るさ・Wi-Fi と Bluetooth の入/切・スクリーンショット・ロック・スリープ・ログアウト・再起動・シャットダウン)が開く。Wi-Fi の一覧はトレイの nm-applet
   - バーの左に、今のペインを左右・上下に分割するボタン(出すものをランチャーで選ぶ)と、今のペインを閉じるボタンを足した
