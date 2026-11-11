@@ -497,6 +497,21 @@ fn ファイラは_yazi_field_は_files_の別名_名前は_path_から() {
     assert_eq!(w[1].cmd, "viewer '/x/旅行'");
 }
 
+#[test]
+fn ダイアログの最初のフォルダは書いてあるときだけ() {
+    let root = spaces("dialog");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    // どこにも書いていなければ None(アプリが頼んだフォルダが使われる)
+    assert_eq!((c.dialog_folder(false), c.dialog_folder(true)), (None, None));
+    // files だけ書けば、開く・保存のどちらもそこ。save を書けば保存だけそこ
+    std::fs::write(dir.join("space.toml"), "[paths]\nfiles = \"/data\"\nsave = \"/data/out\"\n").unwrap();
+    c = Core::new(HOME, &root, None);
+    assert_eq!(c.dialog_folder(false).as_deref(), Some("/data"));
+    assert_eq!(c.dialog_folder(true).as_deref(), Some("/data/out"));
+}
+
 // ------------------------------------------------------------------ コンポジタの並びを受け取る
 
 mod compositor_layout {

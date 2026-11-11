@@ -1182,10 +1182,19 @@ impl Core {
         }
     }
 
-    /// アプリのダイアログの最初のフォルダ。今のタブの paths の `open`(save なら `save`)
-    pub fn dialog_folder(&self, save: bool) -> String {
+    /// アプリのダイアログの最初のフォルダ。今のタブの paths の `open`(save なら `save`)。
+    /// ブックマークにもスペースにも書いていなければ(`files` も無ければ)None で、アプリが頼んだフォルダが使われる
+    pub fn dialog_folder(&self, save: bool) -> Option<String> {
         let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
-        self.paths(active).get(if save { "save" } else { "open" }).and_then(Json::as_str).unwrap_or(&self.home).to_string()
+        self.resolver_get(active, if save { "save" } else { "open" })
+    }
+
+    /// paths の 1 項目。どこにも無ければ None(`paths` と違ってホームにしない)
+    fn resolver_get(&self, tab: Option<&Tab>, key: &str) -> Option<String> {
+        let space = self.space_conf();
+        let sdir = self.space_dir().to_string_lossy().into_owned();
+        let bm = tab.and_then(|t| t.bookmark.as_ref()).and_then(|(p, _)| Some((self.read_bookmark(p).ok()?.paths, parent(p))));
+        Resolver { home: &self.home, bookmark: bm.as_ref().map(|(p, d)| (p, d.as_str())), space: Some((&space.paths, &sdir)) }.get(key)
     }
 
     /// タブで使うフォルダ。スペースの既定(`space.toml`)の上に、タブが開いたブックマークの paths を重ねる。

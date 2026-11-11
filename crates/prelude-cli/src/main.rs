@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+mod choose;
+
 const HELP: &str = "\
 usage: prelude <command> [args]
 
@@ -38,6 +40,9 @@ usage: prelude <command> [args]
   sidebar [show|hide|toggle|wide|compact|restart]
                          Toggle the sidebar between wide and compact (default: toggle). hide stops it
   shell                  Type these commands one after another (the PRELUDE CLI)
+  choose <open|open-multiple|directory|save> --output <file> [--name <name>] [--terminal <cmd>] <folder>
+                         The file chooser of app dialogs: yazi in a terminal. Writes the chosen paths to <file>
+                         (what prelude-core's dialog portal runs by default)
   raw <cmd> [args-json]  Send a command and print the result as JSON
 
 The core socket is $PRELUDE_CORE_SOCK or $XDG_RUNTIME_DIR/prelude/core.sock.";
@@ -391,6 +396,9 @@ fn shell() -> Result<(), String> {
 
 fn run(args: &[String]) -> Result<(), String> {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
+    if a.first() == Some(&"choose") {
+        return choose::run(&a[1..]);
+    }
     match a.as_slice() {
         ["shell"] => shell()?,
         ["sidebar"] => sidebar("toggle")?,
