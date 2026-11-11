@@ -261,8 +261,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 
 | 部品 | 受け取る状態 | 送るコマンド |
 |---|---|---|
-| ナビ | スペースの一覧、ブックマーク(.prelude)の木 | スペース切替、ブックマークを開く |
-| タブ | タブの一覧・今のタブ・ペイン | 切替・閉じる・ペインへ移る |
+| サイドバー | 部品の組み合わせ(下の「サイドバー」の「部品」) | 同じ |
 | ランチャー | 候補と点数(`item.list`) | 開く・分割で開く(`item.open`) |
 | 設定 | 設定の項目 | 設定を変える |
 
@@ -273,7 +272,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | 見た目 | サイドバーなどの見た目と並べ方 | `.slint` を置き換える。決まり(`global`)を満たすかを、組み込むならビルドのとき、使用者が置くなら読み込むときに確かめる |
 | プログラム | ランチャー・サイドバーを丸ごと | ソケットの約束だけでつながるので、別のプログラムに替えられる(fuzzel など) |
 
-- サイドバーの決まりは `global Prelude`(試作は `proto/slint/ui/prelude.slint`)。表示するもの(つながっているか・スペース・ブックマーク・タブ・細い列か)と、頼むこと(スペースの切り替え・ブックマークを開く・タブの切り替えと閉じる・ランチャーを開く・幅の切り替え)。中身を付けるのは PRELUDE の Rust の側で、`.slint` はこれ以外の方法でコアとやり取りしない
+- 決まりは部品ごとの `global`(サイドバーなら `SidebarFrame`・`Spaces`・`Bookmarks`・`Tabs`・`NewTab`・`PaneBar`・`BookmarkButton`)。中身を付けるのは PRELUDE の Rust の側で、`.slint` はこれ以外の方法でコアとやり取りしない。試作(`proto/slint/ui/prelude.slint`)は 1 つの `global Prelude` で確かめた
 
 ### 決まりの版
 - 窓のつなぎのトレイトと、組み込む `.slint` の決まりには版を付けない。一緒にビルドするので、合わないところはビルドの時点でエラーになる
@@ -286,17 +285,37 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 - 窓の出し方は環境に合わせる(layer-shell があればそれ、無ければ浮いた普通の窓)
 
 ### サイドバー
-**サイドバーは普通のウィンドウ** にする。画面の端に貼り付けて場所を予約する(layer-shell)のはデスクトップの外回りの仕事なのでやめ、置き場所は環境に任せる。
+**サイドバーは画面の左端に layer-shell で貼り付き、場所を予約する**(ほかの窓はその右に並ぶ)。layer-shell の無い環境(GNOME・ほかの OS)では普通のウィンドウで出す。サイドバーはつなぎの 1 つで、無くても PRELUDE は使える。
 
-- つなぎの 1 つで、無くてもよい。スペース・ブックマーク・タブ・今のペインを出す
-- **普通のウィンドウ**(Wayland の app_id・X11 のクラスは `prelude-sidebar`)。layer-shell の無いデスクトップ(GNOME など)や、ほかの OS でも同じに動く
-  - どこに置くか・どの作業領域に出すかは環境が決める。タイル型のコンポジタなら並び、普通のデスクトップなら好きな場所に動かせる。いつも左端に出したいときは環境の決まりで書く(sway なら `for_window [app_id="prelude-sidebar"] floating enable, sticky enable, move position 0 0` のような断片。作者の rice に置く)
-  - **ペインではない**。`[layout]` に書かず、タブにも入らない。窓のつなぎは PRELUDE の UI の窓(`prelude-sidebar`・`prelude-launcher`)を「PRELUDE を通さずに開いた窓」として引き取らない
-  - 1 つだけ動く。もう動いていれば、`prelude sidebar show` はそのウィンドウを前に出す
-- サイドバーも同じソケットの約束を使う。ほかの人が別のサイドバーを作ることもできる
-- Slint。見た目は `.slint` を置き換えれば変えられる(上の「付け替え」)
-- 幅は「広い」と「細い列」の 2 つで、一番上の PRELUDE の行(つまみ)で切り替える。切り替えると、その幅にウィンドウの大きさを頼む(タイル型の環境では、環境が決めた幅が勝つ)。見た目だけの状態なのでコアには持たせず、サイドバーが `$XDG_STATE_HOME/prelude/sidebar` に覚える(`prelude_proto::sidebar`)。`prelude sidebar toggle` はこのファイルを書き換える
-- 閉じるのはウィンドウを閉じる(プロセスが終わる)。`prelude sidebar hide` も同じ。出すのは `prelude sidebar show`(ランチャーからも)
+- Wayland の app_id・X11 のクラス・layer-shell の名前空間は `prelude-sidebar`。**ペインではない**: `[layout]` に書かず、タブにも入らない。窓のつなぎは、普通のウィンドウで出たときも引き取らない
+- 1 つだけ動く。`prelude sidebar show` は、動いていなければ起動し、動いていれば出す。`prelude sidebar hide` は止める
+- サイドバーも同じソケットの約束を使い、サイドバーにだけ許された操作は作らない。ほかの人が別のサイドバーを作ることもできる
+- Slint で作る。Slint の標準の窓(winit)は layer-shell を持たないので、layer-shell の面は Slint の「自前のプラットフォーム」で作る(Wayland のつなぎに smithay-client-toolkit を使う見込み)。日本語入力を含めて、試作で確かめてから作る
+
+#### 部品
+サイドバーは次の部品の組み合わせ。**部品ごとに決まり(Slint の `global`)を 1 つ持ち**、表示するもの(`in property`)と頼むこと(`callback`)だけを決める。見た目と並べ方は決めない。部品を差し替える・並べ替える・使わないのは自由で、使う部品の決まりだけを満たせばよい。
+
+| 部品(決まり) | 表示するもの | 頼むこと | コアの命令(※ は足すもの) |
+|---|---|---|---|
+| 枠(`SidebarFrame`) | つながっているか・理由、細い列か、窓のつなぎの段(`windows.level`) | 幅の切り替え(つまみ)、隠す | 無し(幅はサイドバーが覚える) |
+| スペース(`Spaces`) | 今のスペース、スペースの一覧 | 切り替える、作る | `space.switch`・`space.create` |
+| ブックマーク(`Bookmarks`) | ブックマーク(題名・番号 b1…・種類・アイコン・開いているか)、フォルダ(題名・開閉・中に開いているものがあるか) | 開く、フォルダの中を全部開く、名前を変える、フォルダへ移す・フォルダから出す、並べ替える、フォルダで見る、ゴミ箱へ、フォルダを作る・名前を変える・中身を残して消す、フォルダを開閉する | `bookmark.open`、※ `bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`・`folder.create`・`folder.rename`・`folder.remove`。開いているかはタブの `bookmark` から、開閉はサイドバーが覚える |
+| タブ(`Tabs`) | タブ(番号・題名・種類・アイコン・今のタブか・開いたブックマーク)、分割したタブのペイン(種類・題名・アイコン・今のペインか)、閉じたタブがあるか | 切り替える、閉じる、ペインへ移る、並べ替える、複製する、番号を変える、下のタブを閉じる、閉じたタブを開き直す | `tab.activate`・`tab.close`・`pane.focus`・`tab.move`、※ `tab.duplicate`・`tab.renumber`・`tab.reopen` |
+| 新しいタブ(`NewTab`) | 開ける種類(Web・レシピの一覧) | 種類を選んで開く(Web はランチャーを出す) | `tab.open`・`recipe.list` |
+| 分割ボタン(`PaneBar`) | 今のペイン(種類・題名・URL)、分割できるか(段が 1 以上)、消音できるか・消音中か(Web) | 右・下に分割する(ランチャーを分割の向きで開き、出すものを選ぶ)、今のペインを閉じる、URL を変える(今の URL が入ったランチャー)、消音 | `pane.close`、※ `web.mute`。分割は `prelude-launcher --split row\|col`、URL は `--pane <id> --url <URL>` |
+| ブックマークボタン(`BookmarkButton`) | 今のタブがブックマークから開いたものか(その題名)、ペインがいくつか | ブックマークにする(1 つのペインならそのペイン、分割していれば配置ごと)、今の配置で上書きする | ※ `bookmark.save`・`bookmark.overwrite` |
+
+共通の見た目の部品(行・アイコン・右クリックのメニュー・名前や番号を打つ入力欄・ドラッグの印)は決まりを持たず、どの部品からも使う。右クリックのメニューに出す項目は、それぞれの部品の「頼むこと」。
+
+#### サイドバーだけが覚えること
+見た目だけの状態は、コアに持たせずサイドバーが `$XDG_STATE_HOME/prelude/sidebar` に覚える(`prelude_proto::sidebar`)。
+- 幅(広い ⇄ 細い列)。`prelude sidebar toggle`・`wide`・`compact` はこのファイルを書き換え、サイドバーはそれを見て幅と予約する場所を変える
+- ブックマークのフォルダの開閉
+
+#### コアに足すもの
+- 命令(上の表の ※): ブックマークを書く(`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`)、ブックマークのフォルダ(`folder.create`・`folder.rename`・`folder.remove`)、タブ(`tab.duplicate`・`tab.renumber`・`tab.reopen`。閉じたタブはコアが覚える)、`web.mute`
+- 状態に足す項目: ブックマークの番号(並び順はコアが持ち、ランチャーの `b3` と同じ番号にする。順は `space.toml` に書く)と種類、ペインのアイコン(アプリは `.desktop` のアイコンのファイル、Web はファビコンをコアが保存したファイル)、閉じたタブがあるか、Web のペインの消音
+- ブックマークを書く命令は、「ファイルには使用者が決めたことだけ」の例外ではない。使用者がサイドバーで頼んだことを、コアが代わりに書く
 
 ### Slint の試作で分かったこと
 `proto/slint`(サイドバーの形の試作。手順と細かい結果は `proto/slint/README.md`)。
@@ -370,11 +389,13 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 ### これから
 済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない
 
-1. **UI を Slint で作り直す**: サイドバー(普通のウィンドウ。`global Prelude` の決まり、`prelude sidebar show` は動いていれば前に出す、幅の切り替えでウィンドウの大きさを頼む)・ランチャー(状態の `windows.level` が 1 以上のときだけ分割で開くを出す)・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消し、NixOS のモジュールの起動の断片(層の順番を待つ `sleep`)を外し、左端に置く決まりは作者の rice へ。日本語入力を画面のある PC で確かめる
-2. **ダイアログのポータルを別のプログラムに分ける**(コアに最初のフォルダを聞くだけにする)。`prelude choose` の保存・フォルダを選ぶ操作を、画面のある PC で確かめる
-3. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
-4. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
-5. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
+1. **Slint で layer-shell を使えるかの試作**: `proto/slint` に、Slint の自前のプラットフォーム + smithay-client-toolkit の layer-shell の面を足す。左端に貼り付く・場所を予約する・幅を変える・日本語入力・キーボード(名前の変更のときだけ取る)を確かめる。だめなら普通のウィンドウで出し、コンポジタの決まりで端に固定する
+2. **コアに足す**: サイドバーの部品のための命令と状態の項目(「サイドバー」の「コアに足すもの」)
+3. **UI を Slint で作り直す**: サイドバー(部品ごとの決まり)・ランチャー(状態の `windows.level` が 1 以上のときだけ分割で開くを出す)・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消す。日本語入力を画面のある PC で確かめる
+4. **ダイアログのポータルを別のプログラムに分ける**(コアに最初のフォルダを聞くだけにする)。`prelude choose` の保存・フォルダを選ぶ操作を、画面のある PC で確かめる
+5. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
+6. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
+7. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
 
 - テストの見本(`test/fixtures/format/full.prelude`)の `sort`・`[ui.field]` は残す。「知らない項目を残す」と「古いファイルも読める」を確かめるテストになっている
 
