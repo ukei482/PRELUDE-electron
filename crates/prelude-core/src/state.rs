@@ -369,6 +369,8 @@ pub struct Core {
     muted: HashSet<u64>,
     /// Web のペインのファビコンのファイル。残さない
     favicons: HashMap<u64, String>,
+    /// アプリのアイコン((起動コマンド, 窓の名前) → ファイル)。状態を作るたびにアプリの一覧を引かないため
+    app_icons: std::cell::RefCell<HashMap<(String, String), Option<String>>>,
     /// 画面に出すだけの変化(消音・アイコン)の回数。書き出さないが、UI には知らせる
     live_rev: u64,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
@@ -416,6 +418,7 @@ impl Core {
             trash_dir: crate::trash::dir(),
             muted: HashSet::new(),
             favicons: HashMap::new(),
+            app_icons: Default::default(),
             live_rev: 0,
             stopped: HashSet::new(),
             titles: HashMap::new(),
@@ -547,12 +550,22 @@ impl Core {
             "app" => (l.str("cmd").trim().to_string(), l.str("cls").to_lowercase()),
             k => (String::new(), recipes::find(&self.recipes, k).map(|r| r.class.to_lowercase()).unwrap_or_default()),
         };
+        if cmd.is_empty() && cls.is_empty() {
+            return None;
+        }
+        let key = (cmd, cls);
+        if let Some(v) = self.app_icons.borrow().get(&key) {
+            return v.clone();
+        }
+        let (cmd, cls) = &key;
         let apps = (self.apps)();
         let app = apps
             .iter()
-            .find(|a| !cmd.is_empty() && a.exec == cmd)
-            .or_else(|| apps.iter().find(|a| !cls.is_empty() && (a.cls == cls || a.id.to_lowercase() == cls)))?;
-        crate::icons::find(&app.icon).map(|p| p.to_string_lossy().into_owned())
+            .find(|a| !cmd.is_empty() && a.exec == *cmd)
+            .or_else(|| apps.iter().find(|a| !cls.is_empty() && (a.cls == *cls || a.id.to_lowercase() == *cls)));
+        let icon = app.and_then(|a| crate::icons::find(&a.icon)).map(|p| p.to_string_lossy().into_owned());
+        self.app_icons.borrow_mut().insert(key, icon.clone());
+        icon
     }
 
     /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか・アイコン・消音)を付ける
@@ -916,6 +929,7 @@ impl Core {
             }
             Command::TabReopen {} => {
                 let c = self.closed.get_mut(&self.space).and_then(Vec::pop).ok_or_else(|| not_found("closed tab"))?;
+                self.live_rev += 1; // 開き直せる数(状態の closed)が変わった
                 // そのブックマークを開いたタブがもうあれば、そのタブにする(1 ブックマーク = 最大 1 タブ)
                 if let Some(t) = c.bookmark.as_ref().and_then(|(p, _)| self.tabs.tabs.iter().find(|t| t.bookmark.as_ref().is_some_and(|(q, _)| q == p))) {
                     let id = t.id;
@@ -1076,13 +1090,14 @@ impl Core {
 
     fn pane_close(&mut self, pane: u64) -> Reply {
         let (i, _) = self.find_pane(pane)?;
-        self.places.remove(&pane);
-        self.windows.remove(&pane);
-        let tab = &mut self.tabs.tabs[i];
-        if matches!(tab.layout, Layout::Pane { .. }) {
+        if matches!(self.tabs.tabs[i].layout, Layout::Pane { .. }) {
+            // close_tab が開き直せるペインかを見るので、窓の印はその後で消す(close_tab が消す)
             self.close_tab(i);
             return Ok(Json::Null);
         }
+        self.places.remove(&pane);
+        self.windows.remove(&pane);
+        let tab = &mut self.tabs.tabs[i];
         let rest = tab.layout.remove(pane).ok_or_else(|| not_found("pane"))?;
         if tab.active_pane == pane {
             tab.active_pane = rest;
@@ -1183,9 +1198,9 @@ impl Core {
         }
         // スペースの直下 → フォルダの名前の順。その中は並べ替えた順(space.toml の order)→ 題名の順
         let order = self.bookmark_order();
+        let pos: HashMap<&str, usize> = order.iter().enumerate().map(|(i, o)| (o.as_str(), i)).collect();
         let rel = |b: &BookmarkInfo| Path::new(&b.path).strip_prefix(&dir).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
-        let pos = |b: &BookmarkInfo| order.iter().position(|o| *o == rel(b)).unwrap_or(usize::MAX);
-        out.sort_by(|a, b| (&a.folder, pos(a), &a.title).cmp(&(&b.folder, pos(b), &b.title)));
+        out.sort_by_cached_key(|b| (b.folder.clone(), pos.get(rel(b).as_str()).copied().unwrap_or(usize::MAX), b.title.clone()));
         for (i, b) in out.iter_mut().enumerate() {
             b.num = i as u32 + 1;
             b.kind = self.bookmark_kind(&b.path);

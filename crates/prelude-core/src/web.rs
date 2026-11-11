@@ -441,7 +441,8 @@ impl Web {
         let Some(pane) = self.panes.iter().find(|(_, p)| p.tab == Some(tab)).map(|(id, _)| *id) else { return };
         let Some(png) = v["data"].as_str().and_then(base64_decode).filter(|b| b.starts_with(b"\x89PNG")) else { return };
         let dir = favicon_dir();
-        let path = dir.join(format!("{}.png", favicon_name(v["url"].as_str().unwrap_or(""), tab)));
+        // 中身が変わったら別のファイル名にする(同じパスのままだと、UI は読み直さない)
+        let path = dir.join(format!("{}-{:08x}.png", favicon_name(v["url"].as_str().unwrap_or(""), tab), fnv32(&png)));
         if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, png)).is_ok() {
             let _ = self.notes.send(Note::Icon { pane, path: path.to_string_lossy().into_owned() });
         }
@@ -557,6 +558,11 @@ fn favicon_name(url: &str, tab: i64) -> String {
     let host = url.split("://").nth(1).unwrap_or("").split(['/', '?', '#']).next().unwrap_or("");
     let host: String = host.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')).take(100).collect();
     if host.is_empty() || host.starts_with('.') { format!("tab-{tab}") } else { host }
+}
+
+/// FNV-1a(32 ビット)。ファビコンのファイル名に中身を表す印を付ける
+fn fnv32(b: &[u8]) -> u32 {
+    b.iter().fold(0x811c9dc5u32, |h, x| (h ^ *x as u32).wrapping_mul(0x01000193))
 }
 
 /// base64(標準の字。= の埋め・改行は無視)を戻す。字が合わなければ None

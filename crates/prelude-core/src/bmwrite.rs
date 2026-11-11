@@ -31,6 +31,20 @@ fn write_bookmark(path: &Path, bm: &Bookmark, home: &str) -> Result<(), Fail> {
     std::fs::rename(&tmp, path).map_err(io)
 }
 
+/// ブックマークのパスの付け替え 1 つ
+struct Remap {
+    old: String,
+    /// 新しいパス。None なら消えた
+    new: Option<String>,
+    /// 新しい題名(変わらなければ None)
+    title: Option<String>,
+    /// old の下のパスも付け替える(フォルダ)
+    prefix: bool,
+}
+
+/// フォルダを消すときに、一緒に消してよい隠しファイル(ファイラが置く表示の設定)
+const JUNK: [&str; 2] = [".directory", ".DS_Store"];
+
 fn s(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
@@ -52,7 +66,8 @@ impl Core {
         if dir != root && dir.parent() != Some(root.as_path()) {
             return Err(fail(ErrorCode::BadRequest, "The bookmark is not in this space"));
         }
-        Ok(p.to_path_buf())
+        // シンボリックリンクをたどった形で渡されても、タブ・並びが持つ形(スペースのフォルダ + 相対パス)にそろえる
+        Ok(self.space_dir().join(real.strip_prefix(&root).unwrap_or(&real)))
     }
 
     /// 今のスペースのブックマークのフォルダ。空ならスペースの直下。empty_ok でなければ、空は断る
@@ -71,22 +86,32 @@ impl Core {
         Ok(self.space_dir().join(p.file_name().unwrap()))
     }
 
-    /// ブックマークのパスが変わった(new が None なら消えた)ことを、タブ・閉じたタブ・点数に伝える。
+    /// ブックマークのパスが変わった(new が None なら消えた)ことを、タブ・閉じたタブ・点数・並びに伝える。
     /// prefix なら、old の下のパスを全部 new の下にする(フォルダの名前を変えたとき)
     fn relink(&mut self, old: &str, new: Option<(&str, Option<&str>)>, prefix: bool) {
-        let map = |p: &str| -> Option<Option<String>> {
-            if p == old {
-                return Some(new.map(|(n, _)| n.to_string()));
-            }
-            let rest = p.strip_prefix(old).filter(|r| prefix && r.starts_with('/'))?;
-            Some(new.map(|(n, _)| format!("{n}{rest}")))
+        let r = Remap { old: old.to_string(), new: new.map(|(n, _)| n.to_string()), title: new.and_then(|(_, t)| t).map(str::to_string), prefix };
+        self.relink_all(&[r]);
+    }
+
+    /// まとめて付け替える(space.toml は 1 回だけ書く)
+    fn relink_all(&mut self, remaps: &[Remap]) {
+        // パス → Some(新しいパス、新しい題名)。消えたなら Some(None)。関係なければ None
+        let map = |p: &str| -> Option<Option<(String, Option<String>)>> {
+            remaps.iter().find_map(|r| {
+                let rest = if p == r.old {
+                    ""
+                } else {
+                    p.strip_prefix(r.old.as_str()).filter(|rest| r.prefix && rest.starts_with('/'))?
+                };
+                Some(r.new.as_ref().map(|n| (format!("{n}{rest}"), r.title.clone())))
+            })
         };
         let fix = |b: &mut Option<(String, String)>| {
             let Some((p, t)) = b.clone() else { return };
             match map(&p) {
                 None => {}
                 Some(None) => *b = None,
-                Some(Some(np)) => *b = Some((np, new.and_then(|(_, title)| title).map(str::to_string).unwrap_or(t))),
+                Some(Some((np, title))) => *b = Some((np, title.unwrap_or(t))),
             }
         };
         for t in self.tabs.tabs.iter_mut().chain(self.others.values_mut().flat_map(|x| x.tabs.iter_mut())) {
@@ -103,7 +128,7 @@ impl Core {
             .filter_map(|rel| match map(&s(&root.join(rel))) {
                 None => Some(rel.clone()),
                 Some(None) => None,
-                Some(Some(np)) => Path::new(&np).strip_prefix(&root).ok().map(s),
+                Some(Some((np, _))) => Path::new(&np).strip_prefix(&root).ok().map(s),
             })
             .collect();
         if fixed != order {
@@ -114,7 +139,7 @@ impl Core {
         let keys: Vec<String> = self.history.keys().filter(|k| k.strip_prefix("bookmark:").is_some_and(|p| map(p).is_some())).cloned().collect();
         for k in keys {
             let v = self.history.remove(&k).unwrap();
-            if let Some(Some(np)) = map(&k["bookmark:".len()..]) {
+            if let Some(Some((np, _))) = map(&k["bookmark:".len()..]) {
                 self.history.insert(format!("bookmark:{np}"), v);
             }
         }
@@ -223,6 +248,8 @@ impl Core {
     pub(super) fn bookmark_overwrite(&mut self, tab: Option<TabRef>) -> Reply {
         let i = self.tab_index(tab)?;
         let (path, _) = self.tabs.tabs[i].bookmark.clone().ok_or_else(|| fail(ErrorCode::BadRequest, "This tab was not opened from a bookmark"))?;
+        // 書くのは今のスペースの中だけ(ほかの所の .prelude を開いたタブは、上書きせずに保存してもらう)
+        let path = s(&self.space_bookmark(&path)?);
         let layout = self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
         // 題名・paths・知らない項目は残し、配置だけを替える
         let mut bm = self.read_bookmark(&path)?;
@@ -234,6 +261,7 @@ impl Core {
 
     pub(super) fn bookmark_rename(&mut self, path: &str, title: &str) -> Reply {
         let p = self.space_bookmark(path)?;
+        let path = &s(&p);
         let title = title.trim();
         if title.is_empty() {
             return Err(fail(ErrorCode::BadRequest, "No title"));
@@ -254,6 +282,7 @@ impl Core {
 
     pub(super) fn bookmark_move(&mut self, path: &str, folder: &str) -> Reply {
         let p = self.space_bookmark(path)?;
+        let path = &s(&p);
         let dir = self.space_folder(folder, true)?;
         let new = dir.join(p.file_name().unwrap());
         if std::fs::canonicalize(&dir).ok() == p.parent().and_then(|d| std::fs::canonicalize(d).ok()) {
@@ -269,6 +298,7 @@ impl Core {
 
     pub(super) fn bookmark_trash(&mut self, path: &str) -> Reply {
         let p = self.space_bookmark(path)?;
+        let path = &s(&p);
         crate::trash::trash_in(&p, &self.trash_dir).map_err(io)?;
         self.relink(path, None, false);
         Ok(serde_json::Value::Null)
@@ -304,18 +334,28 @@ impl Core {
         let d = self.space_folder(path, false)?;
         let root = self.space_dir();
         let entries: Vec<PathBuf> = std::fs::read_dir(&d).map_err(io)?.flatten().map(|e| e.path()).collect();
-        for e in entries {
-            let name = e.file_name().unwrap().to_string_lossy().into_owned();
-            let to = unique(&root, &name);
-            std::fs::rename(&e, &to).map_err(io)?;
+        let name = |e: &Path| e.file_name().unwrap().to_string_lossy().into_owned();
+        // ファイラの表示の設定は一緒に消す。ほかの隠しファイルがあれば、何も動かさずに断る
+        if let Some(h) = entries.iter().map(|e| name(e)).find(|n| n.starts_with('.') && !JUNK.contains(&n.as_str())) {
+            return Err(fail(ErrorCode::Conflict, format!("The folder has a hidden file ({h}); remove it first")));
+        }
+        let mut remaps = vec![];
+        for e in &entries {
+            let n = name(e);
+            if JUNK.contains(&n.as_str()) {
+                std::fs::remove_file(e).map_err(io)?;
+                continue;
+            }
+            let to = unique(&root, &n);
+            std::fs::rename(e, &to).map_err(io)?;
             if e.extension().and_then(|x| x.to_str()) == Some(EXT) {
                 // 名前が変わったら、題名も合わせる(ファイル名が題名)
                 let title = (to.file_name() != e.file_name()).then(|| stem(&s(&to)));
-                self.relink(&s(&e), Some((&s(&to), title.as_deref())), false);
+                remaps.push(Remap { old: s(e), new: Some(s(&to)), title, prefix: false });
             }
         }
         std::fs::remove_dir(&d).map_err(io)?;
-        self.bookmarks_rev += 1;
+        self.relink_all(&remaps);
         Ok(serde_json::Value::Null)
     }
 }

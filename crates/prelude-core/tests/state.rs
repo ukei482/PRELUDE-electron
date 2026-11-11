@@ -704,6 +704,46 @@ fn 消音とアイコンは状態に出すが書き出さない() {
 }
 
 #[test]
+fn ブックマークを書く_リンクの下のスペース_外の上書き_隠しファイル() {
+    let real = spaces("bmlink-real");
+    let dir = real.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(dir.join("執筆")).unwrap();
+    std::fs::write(dir.join("a.prelude"), "version = 2\n[layout]\nk = \"leaf\"\ntype = \"web\"\nurl = \"https://a/\"\n").unwrap();
+    // スペースのフォルダをシンボリックリンクで指す
+    let link = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("state").join("bmlink");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let mut c = Core::new(HOME, &link, None);
+    let in_link = link.join(SPACE_DEFAULT).join("a.prelude").to_string_lossy().into_owned();
+    ok(&mut c, Command::BookmarkOpen { path: in_link.clone(), allow: vec![] });
+    ok(&mut c, Command::BookmarkReorder { path: in_link.clone(), before: String::new() });
+    // リンクをたどった形(実体のパス)で頼まれても、タブ・並びが持つ形にそろえて付け替える
+    let by_real = dir.join("a.prelude").to_string_lossy().into_owned();
+    let new = ok(&mut c, Command::BookmarkRename { path: by_real, title: "b".into() }).as_str().unwrap().to_string();
+    assert_eq!(new, link.join(SPACE_DEFAULT).join("b.prelude").to_string_lossy());
+    assert_eq!(state(&c).tabs[0].bookmark.as_deref(), Some(new.as_str()));
+    let conf = std::fs::read_to_string(dir.join("space.toml")).unwrap();
+    assert!(conf.contains("\"b.prelude\"") && !conf.contains("\"\""), "{conf}");
+
+    // スペースの外の .prelude を開いたタブは、上書きしない
+    let outside = real.join("外.prelude");
+    std::fs::write(&outside, "version = 2\n[layout]\nk = \"leaf\"\ntype = \"web\"\nurl = \"https://o/\"\n").unwrap();
+    ok(&mut c, Command::BookmarkOpen { path: outside.to_string_lossy().into_owned(), allow: vec![] });
+    assert_eq!(c.handle(Command::BookmarkOverwrite { tab: None }).reply.unwrap_err().0, ErrorCode::BadRequest);
+
+    // フォルダを消す: ファイラの表示の設定は一緒に消し、ほかの隠しファイルがあれば何も動かさずに断る
+    let f = link.join(SPACE_DEFAULT).join("執筆").to_string_lossy().into_owned();
+    std::fs::write(dir.join("執筆/図.prelude"), "version = 2\n[layout]\nk = \"leaf\"\ntype = \"web\"\n").unwrap();
+    std::fs::write(dir.join("執筆/.secret"), "x").unwrap();
+    assert_eq!(c.handle(Command::FolderRemove { path: f.clone() }).reply.unwrap_err().0, ErrorCode::Conflict);
+    assert!(dir.join("執筆/図.prelude").exists());
+    std::fs::remove_file(dir.join("執筆/.secret")).unwrap();
+    std::fs::write(dir.join("執筆/.directory"), "x").unwrap();
+    ok(&mut c, Command::FolderRemove { path: f });
+    assert!(dir.join("図.prelude").exists() && !dir.join(".directory").exists() && !dir.join("執筆").exists());
+}
+
+#[test]
 fn ダイアログの最初のフォルダは書いてあるときだけ() {
     let root = spaces("dialog");
     let dir = root.join(SPACE_DEFAULT);
@@ -885,5 +925,19 @@ mod compositor_layout {
         c.handle(Command::SpaceSwitch { name: space }).reply.unwrap();
         assert_eq!(tree_of(&c, 1), P(a));
         assert!(c.wants().iter().all(|w| w.window.is_none()));
+    }
+
+    #[test]
+    fn 開き直せない窓だけのタブは閉じたタブに残さない() {
+        let mut c = core("closedforeign");
+        let a = open(&mut c, "a");
+        let tab = c.state().active.unwrap();
+        c.note_foreign(tab, 500, "foo", "t", false, &row(P(a), P(0), 0.5));
+        let foo = c.wants().into_iter().find(|w| w.window == Some(500)).unwrap().pane;
+        c.handle(Command::PaneClose { pane: a }).reply.unwrap();
+        assert_eq!(c.state().closed, 0);
+        // 残った開き直せない窓のペインを閉じるとタブも閉じるが、開き直せないので覚えない
+        c.handle(Command::PaneClose { pane: foo }).reply.unwrap();
+        assert_eq!((c.state().tabs.len(), c.state().closed), (0, 0));
     }
 }

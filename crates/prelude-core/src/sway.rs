@@ -458,6 +458,7 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Hand
         panes: HashMap::new(),
         scene: Scene::default(),
         applied: HashMap::new(),
+        applied_num: HashMap::new(),
         fresh: HashMap::new(),
         loose: HashSet::new(),
         asked: HashSet::new(),
@@ -501,6 +502,8 @@ struct Sway {
     scene: Scene,
     /// タブごとの、最後に組んだ木(窓のあるペインだけ)
     applied: HashMap<u64, Tree>,
+    /// タブごとの、最後に組んだときの番号(作業領域の名前)。番号が変わったら組み直して、窓を新しい作業領域へ移す
+    applied_num: HashMap<u64, u32>,
     /// sway で作られた作業領域の木(タブの番号ごと)。コアがタブにしたら applied へ移す
     fresh: HashMap<u32, Tree>,
     /// 窓はあるが木に並んでいないペイン(使用者が浮かせた窓など)
@@ -625,6 +628,7 @@ impl Sway {
             if adopted.iter().any(|p| l.contains(p)) || (fresh.is_some() && !self.applied.contains_key(&t.id)) {
                 if let Some(s) = shown() {
                     self.applied.insert(t.id, s);
+                    self.applied_num.insert(t.id, t.num);
                 }
             }
         }
@@ -724,6 +728,10 @@ impl Sway {
         let mut changes = vec![];
         let mut placed = vec![];
         for t in &self.scene.tabs {
+            // 番号を変えたばかりで、まだ窓を新しい作業領域へ移していないタブは読まない(窓が無くなったと取り違えないように)
+            if self.applied_num.get(&t.id).is_some_and(|n| *n != t.num) {
+                continue;
+            }
             let cur = read.remove(&ws_name(t.num, &self.tag));
             if let Some(c) = &cur {
                 leaves(c, &mut placed);
@@ -737,6 +745,7 @@ impl Sway {
                 Some(c) => self.applied.insert(t.id, c.clone()),
                 None => self.applied.remove(&t.id),
             };
+            self.applied_num.insert(t.id, t.num);
             changes.push((t.num, cur));
         }
         // タブでない作業領域へ移した窓: 番号の作業領域なら新しいタブ、そうでなければ木に並んでいないものとして扱う
@@ -882,8 +891,13 @@ impl Sway {
         let tabs: Vec<TabScene> = self.scene.tabs.clone();
         let mut moved = false;
         for t in &tabs {
+            // 番号(作業領域の名前)が変わったタブは、木が同じでも組み直して、窓を新しい作業領域へ移す
+            if self.applied_num.get(&t.id).is_some_and(|n| *n != t.num) {
+                self.applied.remove(&t.id);
+            }
             let Some(want) = prune(&t.tree, &|p| con.contains_key(&p)) else {
                 self.applied.remove(&t.id);
+                self.applied_num.insert(t.id, t.num);
                 continue;
             };
             if self.applied.get(&t.id) == Some(&want) {
@@ -903,9 +917,11 @@ impl Sway {
                 self.ipc.run(&cmds).await;
             }
             self.applied.insert(t.id, want);
+            self.applied_num.insert(t.id, t.num);
         }
         let live: HashSet<u64> = tabs.iter().map(|t| t.id).collect();
         self.applied.retain(|id, _| live.contains(id));
+        self.applied_num.retain(|id, _| live.contains(id));
 
         // 今のタブ・ペイン。コアの望みが変わったときだけ(使用者が sway で選んだものと取り合わない)
         let tab = self.scene.active.and_then(|a| tabs.iter().find(|t| t.id == a));

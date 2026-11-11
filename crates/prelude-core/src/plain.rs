@@ -30,10 +30,9 @@ impl Compositor for Plain {
         Level::Launch
     }
     fn arrange(&self, scene: Scene) {
+        // 見えなくなったペインも忘れない: ほかのスペースへ移っただけなら、戻ったときに二重に起動しないように。
+        // id は使い回さないので、覚えたままでも新しいペインと取り違えない
         let mut done = self.done.lock().unwrap();
-        // 無くなったペインは忘れる(id は使い回さないので、同じ id で起動し直すことは無い)
-        let live: HashSet<u64> = scene.panes.iter().map(|w| w.pane).collect();
-        done.retain(|p| live.contains(p));
         for w in scene.panes {
             if done.contains(&w.pane) || w.window.is_some() {
                 continue;
@@ -90,9 +89,11 @@ mod tests {
         assert!(rx.try_recv().is_err());
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         assert_eq!(std::fs::read_to_string(&log).unwrap(), "3\n");
-        // ペインが無くなれば忘れる
+        // ほかのスペースへ移って(ペインが見えなくなって)戻っても、起動し直さない
         p.arrange(Scene::default());
-        assert!(p.done.lock().unwrap().is_empty());
+        p.arrange(scene());
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "3\n");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

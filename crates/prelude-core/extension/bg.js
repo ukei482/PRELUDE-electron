@@ -31,12 +31,14 @@ const commands = {
 };
 
 // ファビコン: Chromium が覚えているもの(_favicon。permissions の favicon)を 32px の PNG で取り、base64 で送る。
-// コアが保存して、ペインのアイコンにする。同じタブの同じページは 2 度送らない
+// コアが保存して、ペインのアイコンにする。同じタブの同じページ・同じファビコンは 2 度送らない
+// (読み込みの終わりではまだ既定の印のことがあり、後でファビコンが分かったときに送り直す)
 const sentIcon = new Map();
 const sendIcon = async (t) => {
   const url = t.url || '';
-  if (!/^https?:/.test(url) || sentIcon.get(t.id) === url) return;
-  sentIcon.set(t.id, url);
+  const key = `${url}\n${t.favIconUrl || ''}`;
+  if (!/^https?:/.test(url) || sentIcon.get(t.id) === key) return;
+  sentIcon.set(t.id, key);
   try {
     const r = await fetch(chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(url)}&size=32`));
     const bytes = new Uint8Array(await r.arrayBuffer());
