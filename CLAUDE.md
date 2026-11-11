@@ -17,15 +17,16 @@
 - `theme/` — ロック画面(kscreenlocker のシェルのパッケージ)と SDDM のテーマ。QML。見た目は `theme/common/Prompt.qml` で共通。入れる/外すのは `scripts/theme.sh`
 - `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)、`portal.sh`(アプリのダイアログを PRELUDE にする/戻す)
 - `test/` — `npm test`(Node の `node:test`)。DOM・Electron なしで動く計算だけをテストする
-- `crates/` — Rust 版(`docs/redesign-rust.md`)。`cargo test`(Rust は `~/.cargo/bin`)
+- `crates/` — Rust 版(`docs/redesign-rust.md`。設計は話題ごとの節で、コードのコメントは「`docs/redesign-rust.md` の「窓のつなぎ」」のように節の名前で指す。節の名前を変えたらコメントも直す)。`cargo test`(Rust は `~/.cargo/bin`)。CI(`.github/workflows/test.yml`)は `cargo clippy --all-targets -- -D warnings` と `cargo test` を回す
   - `prelude-format`(`.prelude`・`space.toml`)。`test/fixtures/format/` は JS と Rust の両方のテストが読む
-  - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`compositor.rs` が窓を並べる相手の差し替え口、`embed.rs` と `embed.js` が KWin の裏側(アプリの窓の取り込み)、`sway.rs` が sway・SwayFX の裏側、`plain.rs` がつなぎ無し(対応するコンポジタが無いときにアプリを起動だけする)、`recipes.rs` がペインのレシピ、`portal.rs` がアプリのダイアログのポータル、`web.rs` と `extension/` と `webhost.rs` が Web のペイン)、`prelude-cli`(`prelude` コマンド)
+  - `prelude-proto`(コアと UI・コマンドの約束)、`prelude-core`(コア。`state.rs` が状態とコマンド、`server.rs` がソケット、`compositor.rs` が窓を並べる相手の差し替え口、`embed.rs` と `embed.js` が KWin の裏側(アプリの窓の取り込み)、`sway.rs` が sway・SwayFX の裏側、`plain.rs` がつなぎ無し(対応するコンポジタが無いときにアプリを起動だけする)、`recipes.rs` がペインのレシピ(既定のファイラ `files` は yazi)、`portal.rs` がアプリのダイアログのポータル、`web.rs` と `extension/` と `webhost.rs` が Web のペイン(消音・ファビコンも)、`bmwrite.rs` がブックマークを書く命令(保存・名前・移動・並び・フォルダ)、`trash.rs` がゴミ箱、`icons.rs` がアプリのアイコン)、`prelude-cli`(`prelude` コマンド。`choose.rs` はダイアログの選ぶ画面 `prelude choose`(yazi))
+  - コアの命令はどれも `prelude` コマンドからも使えるようにする(サイドバーなどの UI にだけ許された操作を作らない)。ソケットの約束(`prelude-proto`)は、足すだけなら版を上げない
   - 別のソケットで動かしたコアは、D-Bus の名前(`org.prelude.Core.d…`)と KWin スクリプトの名前に印が付き、ふだんのコア・Electron 版と取り合わない。窓を出さずに試すなら `--no-embed`
   - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
   - 設定は `~/.config/prelude/theme.toml`・`settings.toml`(`prelude-format` の `config`)。Electron 版からの引き継ぎは `prelude-core` の `migrate.rs`(別のソケットのコアでは動かない)
-- `ui/` — Rust 版の UI(GPUI。段階 4)。ルートとは別のワークスペース。`prelude-ui`(共通の見た目と部品。入力欄 `TextInput` も)・`prelude-sidebar`(サイドバー)・`prelude-launcher`(ランチャー)・`prelude-filer`(ファイラ。見せ方は `FilerView` のトレイト)・`prelude-settings`(設定の画面)。コアの `files`・`field` のペインは既定で `prelude-filer` を起動するので、試すときは `PATH` に `proto/gpui/target/debug` などを足す。ビルドは `cd ui && cargo build`(GPUI の初回のビルドは重い。`CARGO_TARGET_DIR=../proto/gpui/target` で試作のビルド結果を使い回せる)
-- `proto/slint/` — Slint の試作(UI の技術の見直し)。サイドバーの決まり(`ui/prelude.slint` の `global Prelude`)を破るとビルドで止まることのテストを含む。ルートのワークスペースの外。手順は `proto/slint/README.md`
-- `proto/gpui/` — GPUI の試作(段階 0)。ルートのワークスペースの外。ビルドには開発用のライブラリが要る(`docs/redesign-rust.md` の「GPUI の試作で分かったこと」)
+- `ui/` — GPUI で作った前の UI(`prelude-ui`・`prelude-sidebar`・`prelude-launcher`・`prelude-filer`・`prelude-settings`)。**UI は Slint で作り直すことにした**(`docs/redesign-rust.md` の「UI」)ので、手を入れない。Slint の UI ができたら、`prelude-filer`(ファイラは yazi に任せた)も含めて消す。ルートとは別のワークスペースで、ビルドには GPUI の開発用のライブラリと Rust 1.98.1 が要る
+- `proto/slint/` — Slint の試作と、**サイドバーの部品の決まり**(`ui/parts.slint`。部品ごとの `global`: `SidebarFrame`・`Spaces`・`Bookmarks`・`Tabs`・`NewTab`・`PaneBar`・`BookmarkButton`)。決まりを破るとビルドで止まることのテストを含む(`cargo test`。画面なしで動く)。ルートのワークスペースの外。手順は `proto/slint/README.md`
+- `proto/gpui/` — GPUI の試作(段階 0)。Slint に替えたので、Slint の UI ができたら消す
 - `flake.nix`・`nix/` — NixOS へ移るための開発環境(`nix develop`)と作者の PC の OS の設定(`docs/rice.md`。PRELUDE の設計は `docs/redesign-rust.md`)。`nix/prelude.nix` はコア・コマンドのパッケージ、`nix/module.nix` は NixOS のモジュール(`services.prelude`。コアのサービス・sway の断片・ダイアログ)。rice とのつなぎ方は `docs/rice.md`
 - `docs/release.md` — リリースと更新の詳しい手順
 
