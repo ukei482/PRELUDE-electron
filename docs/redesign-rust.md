@@ -369,7 +369,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 
 ### ほかの OS
 - まずは Linux のいろいろなデスクトップ(sway・KDE・つなぎ無し)で同じに動くことを目標にする
-- macOS・Windows は今は作らないが、道をふさがない。本体に OS に依存するものを入れない: 設定・状態・ソケットの場所は 1 か所で決める(今は XDG の決まり)、`.desktop`・`/proc`・D-Bus はつなぎの中だけにする(アプリの一覧 `apps.rs`・`xdg.rs` も差し替えられる形にする)
+- macOS・Windows は今は作らないが、道をふさがない。本体に OS に依存するものを入れない: 設定・状態・ソケットの場所は 1 か所で決める(今は XDG の決まり)、`.desktop`・`/proc`・D-Bus はつなぎの中だけにする。アプリの一覧は `AppSource` のトレイト(`apps.rs`)で差し替えられ、今の実装は XDG の `.desktop`(`Xdg`。アイコンも)
 
 ### 作者の環境
 作者の PC は NixOS + SwayFX + 自分の rice。PRELUDE の前提ではない。中身と NixOS に移った記録は [rice.md](rice.md)。
@@ -394,15 +394,14 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | 8 | 引き継ぎ(`migrate.rs`)、配布、Rust 版をリリースにして Electron 版を消す | 引き継ぎは済(8-a)。残り: 配布の仕上げ(8-b)、Electron 版を消す(8-c) |
 
 ### これから
-済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目、ブックマークのフォルダの監視、ダイアログのポータルを別のプロセスに(`prelude-core --portal`)、CI で Rust のテスト・clippy・整形
+済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目、ブックマークのフォルダの監視、ダイアログのポータルを別のプロセスに(`prelude-core --portal`)、CI で Rust のテスト・clippy・整形、アプリの一覧を差し替えられる形に(`AppSource`)
 
 - 画面のある PC で確かめること: `prelude choose` の保存・フォルダを選ぶ操作、yazi のプラグインの例、拡張機能の消音とファビコン
 
 1. **Slint で layer-shell を使えるかの試作**: `proto/slint` に、Slint の自前のプラットフォーム + smithay-client-toolkit の layer-shell の面を足す。左端に貼り付く・場所を予約する・幅を変える・日本語入力・キーボード(名前の変更のときだけ取る)を確かめる。だめなら普通のウィンドウで出し、コンポジタの決まりで端に固定する
 2. **UI を Slint で作り直す**: サイドバー(部品ごとの決まり)・ランチャー(状態の `windows.level` が 1 以上のときだけ分割で開くを出す)・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消す。日本語入力を画面のある PC で確かめる
-3. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
-4. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
-5. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
+3. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
+4. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
 
 - テストの見本(`test/fixtures/format/full.prelude`)の `sort`・`[ui.field]` は残す。「知らない項目を残す」と「古いファイルも読める」を確かめるテストになっている
 

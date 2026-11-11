@@ -1,12 +1,58 @@
-//! インストール済みのアプリ(.desktop)。Electron 版の sys/apps.js と同じ読み方(起動コマンドの形も同じにして、確かめる結果をそろえる)。
+//! インストール済みのアプリ。出どころは [`AppSource`] のトレイトで差し替えられる(docs/redesign-rust.md の「ほかの OS」)。
+//! 今の実装は XDG の .desktop([`Xdg`])。Electron 版の sys/apps.js と同じ読み方(起動コマンドの形も同じにして、確かめる結果をそろえる)。
 //! - 人からもらったブックマークの起動コマンドが、インストール済みのアプリと一致するか確かめる
 //! - 起動したアプリの窓を見分ける名前(StartupWMClass・.desktop の id)を引く
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone, PartialEq)]
+/// インストール済みのアプリの出どころ。コアはこれを通してだけアプリの一覧を見る(ほかの OS では別の実装にする)
+pub trait AppSource: Send + Sync {
+    /// 出どころの名前(ログ用)
+    fn name(&self) -> &'static str;
+    /// アプリの一覧(名前順)。何度呼んでもよい(実装が使い回す)
+    fn list(&self) -> Arc<Vec<App>>;
+    /// アプリのアイコンのファイル
+    fn icon(&self, app: &App) -> Option<PathBuf>;
+    /// 起動コマンドがインストール済みのアプリのものか(人からもらったブックマークの起動コマンドを確かめる)
+    fn is_installed(&self, cmd: &str) -> bool {
+        let cmd = cmd.trim();
+        self.list().iter().any(|a| a.exec == cmd)
+    }
+}
+
+/// XDG の .desktop(`XDG_DATA_DIRS` と flatpak)。一覧は 1 分だけ使い回す。アイコンはアイコンのテーマから探す
+pub struct Xdg;
+
+impl AppSource for Xdg {
+    fn name(&self) -> &'static str {
+        "xdg"
+    }
+    fn list(&self) -> Arc<Vec<App>> {
+        cached_arc()
+    }
+    fn icon(&self, app: &App) -> Option<PathBuf> {
+        crate::icons::find(&app.icon)
+    }
+}
+
+/// 決まった一覧(テスト用)。アイコンは、App の icon がファイルのパスで、あればそれ
+pub struct Fixed(pub Vec<App>);
+
+impl AppSource for Fixed {
+    fn name(&self) -> &'static str {
+        "fixed"
+    }
+    fn list(&self) -> Arc<Vec<App>> {
+        Arc::new(self.0.clone())
+    }
+    fn icon(&self, app: &App) -> Option<PathBuf> {
+        Some(PathBuf::from(&app.icon)).filter(|p| p.is_file())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct App {
     pub name: String,
     /// 起動コマンド(フィールドコードを除いたもの)
@@ -116,24 +162,23 @@ pub fn list() -> Vec<App> {
     v
 }
 
-/// list() を 1 分だけ使い回す
-pub fn cached() -> Vec<App> {
-    static CACHE: Mutex<Option<(Instant, Vec<App>)>> = Mutex::new(None);
+/// list() を 1 分だけ使い回す(写さずに分け合う)
+fn cached_arc() -> Arc<Vec<App>> {
+    static CACHE: Mutex<Option<(Instant, Arc<Vec<App>>)>> = Mutex::new(None);
     let mut c = CACHE.lock().unwrap();
     match &*c {
         Some((t, v)) if t.elapsed() < Duration::from_secs(60) => v.clone(),
         _ => {
-            let v = list();
+            let v = Arc::new(list());
             *c = Some((Instant::now(), v.clone()));
             v
         }
     }
 }
 
-/// 起動コマンドがインストール済みのアプリのものか
-pub fn is_installed(cmd: &str) -> bool {
-    let cmd = cmd.trim();
-    cached().iter().any(|a| a.exec == cmd)
+/// list() を 1 分だけ使い回す(窓のつなぎが、起動した窓を見分けるのに使う)
+pub fn cached() -> Vec<App> {
+    cached_arc().as_ref().clone()
 }
 
 #[cfg(test)]

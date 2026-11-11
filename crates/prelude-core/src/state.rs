@@ -383,12 +383,10 @@ pub struct Core {
     download_dir: String,
     /// PRELUDE を通さずに開いた窓のペインと、その窓。残さない
     windows: HashMap<u64, i64>,
-    /// 起動コマンドがインストール済みのアプリのものか(テストで差し替える)
-    installed: fn(&str) -> bool,
     /// このコアの印(Web のペインの窓の題名の印に入れる)
     tag: String,
     /// インストール済みのアプリの一覧(ランチャーの候補。テストで差し替える)
-    apps: fn() -> Vec<crate::apps::App>,
+    apps: std::sync::Arc<dyn crate::apps::AppSource>,
     /// 今の時刻(ミリ秒。テストで差し替える)
     now: fn() -> u64,
     /// ランチャーの候補の点数(最近 + よく使う)
@@ -427,9 +425,8 @@ impl Core {
             titles: HashMap::new(),
             download_dir: String::new(),
             windows: HashMap::new(),
-            installed: crate::apps::is_installed,
             tag: String::new(),
-            apps: crate::apps::cached,
+            apps: std::sync::Arc::new(crate::apps::Xdg),
             now: now_ms,
             history: BTreeMap::new(),
         };
@@ -606,12 +603,12 @@ impl Core {
             return v.clone();
         }
         let (cmd, cls) = &key;
-        let apps = (self.apps)();
+        let apps = self.apps.list();
         let app = apps
             .iter()
             .find(|a| !cmd.is_empty() && a.exec == *cmd)
             .or_else(|| apps.iter().find(|a| !cls.is_empty() && (a.cls == *cls || a.id.to_lowercase() == *cls)));
-        let icon = app.and_then(|a| crate::icons::find(&a.icon)).map(|p| p.to_string_lossy().into_owned());
+        let icon = app.and_then(|a| self.apps.icon(a)).map(|p| p.to_string_lossy().into_owned());
         self.app_icons.borrow_mut().insert(key, icon.clone());
         icon
     }
@@ -657,17 +654,14 @@ impl Core {
         self.recipes = r;
     }
 
-    /// 起動コマンドを確かめる関数を差し替える(テスト用)
-    pub fn set_apps(&mut self, f: fn() -> Vec<crate::apps::App>) {
-        self.apps = f;
+    /// インストール済みのアプリの出どころを差し替える(ほかの OS・テスト用。既定は XDG の .desktop)
+    pub fn set_apps(&mut self, source: std::sync::Arc<dyn crate::apps::AppSource>) {
+        self.apps = source;
+        self.app_icons.borrow_mut().clear();
     }
 
     pub fn set_clock(&mut self, f: fn() -> u64) {
         self.now = f;
-    }
-
-    pub fn set_installed(&mut self, f: fn(&str) -> bool) {
-        self.installed = f;
     }
 
     pub fn set_download_dir(&mut self, dir: String) {
@@ -818,7 +812,7 @@ impl Core {
     /// インストール済みのアプリなら開き直せるように起動コマンドを持つ。変われば true
     pub fn note_foreign(&mut self, tab: u64, con: i64, app: &str, title: &str, focused: bool, tree: &Tree) -> bool {
         let Some(num) = self.tabs.tabs.iter().find(|t| t.id == tab).map(|t| t.num) else { return false };
-        let found = (self.apps)().into_iter().find(|a| a.id.to_lowercase() == app || a.cls == app);
+        let found = self.apps.list().iter().find(|a| a.id.to_lowercase() == app || a.cls == app).cloned();
         let mut fields = Table::new();
         let name = found.as_ref().map(|a| a.name.as_str()).unwrap_or(if title.is_empty() { app } else { title });
         fields.insert("name".into(), Value::String(name.to_string()));
@@ -1315,7 +1309,7 @@ impl Core {
             if l.kind == "app"
                 && l.str("webUrl").is_empty()
                 && !cmd.is_empty()
-                && !(self.installed)(&cmd)
+                && !self.apps.is_installed(&cmd)
                 && !allow.iter().any(|a| a.trim() == cmd)
             {
                 if let Some(l) = layout.leaf_mut(id) {
@@ -1368,7 +1362,7 @@ impl Core {
             rest.push(Item { score: self.score(&key, now), key, kind: "bookmark".into(), label: b.title, detail: b.folder });
         }
         let mut seen = HashSet::new();
-        for a in (self.apps)() {
+        for a in self.apps.list().iter().cloned() {
             if a.name.is_empty() || !seen.insert(a.id.clone()) {
                 continue;
             }
@@ -1398,7 +1392,7 @@ impl Core {
             "bookmark" => self.bookmark_open(rest, allow),
             "space" => self.space_switch(rest),
             "app" => {
-                let a = (self.apps)().into_iter().find(|a| a.id == rest).ok_or_else(|| not_found("app"))?;
+                let a = self.apps.list().iter().find(|a| a.id == rest).cloned().ok_or_else(|| not_found("app"))?;
                 let mut leaf = Leaf { kind: "app".into(), fields: Table::new() };
                 leaf.fields.insert("cmd".into(), a.exec.into());
                 leaf.fields.insert("name".into(), a.name.into());

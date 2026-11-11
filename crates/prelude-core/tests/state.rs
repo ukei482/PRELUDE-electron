@@ -1,4 +1,5 @@
 // コアの状態(タブ・分割・スペース・ブックマーク・書き出し)のテスト。cargo test で動かす
+use prelude_core::apps::App;
 use prelude_core::recipes::Recipe;
 use prelude_core::state::{Core, SPACE_DEFAULT};
 use prelude_proto::{Command, Dir, ErrorCode, PaneSpec, State, TabRef};
@@ -22,6 +23,11 @@ fn web(url: &str) -> PaneSpec {
 fn ok(c: &mut Core, cmd: Command) -> Value {
     let o = c.handle(cmd);
     o.reply.unwrap_or_else(|e| panic!("{e:?}"))
+}
+
+/// 決まったアプリの一覧(XDG の .desktop を読まない)
+fn fixed(apps: Vec<App>) -> std::sync::Arc<dyn prelude_core::apps::AppSource> {
+    std::sync::Arc::new(prelude_core::apps::Fixed(apps))
 }
 
 fn state(c: &Core) -> State {
@@ -233,7 +239,7 @@ fn インストール済みでない起動コマンドは外して開く() {
     .unwrap();
     let path = path.to_string_lossy().into_owned();
     let mut c = Core::new(HOME, &root, None);
-    c.set_installed(|cmd| cmd == "kate");
+    c.set_apps(fixed(vec![App { name: "Kate".into(), exec: "kate".into(), ..App::default() }]));
     let r = ok(&mut c, Command::BookmarkOpen { path: path.clone(), allow: vec![] });
     assert_eq!(r["held"], json!(["sh -c evil"]));
     let cmds: Vec<String> = c.wants().into_iter().map(|w| w.cmd).collect();
@@ -310,7 +316,6 @@ fn 取り込むペイン_レシピ_止まったペイン() {
 
 #[test]
 fn ランチャーの候補_開くと点数が上がる() {
-    use prelude_core::apps::App;
     use std::sync::atomic::{AtomicU64, Ordering};
     static NOW: AtomicU64 = AtomicU64::new(1_000_000);
     const DAY: u64 = 24 * 3600 * 1000;
@@ -323,10 +328,10 @@ fn ランチャーの候補_開くと点数が上がる() {
     bm(&main.join("研究/論文.prelude"));
     let mut c = Core::new(HOME, &root, None);
     c.set_clock(|| NOW.load(Ordering::Relaxed));
-    c.set_apps(|| {
+    c.set_apps(fixed({
         let app = |id: &str, name: &str| App { name: name.into(), exec: id.into(), cls: String::new(), id: id.into(), icon: String::new() };
         vec![app("kate", "Kate"), app("org.kde.konsole", "Konsole"), app("kate", "Kate (dup)")]
-    });
+    }));
     let keys = |c: &Core| c.items().into_iter().map(|i| i.key).collect::<Vec<_>>();
     let alpha = format!("bookmark:{}", main.join("Alpha.prelude").display());
     let paper = format!("bookmark:{}", main.join("研究/論文.prelude").display());
@@ -711,7 +716,7 @@ fn 消音とアイコンは状態に出すが書き出さない() {
             icon: icon.to_string_lossy().into(),
         }]
     }
-    c.set_apps(apps);
+    c.set_apps(fixed(apps()));
     ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
     let w = pane_ids(&state(&c).tabs[0].layout)[0];
     let app: PaneSpec = serde_json::from_value(json!({ "type": "app", "cmd": "kate" })).unwrap();
@@ -878,7 +883,7 @@ mod compositor_layout {
     #[test]
     fn アプリを分割して開く() {
         let mut c = core("item-split");
-        c.set_apps(|| {
+        c.set_apps(fixed({
             vec![prelude_core::apps::App {
                 name: "Kate".into(),
                 exec: "kate".into(),
@@ -886,7 +891,7 @@ mod compositor_layout {
                 id: "org.kde.kate".into(),
                 icon: String::new(),
             }]
-        });
+        }));
         let a = open(&mut c, "a");
         let at = prelude_proto::SplitAt { pane: a, dir: Dir::Col };
         let new =
@@ -958,7 +963,7 @@ mod compositor_layout {
     #[test]
     fn 外から開いた窓はペインになる() {
         let mut c = core("foreign");
-        c.set_apps(|| {
+        c.set_apps(fixed({
             vec![prelude_core::apps::App {
                 name: "Okular".into(),
                 exec: "okular".into(),
@@ -966,7 +971,7 @@ mod compositor_layout {
                 id: "org.kde.okular".into(),
                 icon: String::new(),
             }]
-        });
+        }));
         let a = open(&mut c, "a");
         let tab = c.state().active.unwrap();
         // インストール済みのアプリ: 開き直せる
