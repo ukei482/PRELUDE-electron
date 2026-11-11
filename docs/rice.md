@@ -71,3 +71,60 @@ PRELUDE の外にある好みの部分は、モジュールではなく `nix/ric
 - GPUI の UI(`ui/`。サイドバー・ランチャー・ファイラ)の Nix のパッケージ。GPUI は Zed のリポジトリを git で使うので、`cargoLock.outputHashes` が要る。手元でのビルドが重い(判断 9 の「nix-daemon のビルドには上限が効かない」)ので、GitHub Actions でビルドしてキャッシュで配るとき(段階 8)にまとめる
 - Hyprland の断片(裏側と一緒に)
 - コンポジタ自身のタブの見た目を隠す断片(sway はタブを使わないので要らない。Hyprland のグループのバー)
+
+## この PC の OS: NixOS(判断 9 の記録)
+
+`docs/redesign-rust.md` の判断 9 から移した。判断 15 で、PRELUDE は OS を前提にしないことにしたので、これは作者の PC の決めごと。文中の「判断 N」は `docs/redesign-rust.md` の判断。
+
+PRELUDE が頼っているのは **KDE Plasma 6 + Wayland(KWin)** で、Ubuntu そのものではない。Ubuntu に固有なのは snap 版の Chromium の扱いと、SDDM の設定ファイルの名前くらいで、どれも得をしていない。
+そこで、乗る先を PRELUDE の思想に照らして選び直し、**NixOS** にする。ディストリビューションを自分で作ることはしない(カーネル・ドライバ・KDE の保守まで持つことになる)。
+
+### 思想と照らす
+
+| 思想 | 出どころ | NixOS では |
+|---|---|---|
+| 任せられるものは任せる。PRELUDE は自分の層だけを持つ | shell-design.md 1章、判断 3 | KDE・Chromium・カーネルは nixpkgs が保守する。PRELUDE はモジュール 1 つ |
+| ファイルには使用者が決めたことだけを書く。PRELUDE が変えるものは別に置く | 判断 5 | OS 全体を 1 つの設定で宣言する。`.prelude` と同じ考え方 |
+| 落ちても・失敗しても戻れる | 判断 1-b、release.md | 前の世代へ戻せる(起動の画面でも選べる)。`release.sh switch` が OS ごとになる |
+| 土台と付け替える部分を分ける | 判断 1・4 | 読み取り専用の `/nix/store` と、使用者の設定 |
+| ミニマル | 判断 0・2 | 書いたものしか入らない |
+
+比べた候補: Kubuntu(手で積み重ねる・snap・Plasma が遅れる)、Fedora KDE、Arch(戻せない)、Fedora Kinoite + bootc(思想にはよく合い、移行中の Electron 版も普通に動く。NixOS が合わなかったときの次の候補)。
+
+### PRELUDE 側で変えること
+
+| 今 | NixOS では |
+|---|---|
+| `/usr/bin/konsole`・`/snap/bin/chromium`・`/usr/share/icons`・`/bin/bash` などの決め打ち | `PATH` と `XDG_DATA_DIRS` から探す(`sys/xdg.js`・`crates/prelude-core/src/xdg.rs`)。**済** |
+| npm の `electron`(`node_modules/electron/dist/electron`) | NixOS では動かない(普通のファイルの配置が無い)。nixpkgs の `electron`(版を合わせる)で `electron .`。ネイティブモジュールは無いので、ほかの依存はそのまま |
+| `scripts/theme.sh`(sudo で SDDM・ロック画面のテーマを置く、`quiet splash`) | NixOS のモジュールに書く(SDDM のテーマ・`boot.kernelParams` など) |
+| `systemd/prelude-shell*.service`、`scripts/shell-mode.sh` | モジュールの `systemd.user.services` |
+| `release.sh` + `sys/update.js`(タグから作って切り替え・前の版に戻す) | flake の入力をタグに合わせて `nixos-rebuild switch`。戻すのは NixOS の世代 |
+| 「Kubuntu に戻る」 | 「plasmashell に戻る」(中身は同じ) |
+| 判断 8 の配布(GitHub Actions でビルドしてリリースに添付) | このリポジトリの `flake.nix` と NixOS のモジュール(`services.prelude.enable`)。ビルドの結果は Nix のキャッシュで配れる |
+
+### 確かめること(NixOS を試すとき)
+
+- nixpkgs の `electron` で今の Electron 版が動くか(版の違い)
+- 日本語入力(`i18n.inputMethod` で fcitx5)、Iris Xe
+- アプリの取り込み: NixOS では包まれたプログラムのプロセス名が `.konsole-wrapped` のようになる。`/proc` で窓の持ち主を見分ける所(`appembed.js`・`embed.rs`・`procs.rs`)が合うか
+- KWin スクリプト・シェルモード・ロック画面と SDDM のテーマ
+- `.desktop` の `Exec` が `/nix/store/…` の絶対パスになるアプリで、人からもらったブックマークの起動コマンドの確かめが働くか
+
+### 移行の方針(2026-11-04)
+PRELUDE の開発を止めても Ubuntu を使い続ける利点は薄いので、**試してから戻すのではなく、NixOS へ移る** つもりで進める。ただし Kubuntu はすぐ消さず、横に入れて確かめてから消す。
+- `flake.nix` に開発環境、`nix/configuration.nix` に最小の OS の設定だけを書く。今の Kubuntu の中身は書き写さず、足りないものをその都度足す
+- メモリの節約にはならない(この PC で使っているのはアプリで、減るのは Discover と snapd の 130MB ほど)。スワップの不足は zram で補う
+- この PC では仮想マシンを使わない(メモリ 7.6GB に 3.5GB を割り当てて、OOM で落ちた)
+- 2026-11-05: NixOS を `nvme0n1p3` に入れ、起動・ログイン・`nixos-rebuild` まで確かめた(Kubuntu は `nvme0n1p2` に残っている)。Claude のデスクトップアプリは公式の .deb を `nix/claude-desktop.nix` で包む(Kubuntu の上の Nix で起動を確認)。pCloud は nixpkgs にある。open-pdf-studio も公式の .deb を `nix/open-pdf-studio.nix` で包む(MCP は 9223 番で答える)。ペンタブレットのドライバ(xppenlinux)は入れない
+- flake は `path:` で指さない(リポジトリ全体、ビルド結果の 16GB までストアにコピーされる)。`.#…` なら git の追跡分だけ
+- nixos-26.05 の既定は rustc 1.95・electron 43 で、PRELUDE には古い。`flake.nix` で `rust-overlay` の配布済みの 1.98.1(GPUI の指定に合わせる)と `electron_44` を選ぶ
+- Kubuntu の上の Nix で確かめた(`nix develop`。2026-11-04): コアとコマンドのテスト、`npm test`(47)、GPUI の 3 つのビルド(2 並列で 8 分半)が通り、ファイラは Nix の Mesa を `VK_DRIVER_FILES` で指定すると Iris Xe の Vulkan で動く。Electron 44 は PRELUDE の画面まで読み込む。Kubuntu の上では GL のドライバが見つからないエラーが出る(`/run/opengl-driver` が無いため。NixOS で確かめる)
+- `nix-daemon` のビルドには `systemd-run` の上限が効かない。手元で Rust をコンパイルさせると OOM になるので、実行前に `nix build --dry-run` でビルドするものを見る
+- `nix/hardware-configuration.nix` は入れる PC で作る。EFI 区画が 300MB なので、カーネルをルートの `/boot` に置く GRUB にする
+
+### 順番
+
+1. 今の Kubuntu のまま準備する: 決め打ちのパスを無くす(済)、この判断を書く(済)
+2. NixOS を別の区画か USB に入れて、上の「確かめること」を試す。`flake.nix`(Electron 版・Rust 版のパッケージ、`nix develop`)はここで作る(NixOS の上で確かめないと動くか分からないため)
+3. NixOS のモジュールを書き、シェルとして常用する。更新の仕組みを世代に置き換える
