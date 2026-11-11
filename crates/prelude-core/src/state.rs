@@ -22,6 +22,8 @@ pub const SPACE_DEFAULT: &str = "Main";
 const BM_MAX: u64 = 256 * 1024;
 /// スペースの中で読むブックマークの数の上限
 const BM_LIST_MAX: usize = 1000;
+/// タブの番号の上限
+const TAB_NUM_MAX: u32 = 99;
 const PATH_KEYS: [&str; 5] = ["files", "open", "save", "download", "terminal"];
 
 pub type Fail = (ErrorCode, String);
@@ -270,6 +272,18 @@ impl Tab {
     }
 }
 
+/// 閉じたタブ(開き直すため)
+#[derive(Debug, Clone, PartialEq)]
+struct Closed {
+    layout: Layout,
+    bookmark: Option<(String, String)>,
+    /// 閉じたときの位置
+    index: usize,
+}
+
+/// 覚えておく閉じたタブの数(スペースごと)
+const CLOSED_MAX: usize = 20;
+
 /// スペース 1 つのタブ
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Tabs {
@@ -339,6 +353,8 @@ pub struct Core {
     recipes: Vec<Recipe>,
     /// 窓のつなぎ(状態に出すだけ)
     backend: Windows,
+    /// 閉じたタブ(スペースの名前 → 新しいものが後ろ)。開き直すため。残さない
+    closed: BTreeMap<String, Vec<Closed>>,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
@@ -378,6 +394,7 @@ impl Core {
             places: HashMap::new(),
             recipes: vec![],
             backend: Windows::default(),
+            closed: BTreeMap::new(),
             stopped: HashSet::new(),
             titles: HashMap::new(),
             download_dir: String::new(),
@@ -484,6 +501,7 @@ impl Core {
                 })
                 .collect(),
             windows: self.backend.clone(),
+            closed: self.closed.get(&self.space).map_or(0, Vec::len),
         }
     }
 
@@ -807,6 +825,33 @@ impl Core {
                 }
                 Ok(Json::Null)
             }
+            Command::TabDuplicate { tab } => {
+                let i = self.tab_index(tab)?;
+                let layout = self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
+                Ok(json!(self.insert_tab(layout, None, Some(i + 1))))
+            }
+            Command::TabRenumber { tab, num } => {
+                let i = self.tab_index(tab)?;
+                if !(1..=TAB_NUM_MAX).contains(&num) {
+                    return Err(fail(ErrorCode::BadRequest, format!("Tab numbers are 1 to {TAB_NUM_MAX}")));
+                }
+                let old = self.tabs.tabs[i].num;
+                if let Some(other) = self.tabs.tabs.iter_mut().find(|t| t.num == num) {
+                    other.num = old;
+                }
+                self.tabs.tabs[i].num = num;
+                Ok(Json::Null)
+            }
+            Command::TabReopen {} => {
+                let c = self.closed.get_mut(&self.space).and_then(Vec::pop).ok_or_else(|| not_found("closed tab"))?;
+                // そのブックマークを開いたタブがもうあれば、そのタブにする(1 ブックマーク = 最大 1 タブ)
+                if let Some(t) = c.bookmark.as_ref().and_then(|(p, _)| self.tabs.tabs.iter().find(|t| t.bookmark.as_ref().is_some_and(|(q, _)| q == p))) {
+                    let id = t.id;
+                    self.tabs.active = Some(id);
+                    return Ok(json!(id));
+                }
+                Ok(json!(self.insert_tab(c.layout, c.bookmark, Some(c.index))))
+            }
             Command::TabMove { tab, index } => {
                 let i = self.tab_index(tab)?;
                 let t = self.tabs.tabs.remove(i);
@@ -888,9 +933,21 @@ impl Core {
         id
     }
 
-    /// i のタブを閉じる。今のタブなら、同じ位置(無ければ 1 つ上)のタブを今のタブにする
+    /// 開き直せるペインだけの配置(PRELUDE を通さずに開いた、開き直せない窓のペインを除く)。何も残らなければ None
+    fn reopenable(&self, layout: &Layout) -> Option<Layout> {
+        layout.filtered(&|id, l: &Leaf| !(self.windows.contains_key(&id) && l.str("cmd").is_empty()))
+    }
+
+    /// i のタブを閉じる。今のタブなら、同じ位置(無ければ 1 つ上)のタブを今のタブにする。開き直せるように覚えておく
     fn close_tab(&mut self, i: usize) {
         let t = self.tabs.tabs.remove(i);
+        if let Some(layout) = self.reopenable(&t.layout) {
+            let list = self.closed.entry(self.space.clone()).or_default();
+            list.push(Closed { layout, bookmark: t.bookmark.clone(), index: i });
+            if list.len() > CLOSED_MAX {
+                list.remove(0);
+            }
+        }
         for (id, _) in t.layout.panes() {
             self.places.remove(&id);
             self.stopped.remove(&id);

@@ -498,6 +498,45 @@ fn ファイラは_yazi_field_は_files_の別名_名前は_path_から() {
 }
 
 #[test]
+fn タブを複製する_番号を変える_閉じたタブを開き直す() {
+    let mut c = Core::new(HOME, spaces("tabcmds"), None);
+    let a = ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None }).as_u64().unwrap();
+    let b = ok(&mut c, Command::TabOpen { pane: web("https://b/"), index: Some(9) }).as_u64().unwrap();
+    // 複製はすぐ下に、新しいペインの id で。番号は空いたもの
+    let d = ok(&mut c, Command::TabDuplicate { tab: Some(TabRef::Id { id: a }) }).as_u64().unwrap();
+    let s = state(&c);
+    assert_eq!(s.tabs.iter().map(|t| t.id).collect::<Vec<_>>(), vec![a, d, b]);
+    assert_eq!(s.tabs[1].layout["url"], json!("https://a/"));
+    assert_ne!(pane_ids(&s.tabs[1].layout), pane_ids(&s.tabs[0].layout));
+    assert_eq!((s.tabs[1].num, s.active), (3, Some(d)));
+    // 番号を変える。使われている番号なら入れ替える
+    ok(&mut c, Command::TabRenumber { tab: Some(TabRef::Id { id: d }), num: 1 });
+    let nums = |c: &Core| state(c).tabs.iter().map(|t| t.num).collect::<Vec<_>>();
+    assert_eq!(nums(&c), vec![3, 1, 2]);
+    ok(&mut c, Command::TabRenumber { tab: Some(TabRef::Id { id: d }), num: 7 });
+    assert_eq!(nums(&c), vec![3, 7, 2]);
+    assert_eq!(c.handle(Command::TabRenumber { tab: None, num: 0 }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    // 閉じたタブを、新しく閉じたものから、閉じた位置に開き直す
+    assert_eq!(state(&c).closed, 0);
+    ok(&mut c, Command::TabClose { tab: Some(TabRef::Id { id: b }) });
+    ok(&mut c, Command::TabClose { tab: Some(TabRef::Id { id: a }) });
+    assert_eq!(state(&c).closed, 2);
+    let r = ok(&mut c, Command::TabReopen {}).as_u64().unwrap();
+    let s = state(&c);
+    assert_eq!((s.tabs[0].id, s.tabs[0].layout["url"].clone(), s.active), (r, json!("https://a/"), Some(r)));
+    ok(&mut c, Command::TabReopen {});
+    assert_eq!(state(&c).tabs.iter().map(|t| t.layout["url"].clone()).collect::<Vec<_>>(), vec![json!("https://a/"), json!("https://a/"), json!("https://b/")]);
+    assert_eq!(c.handle(Command::TabReopen {}).reply.unwrap_err().0, ErrorCode::NotFound);
+    // 閉じたタブはスペースごと
+    ok(&mut c, Command::TabClose { tab: None });
+    ok(&mut c, Command::SpaceCreate { name: "別".into() });
+    ok(&mut c, Command::SpaceSwitch { name: "別".into() });
+    assert_eq!(state(&c).closed, 0);
+    ok(&mut c, Command::SpaceSwitch { name: "Main".into() });
+    assert_eq!(state(&c).closed, 1);
+}
+
+#[test]
 fn ダイアログの最初のフォルダは書いてあるときだけ() {
     let root = spaces("dialog");
     let dir = root.join(SPACE_DEFAULT);

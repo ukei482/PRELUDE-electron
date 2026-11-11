@@ -130,6 +130,22 @@ pub enum Command {
     },
     #[serde(rename = "tab.activate")]
     TabActivate { tab: TabRef },
+    /// タブを複製してすぐ下に置く(ブックマークには結び付けない。1 ブックマーク = 最大 1 タブ) → 新しいタブの id
+    #[serde(rename = "tab.duplicate")]
+    TabDuplicate {
+        #[serde(default)]
+        tab: Option<TabRef>,
+    },
+    /// タブの番号を変える。ほかのタブが使っていれば、番号を入れ替える
+    #[serde(rename = "tab.renumber")]
+    TabRenumber {
+        #[serde(default)]
+        tab: Option<TabRef>,
+        num: u32,
+    },
+    /// 閉じたタブを開き直す(新しく閉じたものから。スペースごと) → 開いたタブの id
+    #[serde(rename = "tab.reopen")]
+    TabReopen {},
     #[serde(rename = "tab.move")]
     TabMove {
         #[serde(default)]
@@ -292,6 +308,9 @@ pub struct State {
     /// 窓のつなぎ(項目を足しただけなので、古いコアの状態にも無くてよい)
     #[serde(default)]
     pub windows: Windows,
+    /// 開き直せる閉じたタブの数(今のスペース)
+    #[serde(default)]
+    pub closed: usize,
 }
 
 /// 窓のつなぎ(docs/redesign-rust.md の「窓のつなぎ」)。UI は level を見て、分割で開くなどを出すか決める

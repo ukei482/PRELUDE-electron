@@ -14,6 +14,9 @@ usage: prelude <command> [args]
   tabs                   List tabs (* = current)
   tab <n>                Switch to tab n
   close [n]              Close tab n (default: current)
+  reopen                 Reopen the last closed tab of this space
+  tab dup [n]            Duplicate tab n (default: current) below it
+  tab renumber <n> <new> Give tab n the number <new> (swaps with the tab that has it)
   pane close [id]        Close a pane (default: the current pane of the current tab)
   pane path [--pane <id>] <folder>
                          Tell the core where a pane is now (e.g. the folder a file manager moved to), so the tab reopens there.
@@ -410,6 +413,19 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         ["help" | "-h" | "--help"] => println!("{HELP}"),
         ["tabs"] => print_tabs(&Conn::open(false)?.state()?),
+        ["reopen"] => {
+            Conn::open(false)?.call("tab.reopen", json!({}))?;
+        }
+        ["tab", "dup"] => {
+            Conn::open(false)?.call("tab.duplicate", json!({}))?;
+        }
+        ["tab", "dup", n] => {
+            Conn::open(false)?.call("tab.duplicate", json!({ "tab": num_arg(n)? }))?;
+        }
+        ["tab", "renumber", n, new] => {
+            let num: u32 = new.parse().map_err(|_| format!("Not a number: {new}"))?;
+            Conn::open(false)?.call("tab.renumber", json!({ "tab": num_arg(n)?, "num": num }))?;
+        }
         ["tab", n] => {
             Conn::open(false)?.call("tab.activate", json!({ "tab": num_arg(n)? }))?;
         }
