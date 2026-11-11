@@ -95,6 +95,7 @@
 - sway を抜けてもコアが動き続け、`SWAYSOCK` が Plasma のアプリにも渡っていた
 
 ### 変更
+- CI(GitHub Actions)で Rust 版のテストも回す: `crates/` の clippy(警告は失敗)と `cargo test`、Slint の試作(`proto/slint`)の `cargo test`
 - CI で `npm ci --ignore-scripts` を実行するようにした(0.12.0 の前から `smol-toml` が無くて失敗していた)
 - `/bin/bash` の決め打ちをやめて `PATH` から探すようにした(NixOS には無い。ホームの端末・音量の監視など)
 - Rust 版の設計を見直し、`docs/redesign-rust.md` を判断の番号ではなく話題ごとの節(全体の形・スペースとブックマーク・ペイン・Web のペイン・窓のつなぎ・アプリのダイアログ・UI・ソケットの約束・環境に任せるもの・移行)に書き直した。コードのコメントも節の名前で指すようにした

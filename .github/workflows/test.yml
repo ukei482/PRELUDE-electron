@@ -1,4 +1,4 @@
-# PR と main への push で npm test を回す
+# PR と main への push でテストを回す: npm test(Electron 版)、Rust 版のコア・コマンド(crates/)、Slint の試作の決まり(proto/slint)
 name: test
 
 on:
@@ -18,3 +18,30 @@ jobs:
       # --ignore-scripts で Electron 本体のダウンロードは省く
       - run: npm ci --ignore-scripts
       - run: npm test
+
+  # Rust 版のコア・コマンド・形式(ルートのワークスペース)。画面も D-Bus も要らない
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  # Slint の試作: サイドバーの決まり(.slint の global)を破るとビルドで止まることなど。ルートのワークスペースの外
+  slint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proto/slint
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: proto/slint
+      - run: cargo test
