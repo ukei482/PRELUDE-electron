@@ -102,6 +102,16 @@ class = "org.kde.kate"           # 省略できる。窓を見分ける名前
 
 `.prelude` には種類の名前(`type = "notes"`)だけを書く。人からもらったファイルが勝手なコマンドを実行できないようにするため。
 
+## MCP
+
+`prelude mcp` は、PRELUDE の命令を MCP のツールとして出すサーバー(標準入出力)。つないであれば、コマンドの文字列を組み立てるより、ツール(`state`・`bookmark_save`・`open` など)を使うほうが確か。
+
+```bash
+claude mcp add prelude -- prelude mcp      # Claude Code につなぐ例
+```
+
+消す・閉じるツール(`bookmark_trash`・`folder_remove`・`tab_close`・`pane_close`・`bookmark_overwrite`)は、使用者が頼んだときだけ使う。
+
 ## PRELUDE が起動したプログラムの中で
 
 PRELUDE がペインとして起動したプログラムには、環境変数 `PRELUDE_PANE`(ペインの id)が入っている。ファイラなどで移ったフォルダを PRELUDE に伝えるには `prelude pane path <フォルダ>`(タブを開き直すとそこで開く)。

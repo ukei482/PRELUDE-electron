@@ -3,10 +3,14 @@
 use prelude_proto::{BookmarkInfo, BookmarkOpened, Client, FolderInfo, Incoming, Item, RecipeInfo, State};
 use serde_json::{json, Value};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 mod choose;
+mod mcp;
 mod skill;
+mod target;
+
+use target::{abs, bookmark_path, folder_path, Target};
 
 const HELP: &str = "\
 usage: prelude <command> [args]
@@ -59,6 +63,8 @@ usage: prelude <command> [args]
   choose <open|open-multiple|directory|save> --output <file> [--name <name>] [--terminal <cmd>] <folder>
                          The file chooser of app dialogs: yazi in a terminal. Writes the chosen paths to <file>
                          (what prelude-core's dialog portal runs by default)
+  mcp                    Run an MCP server on stdin/stdout: PRELUDE's commands as tools for AI agents
+                         (e.g. claude mcp add prelude -- prelude mcp)
   skill [show [<file>]]  Print the skill that teaches AI agents how to use PRELUDE (SKILL.md, format.md)
   skill install [<dir>...]
                          Write the skill into <dir>/prelude/ (default: ~/.agents/skills and ~/.claude/skills)
@@ -104,11 +110,6 @@ fn print_tabs(s: &State) {
     }
 }
 
-fn abs(p: &str) -> PathBuf {
-    let p = Path::new(p);
-    std::fs::canonicalize(p).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(p))
-}
-
 /// ペインの今の場所(path)をコアに伝える。ペインは --pane、無ければ $PRELUDE_PANE、それも無ければ今のペイン
 fn pane_path(id: Option<&str>, folder: &str) -> Result<(), String> {
     let id = id.map(str::to_string).or_else(|| std::env::var("PRELUDE_PANE").ok().filter(|s| !s.is_empty()));
@@ -123,30 +124,6 @@ fn pane_path(id: Option<&str>, folder: &str) -> Result<(), String> {
     let path = abs(folder);
     c.call("pane.update", json!({ "pane": pane, "fields": { "path": path.to_string_lossy() } }))?;
     Ok(())
-}
-
-/// ブックマークのパス。.prelude のファイルならそのパス、ほかは `prelude bookmarks` の名前(フォルダ/題名、または題名)
-fn bookmark_path(c: &mut Client, b: &str) -> Result<String, String> {
-    if b.ends_with(".prelude") && Path::new(b).is_file() {
-        return Ok(abs(b).to_string_lossy().into_owned());
-    }
-    let list: Vec<BookmarkInfo> = serde_json::from_value(c.call("bookmark.list", json!({}))?).map_err(|e| e.to_string())?;
-    let name = |x: &BookmarkInfo| if x.folder.is_empty() { x.title.clone() } else { format!("{}/{}", x.folder, x.title) };
-    let hits: Vec<&BookmarkInfo> = list.iter().filter(|x| name(x) == b).collect();
-    let hits = if hits.is_empty() { list.iter().filter(|x| x.title == b).collect() } else { hits };
-    match hits.as_slice() {
-        [one] => Ok(one.path.clone()),
-        [] => Err(format!("No such bookmark: {b}")),
-        _ => Err(format!("More than one bookmark is named {b}; give it as folder/title")),
-    }
-}
-
-/// ブックマークのフォルダのパス。フォルダならそのパス、ほかは今のスペースの中の名前
-fn folder_path(c: &mut Client, f: &str) -> Result<String, String> {
-    if f.contains('/') && Path::new(f).is_dir() {
-        return Ok(abs(f).to_string_lossy().into_owned());
-    }
-    Ok(Path::new(&c.state()?.space_dir).join(f).to_string_lossy().into_owned())
 }
 
 fn bm_save(title: &str, folder: &str) -> Result<(), String> {
@@ -174,35 +151,16 @@ fn open_bookmark(c: &mut Client, path: &str, run: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// open の対象を決める: .prelude のファイル → ブックマーク、フォルダ → フォルダのペイン、URL → Web、
-/// それ以外は今のスペースのブックマークの名前(同じ名前、なければ名前の始まり)
+/// 開く(対象の決め方は [`target::resolve`])
 fn open(c: &mut Client, target: &str, run: bool) -> Result<(), String> {
-    let p = Path::new(target);
-    if target.ends_with(".prelude") && p.is_file() {
-        return open_bookmark(c, &abs(target).to_string_lossy(), run);
-    }
-    if p.is_dir() {
-        c.call("tab.open", json!({ "pane": { "type": "files", "path": abs(target) } }))?;
-        return Ok(());
-    }
-    let url_like = target.contains("://") || (!target.contains(' ') && !target.starts_with('/') && target.contains('.') && !p.exists());
-    let list: Vec<BookmarkInfo> = serde_json::from_value(c.call("bookmark.list", json!({}))?).map_err(|e| e.to_string())?;
-    // b3: 並びの番号(ランチャーと同じ)
-    if let Some(n) = target.strip_prefix('b').and_then(|n| n.parse::<u32>().ok()) {
-        if let Some(b) = list.iter().find(|b| b.num == n) {
-            return open_bookmark(c, &b.path.clone(), run);
+    match target::resolve(c, target)? {
+        Target::Bookmark(path) => open_bookmark(c, &path, run)?,
+        Target::Folder(path) => {
+            c.call("tab.open", json!({ "pane": { "type": "files", "path": path } }))?;
         }
-    }
-    let lower = target.to_lowercase();
-    let hit =
-        list.iter().find(|b| b.title.to_lowercase() == lower).or_else(|| list.iter().find(|b| b.title.to_lowercase().starts_with(&lower)));
-    match hit {
-        Some(b) if !url_like || b.title.to_lowercase() == lower => open_bookmark(c, &b.path.clone(), run)?,
-        _ if url_like => {
-            let url = if target.contains("://") { target.to_string() } else { format!("https://{target}") };
+        Target::Url(url) => {
             c.call("tab.open", json!({ "pane": { "type": "web", "url": url } }))?;
         }
-        _ => return Err(format!("Nothing to open: {target}")),
     }
     Ok(())
 }
@@ -454,6 +412,9 @@ fn run(args: &[String]) -> Result<(), String> {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     if a.first() == Some(&"choose") {
         return choose::run(&a[1..]);
+    }
+    if a.as_slice() == ["mcp"] {
+        return mcp::run();
     }
     if a.first() == Some(&"skill") {
         return skill::run(&a[1..], &home());
