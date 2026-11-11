@@ -1,0 +1,45 @@
+// parts.slint の決まりを全部使う、見た目の無い確かめ(tests/contract.rs がコンパイルする)。
+// 決まりの名前や型を変えたら、ここも直す(UI を作る人が使う名前の見本にもなる)
+import { SidebarFrame, Spaces, Bookmarks, Tabs, NewTab, PaneBar, BookmarkButton, BookmarkItem, BookmarkFolder, TabItem, PaneItem, PaneKind } from "parts.slint";
+
+export component PartsCheck inherits Window {
+    property <string> s: SidebarFrame.status + Spaces.current + PaneBar.kind + PaneBar.title + PaneBar.url + BookmarkButton.bookmark + BookmarkButton.bookmark-title;
+    property <bool> b: SidebarFrame.online && SidebarFrame.compact && Tabs.can-reopen && PaneBar.can-split && PaneBar.can-mute && PaneBar.muted;
+    property <int> n: SidebarFrame.windows-level + PaneBar.pane + BookmarkButton.pane-count + Spaces.all.length + NewTab.kinds.length + Bookmarks.folders.length + Tabs.panes.length;
+    for b in Bookmarks.items: Image { source: b.icon; }
+    for t in Tabs.items: Text { text: t.title + t.num + t.bookmark + t.pane-count; }
+    TouchArea {
+        clicked => {
+            SidebarFrame.toggle-compact();
+            SidebarFrame.hide();
+            Spaces.switch-to("Main");
+            Spaces.create("新しい");
+            Bookmarks.open("/a.prelude");
+            Bookmarks.open-all("/f");
+            Bookmarks.rename("/a.prelude", "b");
+            Bookmarks.move-to("/a.prelude", "/f");
+            Bookmarks.reorder("/a.prelude", "");
+            Bookmarks.reveal("/a.prelude");
+            Bookmarks.trash("/a.prelude");
+            Bookmarks.create-folder("f");
+            Bookmarks.rename-folder("/f", "g");
+            Bookmarks.remove-folder("/f");
+            Bookmarks.set-expanded("/f", true);
+            Tabs.activate(1);
+            Tabs.close(1);
+            Tabs.focus-pane(2);
+            Tabs.move-to(1, 0);
+            Tabs.duplicate(1);
+            Tabs.renumber(1, 3);
+            Tabs.close-below(1);
+            Tabs.reopen();
+            NewTab.open("web");
+            PaneBar.split("row");
+            PaneBar.close();
+            PaneBar.change-url();
+            PaneBar.set-muted(true);
+            BookmarkButton.save("題名");
+            BookmarkButton.overwrite();
+        }
+    }
+}

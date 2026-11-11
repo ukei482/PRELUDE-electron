@@ -8,6 +8,8 @@ PRELUDE の UI(サイドバー・ランチャー・設定)を、GPUI の代わ�
 |---|---|
 | `ui/prelude.slint` | **サイドバーの決まり**(`global Prelude`)。表示するもの(`in property`)と頼むこと(`callback`)。サイドバーはこれだけを通してコアとやり取りする |
 | `ui/sidebar.slint` | 試作のサイドバー。上が本物の形(スペース・ブックマーク・タブ)、下が確かめること(日本語の字・入力欄・1 万件の一覧) |
+| `ui/parts.slint` | **サイドバーの部品の決まり**(部品ごとの `global`: `SidebarFrame`・`Spaces`・`Bookmarks`・`Tabs`・`NewTab`・`PaneBar`・`BookmarkButton`)。試作のサイドバーはまだ `prelude.slint` を使う |
+| `ui/parts-check.slint` | `parts.slint` の決まりを全部使う確かめ(見た目は無い) |
 | `ui/broken.slint` | 決まりを破った見本(名前の間違い・型の間違い・決まりに無い頼みごと) |
 | `ui/fake.slint` | 決まりを使わず、似た `global` を自分で作った見本 |
 | `src/core.rs` | コアとのやり取り(`prelude-proto`)。別のスレッドで見張り、`slint::invoke_from_event_loop` で UI を書き換える |

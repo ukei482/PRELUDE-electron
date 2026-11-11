@@ -31,6 +31,12 @@ fn 決まりを破るとコンパイルで止まる() {
 }
 
 #[test]
+fn サイドバーの部品の決まりはコンパイルが通り_全部使える() {
+    // parts.slint は global だけなので、全部を使う parts-check.slint を通して確かめる
+    assert_eq!(errors("parts-check.slint"), Vec::<String>::new());
+}
+
+#[test]
 fn 似せた_global_はコンパイルは通る() {
     // 決まりの確かめは読み込むとき(--load の check_contract)にする。ここではコンパイルが通ることだけ
     assert_eq!(errors("fake.slint"), Vec::<String>::new());
