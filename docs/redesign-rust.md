@@ -315,6 +315,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 - ブックマークのフォルダの開閉
 
 #### コアに足すもの
+済(2026-11-11)。ブックマークを書く処理は `bmwrite.rs`、ゴミ箱は `trash.rs`、アプリのアイコンは `icons.rs`。どの命令も `prelude` コマンドからも使える。
 - 命令(上の表の ※): ブックマークを書く(`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`)、ブックマークのフォルダ(`folder.create`・`folder.rename`・`folder.remove`)、タブ(`tab.duplicate`・`tab.renumber`・`tab.reopen`。閉じたタブはコアが覚える)、`web.mute`
 - 状態に足す項目: ブックマークの番号(並び順はコアが持ち、ランチャーの `b3` と同じ番号にする。順は `space.toml` に書く)と種類、ペインのアイコン(アプリは `.desktop` のアイコンのファイル、Web はファビコンをコアが保存したファイル)、閉じたタブがあるか、Web のペインの消音
 - ブックマークを書く命令は、「ファイルには使用者が決めたことだけ」の例外ではない。使用者がサイドバーで頼んだことを、コアが代わりに書く
@@ -347,6 +348,8 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 段階 3-a で足したもの: `recipe.list`、`bookmark.open` の `allow` と返事の `held`(外した起動コマンド)、ペインの `window_title`・`stopped`。取り込みの D-Bus は `org.prelude.Core`(`/org/prelude/Core` の `Report`。KWin スクリプトが呼ぶ)
 
 段階 3-b で足したもの: `web.go`、`download` のイベント
+
+サイドバーの部品のために足したもの(2026-11-11): `tab.duplicate`・`tab.renumber`・`tab.reopen`、`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`、`folder.list`・`folder.create`・`folder.rename`・`folder.remove`、`web.mute`。状態に `windows`・`closed`・`bookmarks_rev`、`bookmark.list` に `num`・`kind`、配置のペインに `icon`(ファイルのパス)・`muted`。どれも足しただけなので、版は 1 のまま
 
 まだしていないこと: ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
 
@@ -389,15 +392,14 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | 8 | 引き継ぎ(`migrate.rs`)、配布、Rust 版をリリースにして Electron 版を消す | 引き継ぎは済(8-a)。残り: 配布の仕上げ(8-b)、Electron 版を消す(8-c) |
 
 ### これから
-済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない
+済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目
 
 1. **Slint で layer-shell を使えるかの試作**: `proto/slint` に、Slint の自前のプラットフォーム + smithay-client-toolkit の layer-shell の面を足す。左端に貼り付く・場所を予約する・幅を変える・日本語入力・キーボード(名前の変更のときだけ取る)を確かめる。だめなら普通のウィンドウで出し、コンポジタの決まりで端に固定する
-2. **コアに足す**: サイドバーの部品のための命令と状態の項目(「サイドバー」の「コアに足すもの」)
-3. **UI を Slint で作り直す**: サイドバー(部品ごとの決まり)・ランチャー(状態の `windows.level` が 1 以上のときだけ分割で開くを出す)・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消す。日本語入力を画面のある PC で確かめる
-4. **ダイアログのポータルを別のプログラムに分ける**(コアに最初のフォルダを聞くだけにする)。`prelude choose` の保存・フォルダを選ぶ操作を、画面のある PC で確かめる
-5. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
-6. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
-7. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
+2. **UI を Slint で作り直す**: サイドバー(部品ごとの決まり)・ランチャー(状態の `windows.level` が 1 以上のときだけ分割で開くを出す)・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消す。日本語入力を画面のある PC で確かめる
+3. **ダイアログのポータルを別のプログラムに分ける**(コアに最初のフォルダを聞くだけにする)。`prelude choose` の保存・フォルダを選ぶ操作を、画面のある PC で確かめる
+4. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
+5. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
+6. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
 
 - テストの見本(`test/fixtures/format/full.prelude`)の `sort`・`[ui.field]` は残す。「知らない項目を残す」と「古いファイルも読める」を確かめるテストになっている
 

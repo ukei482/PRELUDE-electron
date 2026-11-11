@@ -365,6 +365,12 @@ pub struct Core {
     kinds: std::cell::RefCell<HashMap<String, (std::time::SystemTime, String)>>,
     /// ゴミ箱(テストで差し替える)
     trash_dir: PathBuf,
+    /// 音を消した Web のペイン。残さない
+    muted: HashSet<u64>,
+    /// Web のペインのファビコンのファイル。残さない
+    favicons: HashMap<u64, String>,
+    /// 画面に出すだけの変化(消音・アイコン)の回数。書き出さないが、UI には知らせる
+    live_rev: u64,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
@@ -408,6 +414,9 @@ impl Core {
             bookmarks_rev: 0,
             kinds: Default::default(),
             trash_dir: crate::trash::dir(),
+            muted: HashSet::new(),
+            favicons: HashMap::new(),
+            live_rev: 0,
             stopped: HashSet::new(),
             titles: HashMap::new(),
             download_dir: String::new(),
@@ -519,7 +528,34 @@ impl Core {
         }
     }
 
-    /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか)を付ける
+    /// Web のペインのファビコンを保存した → 変わったか
+    pub fn note_icon(&mut self, pane: u64, path: String) -> bool {
+        if self.find_pane(pane).is_err() || self.favicons.get(&pane) == Some(&path) {
+            return false;
+        }
+        self.favicons.insert(pane, path);
+        self.live_rev += 1;
+        true
+    }
+
+    /// ペインのアイコンのファイル。Web はファビコン、アプリ・レシピは .desktop のアイコン(起動コマンドか窓の名前で照らす)
+    fn pane_icon(&self, id: u64, l: &Leaf) -> Option<String> {
+        if Self::web_url(l).is_some() {
+            return self.favicons.get(&id).cloned();
+        }
+        let (cmd, cls) = match l.kind.as_str() {
+            "app" => (l.str("cmd").trim().to_string(), l.str("cls").to_lowercase()),
+            k => (String::new(), recipes::find(&self.recipes, k).map(|r| r.class.to_lowercase()).unwrap_or_default()),
+        };
+        let apps = (self.apps)();
+        let app = apps
+            .iter()
+            .find(|a| !cmd.is_empty() && a.exec == cmd)
+            .or_else(|| apps.iter().find(|a| !cls.is_empty() && (a.cls == cls || a.id.to_lowercase() == cls)))?;
+        crate::icons::find(&app.icon).map(|p| p.to_string_lossy().into_owned())
+    }
+
+    /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか・アイコン・消音)を付ける
     fn live(&self, mut v: Json) -> Json {
         if let Some(o) = v.as_object_mut() {
             if o.get("k").and_then(Json::as_str) == Some("split") {
@@ -534,6 +570,12 @@ impl Core {
                 }
                 if self.stopped.contains(&id) {
                     o.insert("stopped".into(), json!(true));
+                }
+                if self.muted.contains(&id) {
+                    o.insert("muted".into(), json!(true));
+                }
+                if let Some(icon) = self.find_pane(id).ok().and_then(|(_, l)| self.pane_icon(id, l)) {
+                    o.insert("icon".into(), json!(icon));
                 }
             }
         }
@@ -590,7 +632,7 @@ impl Core {
         for t in &self.tabs.tabs {
             for (id, l) in t.layout.panes() {
                 if let Some(url) = Self::web_url(l).filter(|_| !self.stopped.contains(&id)) {
-                    out.push(WebWant { pane: id, url: url.to_string() });
+                    out.push(WebWant { pane: id, url: url.to_string(), muted: self.muted.contains(&id) });
                 }
             }
         }
@@ -805,10 +847,10 @@ impl Core {
 
     /// コマンドを 1 つ処理する(`hello` はソケットの側で受ける)
     pub fn handle(&mut self, cmd: Command) -> Outcome {
-        let (before, rev) = (self.saved(), self.bookmarks_rev);
+        let (before, rev, live) = (self.saved(), self.bookmarks_rev, self.live_rev);
         let reply = self.run(cmd);
-        // ブックマークのファイルを書いただけでも、UI が一覧を読み直せるように知らせる
-        let changed = reply.is_ok() && (self.saved() != before || self.bookmarks_rev != rev);
+        // ブックマークのファイルを書いただけ・消音しただけでも、UI に知らせる
+        let changed = reply.is_ok() && (self.saved() != before || self.bookmarks_rev != rev || self.live_rev != live);
         Outcome { reply, changed }
     }
 
@@ -933,6 +975,16 @@ impl Core {
                 }
                 Ok(Json::Null)
             }
+            Command::WebMute { pane, on } => {
+                let (_, l) = self.find_pane(pane)?;
+                if Self::web_url(l).is_none() {
+                    return Err(fail(ErrorCode::BadRequest, "Not a web pane"));
+                }
+                if if on { self.muted.insert(pane) } else { self.muted.remove(&pane) } {
+                    self.live_rev += 1;
+                }
+                Ok(Json::Null)
+            }
             Command::PathsGet { tab } => {
                 let i = self.tab_index(tab).ok();
                 Ok(json!(self.paths(i.map(|i| &self.tabs.tabs[i]))))
@@ -983,6 +1035,8 @@ impl Core {
             self.stopped.remove(&id);
             self.titles.remove(&id);
             self.windows.remove(&id);
+            self.muted.remove(&id);
+            self.favicons.remove(&id);
         }
         if self.tabs.active == Some(t.id) {
             let n = self.tabs.tabs.len();

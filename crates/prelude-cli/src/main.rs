@@ -32,6 +32,7 @@ usage: prelude <command> [args]
   recipes                Pane types made from recipes (~/.config/prelude/panes)
   url <pane> <url>       Open a URL in a web pane
   go <pane> back|forward|reload  Move in a web pane's history
+  mute <pane> [on|off]   Mute (default) or unmute a web pane
   spaces                 List spaces (* = current)
   space <name>           Switch to a space
   space new <name>       Create a space
@@ -461,6 +462,10 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         ["help" | "-h" | "--help"] => println!("{HELP}"),
         ["tabs"] => print_tabs(&Conn::open(false)?.state()?),
+        ["mute", pane] | ["mute", pane, "on"] | ["mute", pane, "off"] => {
+            let pane: u64 = pane.parse().map_err(|_| format!("Not a pane id: {pane}"))?;
+            Conn::open(false)?.call("web.mute", json!({ "pane": pane, "on": a.get(2) != Some(&"off") }))?;
+        }
         ["reopen"] => {
             Conn::open(false)?.call("tab.reopen", json!({}))?;
         }

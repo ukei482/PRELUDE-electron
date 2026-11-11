@@ -9,6 +9,7 @@
 pub mod apps;
 pub mod compositor;
 pub mod embed;
+pub mod icons;
 pub mod launch;
 pub mod migrate;
 pub mod plain;

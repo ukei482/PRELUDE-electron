@@ -227,6 +227,11 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                             shared.sync_embed(core);
                         }
                     }
+                    Note::Icon { pane, path } => {
+                        if core.note_icon(pane, path) {
+                            shared.changed(core, false);
+                        }
+                    }
                     Note::Download(data) => {
                         let _ = shared.events.send(line(&Event { event: "download".into(), data }).into());
                     }

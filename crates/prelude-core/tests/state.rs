@@ -321,7 +321,7 @@ fn ランチャーの候補_開くと点数が上がる() {
     let mut c = Core::new(HOME, &root, None);
     c.set_clock(|| NOW.load(Ordering::Relaxed));
     c.set_apps(|| {
-        let app = |id: &str, name: &str| App { name: name.into(), exec: id.into(), cls: String::new(), id: id.into() };
+        let app = |id: &str, name: &str| App { name: name.into(), exec: id.into(), cls: String::new(), id: id.into(), icon: String::new() };
         vec![app("kate", "Kate"), app("org.kde.konsole", "Konsole"), app("kate", "Kate (dup)")]
     });
     let keys = |c: &Core| c.items().into_iter().map(|i| i.key).collect::<Vec<_>>();
@@ -667,6 +667,43 @@ fn ブックマークの並び_番号_種類_フォルダの一覧() {
 }
 
 #[test]
+fn 消音とアイコンは状態に出すが書き出さない() {
+    let root = spaces("live");
+    std::fs::create_dir_all(root.join(SPACE_DEFAULT)).unwrap();
+    let icon = root.join("kate.svg");
+    std::fs::write(&icon, "<svg/>").unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    fn apps() -> Vec<prelude_core::apps::App> {
+        let icon = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("state/live/kate.svg");
+        vec![prelude_core::apps::App { name: "Kate".into(), exec: "kate".into(), cls: "kate".into(), id: "org.kde.kate".into(), icon: icon.to_string_lossy().into() }]
+    }
+    c.set_apps(apps);
+    ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
+    let w = pane_ids(&state(&c).tabs[0].layout)[0];
+    let app: PaneSpec = serde_json::from_value(json!({ "type": "app", "cmd": "kate" })).unwrap();
+    ok(&mut c, Command::TabOpen { pane: app, index: Some(9) });
+    let a = pane_ids(&state(&c).tabs[1].layout)[0];
+    // アプリのペインには .desktop のアイコン
+    assert_eq!(state(&c).tabs[1].layout["icon"], json!(icon.to_string_lossy()));
+    // 消音: 状態と Web のペインのつなぎに出るが、書き出す状態は変わらない。知らせは配る
+    let before = c.saved();
+    let o = c.handle(Command::WebMute { pane: w, on: true });
+    assert!(o.changed && o.reply.is_ok());
+    assert_eq!(c.saved(), before);
+    assert_eq!(state(&c).tabs[0].layout["muted"], json!(true));
+    assert!(c.web_wants().0.iter().any(|x| x.pane == w && x.muted));
+    assert!(!c.handle(Command::WebMute { pane: w, on: true }).changed); // 同じなら知らせない
+    assert_eq!(c.handle(Command::WebMute { pane: a, on: true }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    ok(&mut c, Command::WebMute { pane: w, on: false });
+    assert!(state(&c).tabs[0].layout.get("muted").is_none());
+    // ファビコン
+    assert!(c.note_icon(w, "/cache/a.png".into()));
+    assert!(!c.note_icon(w, "/cache/a.png".into()));
+    assert!(!c.note_icon(999, "/x.png".into()));
+    assert_eq!(state(&c).tabs[0].layout["icon"], json!("/cache/a.png"));
+}
+
+#[test]
 fn ダイアログの最初のフォルダは書いてあるときだけ() {
     let root = spaces("dialog");
     let dir = root.join(SPACE_DEFAULT);
@@ -729,7 +766,7 @@ mod compositor_layout {
     #[test]
     fn アプリを分割して開く() {
         let mut c = core("item-split");
-        c.set_apps(|| vec![prelude_core::apps::App { name: "Kate".into(), exec: "kate".into(), cls: "kate".into(), id: "org.kde.kate".into() }]);
+        c.set_apps(|| vec![prelude_core::apps::App { name: "Kate".into(), exec: "kate".into(), cls: "kate".into(), id: "org.kde.kate".into(), icon: String::new() }]);
         let a = open(&mut c, "a");
         let at = prelude_proto::SplitAt { pane: a, dir: Dir::Col };
         let new = c
@@ -806,7 +843,7 @@ mod compositor_layout {
     fn 外から開いた窓はペインになる() {
         let mut c = core("foreign");
         c.set_apps(|| {
-            vec![prelude_core::apps::App { name: "Okular".into(), exec: "okular".into(), cls: "".into(), id: "org.kde.okular".into() }]
+            vec![prelude_core::apps::App { name: "Okular".into(), exec: "okular".into(), cls: "".into(), id: "org.kde.okular".into(), icon: String::new() }]
         });
         let a = open(&mut c, "a");
         let tab = c.state().active.unwrap();

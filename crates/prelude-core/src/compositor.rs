@@ -73,6 +73,8 @@ pub enum Note {
     Web { pane: u64, url: String, title: String },
     /// Web のペインから新しいタブで開くリンク(web.rs から)
     OpenTab { url: String, from: u64 },
+    /// Web のペインのファビコンを保存した(web.rs から)
+    Icon { pane: u64, path: String },
     /// ダウンロードの始まり・進み具合(CDP の Browser.downloadWillBegin / downloadProgress の params)
     Download(serde_json::Value),
 }

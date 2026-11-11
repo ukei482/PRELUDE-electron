@@ -15,6 +15,8 @@ pub struct App {
     pub cls: String,
     /// .desktop のファイル名から .desktop を除いたもの。Wayland の app_id と同じことが多い
     pub id: String,
+    /// Icon(アイコンの名前か、ファイルのパス。[`crate::icons::find`] で探す)
+    pub icon: String,
 }
 
 /// .desktop を探すフォルダ。後のフォルダほど優先(同じ名前の .desktop は後のもので上書き)。
@@ -99,7 +101,13 @@ pub fn list() -> Vec<App> {
                 exec = terminal_cmd(&exec);
             }
             let name = if get("Name").is_empty() { f.clone() } else { get("Name").to_string() };
-            let app = App { name, exec, cls: get("StartupWMClass").to_lowercase(), id: f.trim_end_matches(".desktop").to_string() };
+            let app = App {
+                name,
+                exec,
+                cls: get("StartupWMClass").to_lowercase(),
+                id: f.trim_end_matches(".desktop").to_string(),
+                icon: get("Icon").to_string(),
+            };
             map.insert(f, app);
         }
     }
