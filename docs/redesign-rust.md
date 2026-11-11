@@ -51,7 +51,7 @@ PRELUDE を Electron から Rust に移すにあたっての設計。節の名�
 - **ほぼ全部の機能がコマンドで完結する。** UI(ランチャー・サイドバー)にだけ許された操作は作らない。環境のキーはあってもよいが、それが無いとできない操作も作らない
 
 ### リポジトリ
-- このリポジトリに Cargo のワークスペース(`crates/`)と GPUI の UI のワークスペース(`ui/`)を置く。Electron 版は Rust 版が日常の用途を満たすまでリリースとして残し、満たした時点で消す。`.prelude` の形式とテストを両方で確かめられる(`test/fixtures/format/`)
+- このリポジトリに Cargo のワークスペース(`crates/`)と UI のワークスペース(`ui/`)を置く。Electron 版は Rust 版が日常の用途を満たすまでリリースとして残し、満たした時点で消す。`.prelude` の形式とテストを両方で確かめられる(`test/fixtures/format/`)
 
 ---
 
@@ -244,13 +244,15 @@ Web は全部 Chromium で、PRELUDE は Web エンジンを持たない(Electro
 
 PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の窓の中にペインを並べる形はやめた(窓を並べるのは環境)。バー・通知・OSD・クイック設定は作らず、表示用の出口(`prelude watch` の JSON)だけを出す。
 
-### GPUI
-- UI はすべて GPUI で作る
-  - 付け替えは「部品はトレイト、プログラムはソケット」(下の「付け替え」)なので、実行時に UI の記述を読む仕組み(Slint の `.slint` など)は要らない
-  - **UI の部品にも抽象の決まり(トレイト)がある方がよい**。抜けがビルドの時点で分かる
-  - 技術を 1 つにすると、色・字・共通の部品を 1 つのクレート(`prelude-ui`)にまとめられ、見た目がそろう
-  - GPUI は macOS・Windows でも動くので、ほかの OS への道もふさがない
-- 引き受ける弱み: API が Zed と一緒に変わる、資料が少ない
+### Slint
+- UI はすべて Slint で作る。見た目は `.slint` に書き、ビルドのときに Rust のコードにする(`slint-build`)。コアとのやり取りは Rust(`prelude-proto`)
+- 理由:
+  - 軽い。試作では初回のビルドが 5 分ほど、release の実行ファイルが 29MB(GPUI は 30 分ほど・1 つ 38MB で、Zed のコミットと Rust の版に縛られていた)
+  - 1.x で安定していて、資料が多い。Linux・macOS・Windows で動き、ほかの OS への道もふさがない
+  - 入力欄(日本語入力)・一覧・ボタンなどの部品が最初からある
+  - **決まりを書ける**: 部品の決まりは `.slint` の `global`(表示するもの = `in property`、頼むこと = `callback`)に書く。名前や型の合わない `.slint` はビルドで止まり、使用者が置いた `.slint` を実行時に読むときは、読む前に確かめて断れる(下の「付け替え」)
+- 引き受ける弱み: 見た目を Rust ではなく `.slint` という別の言語で書く
+- GPUI(Zed の UI)でも作ったが、ビルドの重さと Zed への依存から Slint に替えた
 
 ### 部品の約束
 部品は「**何を表示し、何を送るか**」だけを約束として決め、見た目と並べ方は決めない。
@@ -265,19 +267,20 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 ### 付け替え
 | 段 | 付け替えるもの | どうやって |
 |---|---|---|
-| テーマ | 色・字・余白 | `theme.toml`。全部の UI が同じ値を使う(`prelude-ui`) |
-| 部品 | サイドバーなどの中の部品(タブの一覧・ブックマークの木など) | トレイトで差し替える。ビルドが要る |
+| テーマ | 色・字・余白 | `theme.toml`。全部の UI が同じ値を使う |
+| 見た目 | サイドバーなどの見た目と並べ方 | `.slint` を置き換える。決まり(`global`)を満たすかを、組み込むならビルドのとき、使用者が置くなら読み込むときに確かめる |
 | プログラム | ランチャー・サイドバーを丸ごと | ソケットの約束だけでつながるので、別のプログラムに替えられる(fuzzel など) |
 
-### トレイトの版
-- 部品・つなぎのトレイトには版を付けない。一緒にビルドするので、合わないところはビルドの時点でエラーになる
-- 版の決まりが要るのは、別のプログラム同士が話すソケットの約束(`prelude-proto`)だけ
-- 他の人が部品を別のクレートとして配るようになったら、そのときに `prelude-ui` に版の決まりを付ける
+- サイドバーの決まりは `global Prelude`(試作は `proto/slint/ui/prelude.slint`)。表示するもの(つながっているか・スペース・ブックマーク・タブ・細い列か)と、頼むこと(スペースの切り替え・ブックマークを開く・タブの切り替えと閉じる・ランチャーを開く・幅の切り替え)。中身を付けるのは PRELUDE の Rust の側で、`.slint` はこれ以外の方法でコアとやり取りしない
+
+### 決まりの版
+- 窓のつなぎのトレイトと、組み込む `.slint` の決まりには版を付けない。一緒にビルドするので、合わないところはビルドの時点でエラーになる
+- 版の決まりが要るのは、別のプログラム同士が話すソケットの約束(`prelude-proto`)と、使用者が置く `.slint` の決まり(`global`)。`global` は項目を足すだけなら版を上げない(使わない項目があってもよい)
 
 ### ランチャー
 - 本体の一部で、PRELUDE の入口。つなぎが無い環境でもこれだけで使える
 - コアが候補と点数(`item.list`。タブが先、ブックマーク・アプリ・ほかのスペースは履歴の点数の順)を出し、選んだものをコアが開く(`item.open`)。設定・PRELUDE CLI・サイドバーの開閉・分割・閉じるも、ランチャーの COMMANDS から行う
-- 既定は GPUI の `prelude-launcher`。fuzzel などにも替えられる(`prelude items | fuzzel --dmenu | prelude open`)
+- 既定は Slint の `prelude-launcher`。fuzzel などにも替えられる(`prelude items | fuzzel --dmenu | prelude open`)
 - 窓の出し方は環境に合わせる(layer-shell があればそれ、無ければ浮いた普通の窓)
 
 ### サイドバー
@@ -289,22 +292,18 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
   - **ペインではない**。`[layout]` に書かず、タブにも入らない。窓のつなぎは PRELUDE の UI の窓(`prelude-sidebar`・`prelude-launcher`)を「PRELUDE を通さずに開いた窓」として引き取らない
   - 1 つだけ動く。もう動いていれば、`prelude sidebar show` はそのウィンドウを前に出す
 - サイドバーも同じソケットの約束を使う。ほかの人が別のサイドバーを作ることもできる
-- GPUI(`prelude-proto` の上の型付きのクライアント)。PRELUDE と強く結び付いていて、頻繁に付け替えるものではないので、ビルドが要ることは弱みにならない
+- Slint。見た目は `.slint` を置き換えれば変えられる(上の「付け替え」)
 - 幅は「広い」と「細い列」の 2 つで、一番上の PRELUDE の行(つまみ)で切り替える。切り替えると、その幅にウィンドウの大きさを頼む(タイル型の環境では、環境が決めた幅が勝つ)。見た目だけの状態なのでコアには持たせず、サイドバーが `$XDG_STATE_HOME/prelude/sidebar` に覚える(`prelude_proto::sidebar`)。`prelude sidebar toggle` はこのファイルを書き換える
 - 閉じるのはウィンドウを閉じる(プロセスが終わる)。`prelude sidebar hide` も同じ。出すのは `prelude sidebar show`(ランチャーからも)
 
-### GPUI の試作で分かったこと
-この PC(Kubuntu・KDE Plasma 6 の Wayland・Iris Xe)で、`proto/gpui`(サイドバーの形の試作)を動かして確かめた。
+### Slint の試作で分かったこと
+`proto/slint`(サイドバーの形の試作。手順と細かい結果は `proto/slint/README.md`)。
 
-- **GPUI の入手**: crates.io の `gpui` 0.2.2 には layer-shell が無い。Zed のリポジトリの `gpui`・`gpui_platform` をコミットで固定して使う(描画は wgpu)。ルートのワークスペースには入れず、`cargo test` に巻き込まない
-- **ビルド**: 開発用のライブラリが要る(Kubuntu では `pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev libx11-xcb-dev libvulkan-dev cmake clang`)。NixOS では flake の `nix develop` に書く。初回のビルドは Zed のリポジトリの取得を含めて 30 分ほど、実行ファイルは debug で 700MB
-- **layer-shell**: 使える(`WindowKind::LayerShell`)。左・上・下に貼り付け、高さ 0 を渡すと画面の高さいっぱいになる。場所の予約(`exclusive_zone`)は、PRELUDE(Electron 版)が全画面なので、ほかの窓が寄るかはまだ見ていない
-- **フォント**: 指定しなくても、漢字・かな・半角カナ・丸数字・絵文字が出る(fontconfig で代わりのフォントを探す)
-- **1 万件の一覧**: `uniform_list` で見える行だけを描く。作った 1 万件は 5ms、本物のフォルダ(ファイル 1 万件)の読み込みと並べ替えは 15ms で出る
-- **GPU が不調なとき**: **wgpu には GL があり、自分で切り替わる**。Vulkan(Iris Xe)→ Vulkan が無ければ GL(Mesa)→ さらに `LIBGL_ALWAYS_SOFTWARE=1` で llvmpipe(CPU)。どれも同じに描けた。使った GPU はログに出る
-- **日本語入力(fcitx5)**: 普通の窓でも layer-shell のサイドバーでも、変換しながら打てる(変換中の下線・候補の窓・確定)。入力欄は Zed の例(`examples/input.rs`)の `TextInput` をそのまま使った
-- **スクロール**: 1 万件の一覧をホイールで動かしてもカクつかない
-- **結論**: 段階 4 のサイドバーとランチャーは GPUI で作れる。残る心配は「API が Zed と一緒に変わる」で、固定するコミットを上げるときにまとめて直す
+- **決まり**: `global Prelude` の名前を間違える・型を間違える・決まりに無い頼みごとを書くと、ビルドで止まる。実行時に読む `.slint` は、似せた `global` を自分で作ったものも含めて、読み込む前に断れる(`slint-interpreter`)
+- **ビルド**: Slint 1.18.1、Rust 1.92 から。初回の debug が 5 分、release が 4 分 19 秒(4 コア)。release の実行ファイルは 28.8MB(strip で 21.6MB)
+- **字**: ソフトウェア描画でも、漢字・かな・半角カナ・丸数字・絵文字が出る(システムのフォントから探す)
+- **描き方**: OpenGL(femtovg)と CPU(software)を `SLINT_BACKEND` で選べる
+- まだ: 日本語入力(fcitx5)・普通のウィンドウとしての振る舞い・一覧のスクロールを、画面のある PC で確かめる
 
 ---
 
@@ -356,22 +355,21 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 ### 段階
 | 段階 | 中身 | 状態 |
 |---|---|---|
-| 0 | Rust の開発環境、GPUI の試作(`proto/gpui`) | 済(上の「GPUI の試作で分かったこと」) |
+| 0 | Rust の開発環境、UI の試作(`proto/gpui`・`proto/slint`) | 済(上の「Slint の試作で分かったこと」) |
 | 1 | `.prelude`・`space.toml` の TOML(`prelude-format`)。Electron 版も TOML を読み書きする | 済 |
 | 2 | `prelude-core` の骨組み(状態・ソケットの約束・`prelude` コマンド) | 済 |
 | 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(`web.rs`)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済。残り: 段 0〜2 のつなぎの扱い(下の「これから」) |
-| 4 | UI: `prelude-ui`・サイドバー・ランチャー(GPUI) | 済。ランチャーのアイコンはまだ。サイドバーを普通のウィンドウにする(下の「これから」) |
+| 4 | UI: サイドバー・ランチャー・設定 | GPUI で作ったものを Slint で作り直す(下の「これから」) |
 | 5 | ファイラ | 自作のファイラ(`prelude-filer`)を作ったが、外のファイラに任せることにした(下の「これから」) |
 | 6 | 環境とのつなぎ: `prelude watch --bar`(waybar の custom モジュールの形)、作者の環境の NixOS のモジュール(`nix/module.nix`) | 済 |
 | 7 | アプリのダイアログ(`portal.rs`。`OpenFile`・`SaveFile`・`Request.Close`・`filters`(glob だけ)・`current_folder`・`SaveFiles`) | 済。まだ: `choices`(受け取るが出さない)、MIME の型での絞り込み |
 | 8 | 引き継ぎ(`migrate.rs`)、配布、Rust 版をリリースにして Electron 版を消す | 引き継ぎは済(8-a)。残り: 配布の仕上げ(8-b)、Electron 版を消す(8-c) |
 
 ### これから
-0. **UI の技術を見直している**: GPUI の代わりに Slint を試す(`proto/slint`)。サイドバーの決まりは `.slint` の `global` で書き、破るとビルドで止まる。日本語入力などをこの PC で確かめてから、下の「UI」の「GPUI」を書き直す
 1. **ファイラを外す**: コアの `files`・`field` の名指しを消す、`field` を `files` の別名にする、`prelude pane path`、既定の `files` のレシピを yazi に、`ui/prelude-filer`(と `FilerView`)を消す、サイドバーの + の Field と種類の印の `field` を外す、テストの見本(`test/fixtures/format/full.prelude`)から `sort`・`[ui.field]` を外す
 2. **アプリのダイアログ**: 最初のフォルダの優先順を変える、既定の選ぶ画面を yazi(`prelude-choose`)に、ポータルを別のプログラムに分ける
-3. **つなぎ無しでも動く**: つなぎが無くても起動する(段 0。今の `--no-embed` はアプリも起動しない)、タブを論理の単位にして作業領域との対応を sway のつなぎへ寄せる、つなぎが段を名乗る、アプリの一覧を差し替えられる形にする
-4. **サイドバーを普通のウィンドウにする**: `--window` を既定にして layer-shell をやめる、窓のつなぎ(sway・KWin)が `prelude-sidebar`・`prelude-launcher` の窓を引き取らないようにする、`prelude sidebar show`(動いていれば前に出す)、幅の切り替えでウィンドウの大きさを頼む、NixOS のモジュールの起動の断片(層の順番を待つ `sleep`)を外し、左端に置く決まりは作者の rice へ
+3. **つなぎ無しでも動く**: つなぎが無くても起動する(段 0。今の `--no-embed` はアプリも起動しない)、タブを論理の単位にして作業領域との対応を sway のつなぎへ寄せる、つなぎが段を名乗る、窓のつなぎが PRELUDE の UI の窓(`prelude-sidebar`・`prelude-launcher`)を引き取らない、アプリの一覧を差し替えられる形にする
+4. **UI を Slint で作り直す**: サイドバー(普通のウィンドウ。`global Prelude` の決まり、`prelude sidebar show` は動いていれば前に出す、幅の切り替えでウィンドウの大きさを頼む)・ランチャー・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消し、NixOS のモジュールの起動の断片(層の順番を待つ `sleep`)を外し、左端に置く決まりは作者の rice へ。日本語入力を画面のある PC で確かめる
 5. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。移ったフォルダをコアに伝える yazi のプラグインの例を `docs/rice.md` に書く
 6. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
 
