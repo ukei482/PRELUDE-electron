@@ -2,8 +2,8 @@
 //! 使用者がサイドバーなどで頼んだことを、コアが代わりに書く。書くのは今のスペースの中(直下と、その 1 段下のフォルダ)だけ。
 //! 書いたら `bookmarks_rev` を増やし、開いているタブ・閉じたタブ・ランチャーの点数が指すパスも合わせる
 use super::{Core, Fail, Reply, fail, not_found, stem, valid_name};
-use prelude_format::{Bookmark, EXT, file_name};
-use prelude_proto::{ErrorCode, TabRef};
+use prelude_format::{Bookmark, EXT, Node, Space, Value, file_name};
+use prelude_proto::{ErrorCode, FolderInfo, TabRef};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -95,6 +95,22 @@ impl Core {
         for c in self.closed.values_mut().flatten() {
             fix(&mut c.bookmark);
         }
+        // 並び(space.toml の order)も合わせる
+        let root = self.space_dir();
+        let order = self.bookmark_order();
+        let fixed: Vec<String> = order
+            .iter()
+            .filter_map(|rel| match map(&s(&root.join(rel))) {
+                None => Some(rel.clone()),
+                Some(None) => None,
+                Some(Some(np)) => Path::new(&np).strip_prefix(&root).ok().map(s),
+            })
+            .collect();
+        if fixed != order {
+            if let Err(e) = self.write_order(fixed) {
+                eprintln!("prelude-core: cannot update the bookmark order ({})", e.1);
+            }
+        }
         let keys: Vec<String> = self.history.keys().filter(|k| k.strip_prefix("bookmark:").is_some_and(|p| map(p).is_some())).cloned().collect();
         for k in keys {
             let v = self.history.remove(&k).unwrap();
@@ -103,6 +119,89 @@ impl Core {
             }
         }
         self.bookmarks_rev += 1;
+    }
+
+    /// 並べ替えた順(space.toml の order。スペースのフォルダからの相対パス)
+    pub(super) fn bookmark_order(&self) -> Vec<String> {
+        match self.space_conf().rest.get("order") {
+            Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+            _ => vec![],
+        }
+    }
+
+    /// 並びを space.toml の order に書く(ほかの項目は残す)。読めない space.toml は上書きしない
+    fn write_order(&self, order: Vec<String>) -> Result<(), Fail> {
+        let file = self.space_dir().join(Space::FILE);
+        let mut space = match std::fs::read_to_string(&file) {
+            Ok(t) => Space::parse(&t).map_err(|_| fail(ErrorCode::BadRequest, format!("{} cannot be read", Space::FILE)))?,
+            Err(_) => Space::default(),
+        };
+        if order.is_empty() {
+            space.rest.remove("order");
+        } else {
+            space.rest.insert("order".into(), Value::Array(order.into_iter().map(Value::String).collect()));
+        }
+        let tmp = file.with_extension("toml.tmp");
+        std::fs::write(&tmp, space.to_toml(&self.home)).map_err(io)?;
+        std::fs::rename(&tmp, &file).map_err(io)
+    }
+
+    /// ブックマークの種類(1 つのペインならその種類、分割していれば layout)。更新時刻が同じなら読み直さない
+    pub(super) fn bookmark_kind(&self, path: &str) -> String {
+        let Ok(mtime) = std::fs::metadata(path).and_then(|m| m.modified()) else { return String::new() };
+        if let Some((t, k)) = self.kinds.borrow().get(path) {
+            if *t == mtime {
+                return k.clone();
+            }
+        }
+        let kind = match self.read_bookmark(path).map(|b| b.layout) {
+            Ok(Node::Leaf(l)) => crate::recipes::alias(&l.kind).to_string(),
+            Ok(Node::Split { .. }) => "layout".to_string(),
+            Err(_) => String::new(),
+        };
+        self.kinds.borrow_mut().insert(path.to_string(), (mtime, kind.clone()));
+        kind
+    }
+
+    /// ブックマークのフォルダ(スペースの直下の、隠しでないフォルダ。空のものも)。名前順
+    pub(super) fn folders(&self) -> Vec<FolderInfo> {
+        let dir = self.space_dir();
+        let mut out: Vec<FolderInfo> = std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| !n.starts_with('.'))
+            .map(|n| FolderInfo { path: s(&dir.join(&n)), title: n })
+            .collect();
+        out.sort_by(|a, b| a.title.cmp(&b.title));
+        out
+    }
+
+    pub(super) fn bookmark_reorder(&mut self, path: &str, before: &str) -> Reply {
+        let p = self.space_bookmark(path)?;
+        let root = self.space_dir();
+        let rel = |q: &Path| q.strip_prefix(&root).map(s).unwrap_or_default();
+        let folder = |q: &Path| q.parent().map(|d| rel(d)).unwrap_or_default();
+        // 今の並び(全部)。動かすものを抜いて、before の前(無ければ同じフォルダの最後)に入れる
+        let mut all: Vec<String> = self.bookmarks().iter().map(|b| rel(Path::new(&b.path))).collect();
+        let me = rel(&p);
+        all.retain(|r| *r != me);
+        let at = if before.is_empty() {
+            let f = folder(&p);
+            all.iter().rposition(|r| folder(&root.join(r)) == f).map_or(all.len(), |i| i + 1)
+        } else {
+            let b = self.space_bookmark(before)?;
+            if folder(&b) != folder(&p) {
+                return Err(fail(ErrorCode::BadRequest, "Bookmarks in different folders cannot be reordered; move it first"));
+            }
+            all.iter().position(|r| *r == rel(&b)).ok_or_else(|| not_found("bookmark"))?
+        };
+        all.insert(at, me);
+        self.write_order(all)?;
+        self.bookmarks_rev += 1;
+        Ok(serde_json::Value::Null)
     }
 
     pub(super) fn bookmark_save(&mut self, tab: Option<TabRef>, title: &str, folder: &str) -> Reply {

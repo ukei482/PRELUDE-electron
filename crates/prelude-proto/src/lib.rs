@@ -128,6 +128,16 @@ pub enum Command {
     /// ブックマークをゴミ箱へ移す。開いていたタブはそのまま残り、ブックマークとの結び付きだけが外れる
     #[serde(rename = "bookmark.trash")]
     BookmarkTrash { path: String },
+    /// ブックマークの並びを変える。before の前に置く(同じフォルダのもの。空なら最後)。並びは `space.toml` の `order` に書く
+    #[serde(rename = "bookmark.reorder")]
+    BookmarkReorder {
+        path: String,
+        #[serde(default)]
+        before: String,
+    },
+    /// ブックマークのフォルダの一覧(空のフォルダも) → `[FolderInfo]`(名前順)
+    #[serde(rename = "folder.list")]
+    FolderList {},
     /// スペースの直下にブックマークのフォルダを作る → パス
     #[serde(rename = "folder.create")]
     FolderCreate { name: String },
@@ -470,6 +480,19 @@ pub struct BookmarkInfo {
     pub title: String,
     /// ブックマークのフォルダ(スペースの直下なら空)
     pub folder: String,
+    /// 並びの番号(1 から。ランチャーの b3 と同じ)。並びはスペースの直下 → フォルダの名前の順で、その中は並べ替えた順 → 題名の順
+    #[serde(default)]
+    pub num: u32,
+    /// 1 つのペインならその種類(web・app・files など)、分割していれば layout。読めなければ空
+    #[serde(default)]
+    pub kind: String,
+}
+
+/// ブックマークのフォルダ(`folder.list`)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderInfo {
+    pub path: String,
+    pub title: String,
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! prelude コマンド。コアのソケット(prelude-proto)につないで、状態を見る・操作する。
 //! 画面の文は Electron 版に合わせて英語。外のスクリプトからは `prelude raw` と `prelude watch` で JSON をそのまま使える。
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Client, Incoming, Item, RecipeInfo, State};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Client, FolderInfo, Incoming, Item, RecipeInfo, State};
 use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ usage: prelude <command> [args]
   pane path [--pane <id>] <folder>
                          Tell the core where a pane is now (e.g. the folder a file manager moved to), so the tab reopens there.
                          The pane defaults to $PRELUDE_PANE (set for programs PRELUDE starts in a pane), then the current pane
-  open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name
+  open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name or number (b3)
                          (--run: also run commands that do not match an installed app)
   open [--run]           Read one line from stdin: a line of `prelude items`, or a target as above
   items [--json]         Launcher items: tabs, then bookmarks, apps and spaces by score
@@ -41,7 +41,9 @@ usage: prelude <command> [args]
   bookmark rename <bookmark> <title>
   bookmark move <bookmark> [<folder>]  Move a bookmark into <folder> (default: the top of the space)
   bookmark trash <bookmark>          Move a bookmark to the trash
+  bookmark reorder <bookmark> [<before>]  Put a bookmark before <before> (same folder; default: last)
                          <bookmark> is a .prelude path or a name as `prelude bookmarks` shows it (folder/title)
+  folders                List bookmark folders of this space (empty ones too)
   folder new <name>      Create a bookmark folder in this space
   folder rename <folder> <name>
   folder remove <folder> Remove a bookmark folder; its contents move to the top of the space
@@ -180,6 +182,12 @@ fn open(c: &mut Client, target: &str, run: bool) -> Result<(), String> {
     }
     let url_like = target.contains("://") || (!target.contains(' ') && !target.starts_with('/') && target.contains('.') && !p.exists());
     let list: Vec<BookmarkInfo> = serde_json::from_value(c.call("bookmark.list", json!({}))?).map_err(|e| e.to_string())?;
+    // b3: 並びの番号(ランチャーと同じ)
+    if let Some(n) = target.strip_prefix('b').and_then(|n| n.parse::<u32>().ok()) {
+        if let Some(b) = list.iter().find(|b| b.num == n) {
+            return open_bookmark(c, &b.path.clone(), run);
+        }
+    }
     let lower = target.to_lowercase();
     let hit =
         list.iter().find(|b| b.title.to_lowercase() == lower).or_else(|| list.iter().find(|b| b.title.to_lowercase().starts_with(&lower)));
@@ -583,6 +591,21 @@ fn run(args: &[String]) -> Result<(), String> {
             let path = bookmark_path(&mut c, b)?;
             c.call("bookmark.trash", json!({ "path": path }))?;
         }
+        ["bookmark", "reorder", b] | ["bookmark", "reorder", b, _] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            let before = match a.get(3) {
+                Some(x) => bookmark_path(&mut c, x)?,
+                None => String::new(),
+            };
+            c.call("bookmark.reorder", json!({ "path": path, "before": before }))?;
+        }
+        ["folders"] => {
+            let list: Vec<FolderInfo> = serde_json::from_value(Conn::open(false)?.call("folder.list", json!({}))?).map_err(|e| e.to_string())?;
+            for f in list {
+                println!("  {}", f.title);
+            }
+        }
         ["folder", "new", name] => {
             println!("{}", Conn::open(false)?.call("folder.create", json!({ "name": name }))?.as_str().unwrap_or(""));
         }
@@ -601,7 +624,7 @@ fn run(args: &[String]) -> Result<(), String> {
                 serde_json::from_value(Conn::open(false)?.call("bookmark.list", json!({}))?).map_err(|e| e.to_string())?;
             for b in list {
                 let name = if b.folder.is_empty() { b.title } else { format!("{}/{}", b.folder, b.title) };
-                println!("  {name}");
+                println!("  {:>4}  {name}", format!("b{}", b.num));
             }
         }
         ["paths"] | ["paths", _] => {

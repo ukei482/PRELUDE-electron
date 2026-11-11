@@ -619,6 +619,54 @@ fn ブックマークを書く_保存_上書き_名前_移動_ゴミ箱() {
 }
 
 #[test]
+fn ブックマークの並び_番号_種類_フォルダの一覧() {
+    let root = spaces("bmorder");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(dir.join("執筆")).unwrap();
+    std::fs::create_dir_all(dir.join("空")).unwrap();
+    std::fs::write(dir.join("space.toml"), "[paths]\nfiles = \"/data\"\n").unwrap();
+    let leaf = |t: &str| format!("version = 2\n[layout]\nk = \"leaf\"\ntype = \"{t}\"\n");
+    std::fs::write(dir.join("a.prelude"), leaf("web")).unwrap();
+    std::fs::write(dir.join("b.prelude"), leaf("field")).unwrap();
+    std::fs::write(dir.join("c.prelude"), "version = 2\n[layout]\nk = \"split\"\n[layout.a]\nk = \"leaf\"\ntype = \"web\"\n[layout.b]\nk = \"leaf\"\ntype = \"app\"\n").unwrap();
+    std::fs::write(dir.join("執筆/図.prelude"), leaf("app")).unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    let d = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let list = |c: &mut Core| -> Vec<(String, u32, String)> {
+        let v: Vec<prelude_proto::BookmarkInfo> = serde_json::from_value(ok(c, Command::BookmarkList {})).unwrap();
+        v.into_iter().map(|b| (if b.folder.is_empty() { b.title } else { format!("{}/{}", b.folder, b.title) }, b.num, b.kind)).collect()
+    };
+    // 直下 → フォルダの名前の順、その中は題名の順。番号は並びの順。種類は 1 つのペインならその種類(field は files)、分割は layout
+    assert_eq!(
+        list(&mut c),
+        vec![("a".into(), 1, "web".into()), ("b".into(), 2, "files".into()), ("c".into(), 3, "layout".into()), ("執筆/図".into(), 4, "app".into())]
+    );
+    // 空のフォルダも一覧に出る
+    let folders: Vec<prelude_proto::FolderInfo> = serde_json::from_value(ok(&mut c, Command::FolderList {})).unwrap();
+    assert_eq!(folders.iter().map(|f| f.title.as_str()).collect::<Vec<_>>(), vec!["執筆", "空"]);
+    assert_eq!(folders[0].path, d("執筆"));
+
+    // 並べ替え: c を a の前へ、a を最後へ
+    let o = c.handle(Command::BookmarkReorder { path: d("c.prelude"), before: d("a.prelude") });
+    assert!(o.changed && o.reply.is_ok());
+    ok(&mut c, Command::BookmarkReorder { path: d("a.prelude"), before: String::new() });
+    let names = |c: &mut Core| list(c).into_iter().map(|x| x.0).collect::<Vec<_>>();
+    assert_eq!(names(&mut c), vec!["c", "b", "a", "執筆/図"]);
+    // space.toml のほかの項目は残る
+    let conf = std::fs::read_to_string(dir.join("space.toml")).unwrap();
+    assert!(conf.contains("files = \"/data\"") && conf.contains("order"), "{conf}");
+    // 違うフォルダのものの前には置けない
+    assert_eq!(c.handle(Command::BookmarkReorder { path: d("a.prelude"), before: d("執筆/図.prelude") }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    // 名前を変えても、並びの位置は変わらない
+    ok(&mut c, Command::BookmarkRename { path: d("b.prelude"), title: "z".into() });
+    assert_eq!(names(&mut c), vec!["c", "z", "a", "執筆/図"]);
+    // ファイルを書き換えたら種類も読み直す
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(dir.join("a.prelude"), leaf("app")).unwrap();
+    assert_eq!(list(&mut c)[2].2, "app");
+}
+
+#[test]
 fn ダイアログの最初のフォルダは書いてあるときだけ() {
     let root = spaces("dialog");
     let dir = root.join(SPACE_DEFAULT);

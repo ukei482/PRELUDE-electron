@@ -361,6 +361,8 @@ pub struct Core {
     closed: BTreeMap<String, Vec<Closed>>,
     /// ブックマークのファイルを書いた回数(状態の bookmarks_rev)
     bookmarks_rev: u64,
+    /// ブックマークの種類(パス → 更新時刻と種類)。一覧のたびに全部を読まないため
+    kinds: std::cell::RefCell<HashMap<String, (std::time::SystemTime, String)>>,
     /// ゴミ箱(テストで差し替える)
     trash_dir: PathBuf,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
@@ -404,6 +406,7 @@ impl Core {
             backend: Windows::default(),
             closed: BTreeMap::new(),
             bookmarks_rev: 0,
+            kinds: Default::default(),
             trash_dir: crate::trash::dir(),
             stopped: HashSet::new(),
             titles: HashMap::new(),
@@ -825,6 +828,8 @@ impl Core {
             Command::BookmarkRename { path, title } => self.bookmark_rename(&path, &title),
             Command::BookmarkMove { path, folder } => self.bookmark_move(&path, &folder),
             Command::BookmarkTrash { path } => self.bookmark_trash(&path),
+            Command::BookmarkReorder { path, before } => self.bookmark_reorder(&path, &before),
+            Command::FolderList {} => Ok(json!(self.folders())),
             Command::FolderCreate { name } => self.folder_create(&name),
             Command::FolderRename { path, name } => self.folder_rename(&path, &name),
             Command::FolderRemove { path } => self.folder_remove(&path),
@@ -1111,6 +1116,8 @@ impl Core {
                             path: e.path().to_string_lossy().into_owned(),
                             title: title.into(),
                             folder: folder.into(),
+                            num: 0,
+                            kind: String::new(),
                         });
                     }
                 }
@@ -1120,7 +1127,15 @@ impl Core {
         for sub in read(&dir, "", &mut out) {
             read(&dir.join(&sub), &sub, &mut out);
         }
-        out.sort_by(|a, b| (&a.folder, &a.title).cmp(&(&b.folder, &b.title)));
+        // スペースの直下 → フォルダの名前の順。その中は並べ替えた順(space.toml の order)→ 題名の順
+        let order = self.bookmark_order();
+        let rel = |b: &BookmarkInfo| Path::new(&b.path).strip_prefix(&dir).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let pos = |b: &BookmarkInfo| order.iter().position(|o| *o == rel(b)).unwrap_or(usize::MAX);
+        out.sort_by(|a, b| (&a.folder, pos(a), &a.title).cmp(&(&b.folder, pos(b), &b.title)));
+        for (i, b) in out.iter_mut().enumerate() {
+            b.num = i as u32 + 1;
+            b.kind = self.bookmark_kind(&b.path);
+        }
         out
     }
 
