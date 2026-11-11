@@ -98,7 +98,8 @@ in
 
   config = lib.mkIf cfg.enable {
     # Web のペインは Chromium そのもの(「Web のペイン」。無いときの扱いは作らない)
-    environment.systemPackages = [ cfg.package pkgs.chromium ] ++ lib.optional cfg.ui.enable cfg.ui.package;
+    # 既定のファイラ(files のペイン)とアプリのダイアログの選ぶ画面(prelude choose)は、端末の中の yazi
+    environment.systemPackages = [ cfg.package pkgs.chromium pkgs.yazi ] ++ lib.optional cfg.ui.enable cfg.ui.package;
 
     systemd.user.services.prelude-core = {
       description = "PRELUDE のコア";
