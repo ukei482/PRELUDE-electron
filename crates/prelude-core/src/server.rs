@@ -5,7 +5,7 @@
 //! - ソケットは自分だけが使えるようにする(フォルダ 0700・ソケット 0600)
 use crate::compositor::{self, Compositor, Note};
 use crate::state::{Core, Saved};
-use crate::{portal, recipes, web};
+use crate::{recipes, web};
 use prelude_proto::{Command, ErrorCode, Event, Hello, PaneSpec, Request, Response, TabRef, WebAction, MAX_LINE, PROTOCOL, SUPPORTED};
 use serde_json::{json, Value};
 use std::future::Future;
@@ -84,6 +84,14 @@ impl Shared {
     }
 }
 
+/// ダイアログのポータル(`prelude-core --portal`)を子のプロセスとして起動する。同じソケットにつなぐ
+fn spawn_portal(socket: &Path) -> Option<tokio::process::Child> {
+    let exe = std::env::current_exe().ok()?;
+    let mut c = tokio::process::Command::new(exe);
+    c.arg("--portal").env("PRELUDE_CORE_SOCK", socket).stdin(std::process::Stdio::null()).kill_on_drop(true);
+    c.spawn().map_err(|e| eprintln!("prelude-core: cannot start the file chooser portal ({e})")).ok()
+}
+
 /// ブックマークのフォルダを見る間隔
 const BOOKMARK_POLL: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -157,15 +165,9 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     // 前回のタブのアプリを起動し直す
     shared.sync_embed(&shared.core.lock().unwrap());
 
-    // アプリの「開く」「保存」のダイアログ(接続を持っている間だけ受ける)
-    let _portal = if opt.embed {
-        let shared = shared.clone();
-        let file = opt.recipes_dir.parent().map(|d| d.join("chooser.toml")).unwrap_or_default();
-        let folder_of: portal::FolderOf = Arc::new(move |save| shared.core.lock().unwrap().dialog_folder(save));
-        portal::start(&tag, portal::load(&file), folder_of).await
-    } else {
-        None
-    };
+    // アプリの「開く」「保存」のダイアログのポータル。別のプロセスにして、最初のフォルダはソケットで聞かせる。
+    // コアが終わるときに止める(kill_on_drop)
+    let _portal = if opt.embed { spawn_portal(&opt.socket) } else { None };
 
     // 取り込みからの知らせ(窓が閉じた・題名が変わった)を状態に入れる
     let noter = {

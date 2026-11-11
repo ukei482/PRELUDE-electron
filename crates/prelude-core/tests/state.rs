@@ -823,6 +823,11 @@ fn ダイアログの最初のフォルダは書いてあるときだけ() {
     c = Core::new(HOME, &root, None);
     assert_eq!(c.dialog_folder(false).as_deref(), Some("/data"));
     assert_eq!(c.dialog_folder(true).as_deref(), Some("/data/out"));
+    // ポータル(別のプロセス)はソケットの dialog.folder で聞く
+    assert_eq!(ok(&mut c, Command::DialogFolder { save: true }), json!("/data/out"));
+    std::fs::remove_file(dir.join("space.toml")).unwrap();
+    c = Core::new(HOME, &root, None);
+    assert_eq!(ok(&mut c, Command::DialogFolder { save: false }), Value::Null);
 }
 
 // ------------------------------------------------------------------ コンポジタの並びを受け取る

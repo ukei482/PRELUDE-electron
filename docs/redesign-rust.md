@@ -233,7 +233,7 @@ Web は全部 Chromium で、PRELUDE は Web エンジンを持たない(Electro
 
 アプリの「開く」「保存」のダイアログの最初のフォルダを、今のブックマークの paths にする。xdg-desktop-portal のある環境だけのつなぎ。
 
-- xdg-desktop-portal の FileChooser のバックエンド(`portal.rs`)。コアが決めるのは最初のフォルダだけで、選ぶ画面は `~/.config/prelude/chooser.toml` のプログラム。これから、ポータルはコアに聞く小さな別のプログラムに分ける
+- xdg-desktop-portal の FileChooser のバックエンド(`portal.rs`)は、コアとは別のプロセス(`prelude-core --portal`。コアが起動のときに子として起動し、終わるときに止める)。最初のフォルダはコアのソケットの `dialog.folder` で聞くだけで、コアが動いていなければアプリが頼んだフォルダを使う。選ぶ画面は `~/.config/prelude/chooser.toml` のプログラム
 - 最初のフォルダは「保存し直すファイル(`current_file`)のフォルダ → 今のブックマークの `paths.save` / `paths.open` → アプリが渡した `current_folder` → ホーム」の順(アプリが前回のフォルダを渡しても、ブックマークの保存先が効くように)
 - **選ぶ画面の既定は yazi**(スクリプト `prelude-choose`)。`{mode}`・`{path}`・`{name}`・`{output}` を受け、`konsole -e yazi --chooser-file {output} {path}` を起動する。選ぶ画面の窓は `PRELUDE_DIALOG=1` で見分けて浮かせる
   - 保存: yazi には新しい名前を打つ画面が無いので、xdg-desktop-portal-termfilechooser と同じく、最初のフォルダに保存する名前の仮のファイルを置いて yazi で選んでもらう(名前を変えても、別のフォルダへ移ってもよい)。終わったら・取り消したら仮のファイルを消す
@@ -394,14 +394,15 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | 8 | 引き継ぎ(`migrate.rs`)、配布、Rust 版をリリースにして Electron 版を消す | 引き継ぎは済(8-a)。残り: 配布の仕上げ(8-b)、Electron 版を消す(8-c) |
 
 ### これから
-済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目
+済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目、ブックマークのフォルダの監視、ダイアログのポータルを別のプロセスに(`prelude-core --portal`)、CI で Rust のテスト・clippy・整形
+
+- 画面のある PC で確かめること: `prelude choose` の保存・フォルダを選ぶ操作、yazi のプラグインの例、拡張機能の消音とファビコン
 
 1. **Slint で layer-shell を使えるかの試作**: `proto/slint` に、Slint の自前のプラットフォーム + smithay-client-toolkit の layer-shell の面を足す。左端に貼り付く・場所を予約する・幅を変える・日本語入力・キーボード(名前の変更のときだけ取る)を確かめる。だめなら普通のウィンドウで出し、コンポジタの決まりで端に固定する
 2. **UI を Slint で作り直す**: サイドバー(部品ごとの決まり)・ランチャー(状態の `windows.level` が 1 以上のときだけ分割で開くを出す)・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消す。日本語入力を画面のある PC で確かめる
-3. **ダイアログのポータルを別のプログラムに分ける**(コアに最初のフォルダを聞くだけにする)。`prelude choose` の保存・フォルダを選ぶ操作を、画面のある PC で確かめる
-4. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
-5. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
-6. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
+3. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
+4. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
+5. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
 
 - テストの見本(`test/fixtures/format/full.prelude`)の `sort`・`[ui.field]` は残す。「知らない項目を残す」と「古いファイルも読める」を確かめるテストになっている
 

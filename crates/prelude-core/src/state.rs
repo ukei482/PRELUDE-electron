@@ -1045,6 +1045,7 @@ impl Core {
                 }
                 Ok(Json::Null)
             }
+            Command::DialogFolder { save } => Ok(json!(self.dialog_folder(save))),
             Command::WebMute { pane, on } => {
                 let (_, l) = self.find_pane(pane)?;
                 if Self::web_url(l).is_none() {

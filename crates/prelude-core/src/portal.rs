@@ -1,5 +1,9 @@
 //! xdg-desktop-portal の FileChooser のバックエンド(docs/redesign-rust.md の「アプリのダイアログ」、移行の段階 7)。
 //!
+//! - コアとは別のプロセス(`prelude-core --portal`。コアが起動のときに子として起動する)。最初のフォルダはコアのソケットの
+//!   `dialog.folder` で聞くだけ。コアが動いていなければ、アプリが頼んだフォルダ(無ければホーム)を使う。
+//!   ポータルが落ちてもコアは巻き込まれず、コアが起動し直しても、残ったポータルはそのまま使える
+//!
 //! - アプリの「開く」「保存」のダイアログを受ける。コアが決めるのは最初のフォルダ(今のタブの paths の `open` / `save`)だけ
 //! - 選ぶ画面は別のプログラム。`~/.config/prelude/chooser.toml` の `run` で替えられる(既定は `prelude choose …`。端末の中の yazi)。
 //!   置き換えられるのは `{mode}`(`open`・`open-multiple`・`directory`・`save`)、`{path}`(最初のフォルダ)、`{name}`(保存の名前)、
@@ -322,6 +326,24 @@ impl FileChooser {
     }
 }
 
+/// 今のタブの paths の最初のフォルダを、コアのソケット(`dialog.folder`)で聞く。コアが動いていなければ None
+fn ask_core(save: bool) -> Option<String> {
+    let mut c = prelude_proto::Client::connect("prelude-portal", false).ok()?;
+    c.call("dialog.folder", serde_json::json!({ "save": save })).ok()?.as_str().map(str::to_string)
+}
+
+/// `prelude-core --portal`: ポータルのプロセス。D-Bus の名前の印は、つなぐソケット(`PRELUDE_CORE_SOCK`)から作る。
+/// 名前が取れなければ(ほかのポータルが動いている)1 で終わる → 終わりの番号
+pub async fn serve() -> i32 {
+    let tag = crate::server::instance_tag(&prelude_proto::socket_path());
+    let file = crate::recipes::dir().parent().map(|d| d.join("chooser.toml")).unwrap_or_default();
+    let folder_of: FolderOf = Arc::new(ask_core);
+    match start(&tag, load(&file), folder_of).await {
+        Some(_conn) => std::future::pending::<i32>().await,
+        None => 1,
+    }
+}
+
 /// ポータルのバックエンドを始める。D-Bus に繋がらない・名前が取れなければ None(動かない理由は出す)
 pub async fn start(tag: &str, recipe: Recipe, folder_of: FolderOf) -> Option<zbus::Connection> {
     let runtime = std::env::var("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir()).join("prelude");
@@ -332,7 +354,7 @@ pub async fn start(tag: &str, recipe: Recipe, folder_of: FolderOf) -> Option<zbu
     match conn {
         Ok(c) => Some(c),
         Err(e) => {
-            eprintln!("prelude-core: file chooser portal unavailable ({e})");
+            eprintln!("prelude-core --portal: file chooser portal unavailable ({e})");
             None
         }
     }

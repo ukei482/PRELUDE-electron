@@ -223,6 +223,11 @@ pub enum Command {
     #[serde(rename = "web.go")]
     WebGo { pane: u64, action: WebAction },
 
+    /// アプリのダイアログの最初のフォルダ(今のタブの paths の `save`、save でなければ `open`)。
+    /// ブックマークにもスペースにも書いていなければ null(ダイアログのポータルは、アプリが頼んだフォルダを使う)
+    #[serde(rename = "dialog.folder")]
+    DialogFolder { save: bool },
+
     /// Web のペインの音を消す・戻す。書き出さない(Chromium を起動し直しても、コアが動いている間は消したまま)
     #[serde(rename = "web.mute")]
     WebMute { pane: u64, on: bool },

@@ -26,6 +26,11 @@ fn main() {
         }
         return;
     }
+    // アプリのダイアログのポータル(portal.rs)。コアが子のプロセスとして起動する
+    if std::env::args().nth(1).as_deref() == Some("--portal") {
+        let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio runtime");
+        std::process::exit(rt.block_on(prelude_core::portal::serve()));
+    }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     if env_path("PRELUDE_CORE_SOCK").is_none() {
         match migrate::run(&migrate::Places::of(&home)) {

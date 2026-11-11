@@ -17,6 +17,7 @@
   - ブックマークの並びと番号: `bookmark.reorder`(並べ替えた順は `space.toml` の `order`。名前の変更・移動にも付いていく)。`bookmark.list` に `num`(ランチャーの b3 と同じ番号)と `kind`(1 つのペインならその種類、分割なら layout)。空のフォルダも出す `folder.list`。コマンドは `prelude bookmark reorder`・`prelude folders`・`prelude open b3`。`prelude bookmarks` は番号も出す
   - 消音とアイコン: `web.mute`(書き出さない。Chromium を起動し直してもかけ直す)。配置のペインに `icon`(アプリは `.desktop` のアイコン、Web は拡張機能が送るファビコンを `~/.cache/prelude/favicons` に保存したもの)と `muted`。コマンドは `prelude mute <pane> [on|off]`
   - NixOS のモジュール(`services.prelude`)が yazi も入れる(既定のファイラとダイアログの選ぶ画面に使う)
+  - アプリのダイアログのポータルを別のプロセスにした(`prelude-core --portal`。コアが子として起動し、終わるときに止める)。最初のフォルダはソケットの `dialog.folder` で聞き、コアが動いていなければアプリが頼んだフォルダを使う。ポータルが落ちてもコアは巻き込まれない
   - ブックマークのフォルダの監視: ファイラなどで外から `.prelude` を足す・消す・書き換えると、2 秒以内に状態の知らせ(`bookmarks_rev`)を配る。中身の印を比べる形で、OS の監視の仕組みには頼らない
 - Rust 版(sway)の使いやすさ。ふだんの PRELUDE(Electron 版)には入らない
   - この PC の rice(`nix/rice.nix`): 通知を mako から swaync に替えた。バーの Wi-Fi・電池・音量・時計を押すと、通知(× で消す・全部消す・通知を止める)とクイック設定(音量・明るさ・Wi-Fi と Bluetooth の入/切・スクリーンショット・ロック・スリープ・ログアウト・再起動・シャットダウン)が開く。Wi-Fi の一覧はトレイの nm-applet
