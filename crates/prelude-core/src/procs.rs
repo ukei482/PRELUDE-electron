@@ -74,9 +74,22 @@ pub fn fresh_pids(cmd: &str, launched_at: f64) -> Vec<u32> {
         .collect()
 }
 
+/// プロセスが動いているか。終わったのに親がまだ片付けていないもの(ゾンビ)は、動いていないとみなす
+/// (親を失ったプロセスを片付けない PID 1 の下では、止めたプロセスがゾンビのまま残る)
 pub fn alive(pid: u32) -> bool {
     // SAFETY: シグナル 0 は送らずに、プロセスがあるかだけ確かめる
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    if unsafe { libc::kill(pid as i32, 0) } != 0 {
+        return false;
+    }
+    !is_zombie(pid)
+}
+
+/// /proc/<pid>/stat の状態が Z か(題名に空白や括弧があっても、最後の `)` の後ろを見る)
+fn is_zombie(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|s| s.rfind(')').map(|i| s[i + 1..].trim_start().starts_with('Z')))
+        .unwrap_or(false)
 }
 
 /// 終了の合図を送る。権限が無ければ(snap のアプリなど)false

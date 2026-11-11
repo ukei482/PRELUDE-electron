@@ -204,9 +204,9 @@ fn leaf_title(l: &Leaf) -> String {
             let u = l.str("url");
             u.split("://").nth(1).unwrap_or(u).split('/').next().unwrap_or("").to_string()
         }
-        "files" | "field" => base(l.str("path")),
         "app" => l.str("name").to_string(),
-        _ => String::new(),
+        // ほかの種類は、場所(path)があればその最後の名前。種類は名指ししない
+        _ => base(l.str("path")),
     };
     if s.is_empty() {
         l.kind.clone()
@@ -592,7 +592,7 @@ impl Core {
                 }
                 let (cmd, cls) = if l.kind == "app" {
                     (l.str("cmd").to_string(), l.str("cls").to_string())
-                } else if let Some(r) = self.recipes.iter().find(|r| r.kind == l.kind) {
+                } else if let Some(r) = recipes::find(&self.recipes, &l.kind) {
                     let p = paths.get_or_insert_with(|| self.paths(Some(t)));
                     let get = |k: &str| p.get(k).and_then(Json::as_str).unwrap_or(&self.home).to_string();
                     // {path} はペインのフォルダ(ファイラの枠)。無ければ paths の files。
@@ -1067,7 +1067,8 @@ impl Core {
         let mut layout = Layout::from_node(bm.layout, &mut 0);
         if let Some(files) = files {
             for (id, l) in layout.panes().into_iter().map(|(id, l)| (id, l.clone())).collect::<Vec<_>>() {
-                if matches!(l.kind.as_str(), "files" | "field") && l.str("path").is_empty() {
+                // 場所(`{path}`)を使うレシピのペインで、ブックマークに path が無ければ、paths の files から始める
+                if recipes::find(&self.recipes, &l.kind).is_some_and(recipes::uses_path) && l.str("path").is_empty() {
                     if let Some(l) = layout.leaf_mut(id) {
                         l.fields.insert("path".into(), files.clone().into());
                     }

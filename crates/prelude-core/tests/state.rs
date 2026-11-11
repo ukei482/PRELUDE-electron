@@ -149,6 +149,7 @@ fn ブックマークを開く_paths_は_ブックマーク_スペースの順()
     std::fs::write(dir.join("壊れた.prelude"), "not = = toml").unwrap();
     std::fs::write(dir.join(".隠し.prelude"), "").unwrap();
     let mut c = Core::new(HOME, &root, None);
+    c.set_recipes(prelude_core::recipes::load(std::path::Path::new("/nonexistent"))); // 既定のレシピ(files は {path} を使う)
 
     let list = ok(&mut c, Command::BookmarkList {});
     let names: Vec<(String, String)> =
@@ -159,7 +160,7 @@ fn ブックマークを開く_paths_は_ブックマーク_スペースの順()
     let id = ok(&mut c, Command::BookmarkOpen { path: path.clone(), allow: vec![] })["tab"].clone();
     let s = state(&c);
     assert_eq!((s.tabs[0].title.as_str(), s.tabs[0].bookmark.as_deref()), ("本文", Some(path.as_str())));
-    // パスの無いフォルダのペインは files(ここではスペースの既定)で開く
+    // 場所({path})を使うレシピのペインに path が無ければ、files(ここではスペースの既定)で開く。タブの名前はその最後の名前
     assert_eq!(s.tabs[0].layout["a"]["path"], json!("/data/論文"));
     // もう開いていれば同じタブ(1 ブックマーク = 最大 1 タブ)
     ok(&mut c, Command::TabOpen { pane: web("https://other/"), index: None });
@@ -445,7 +446,7 @@ fn コンポジタに渡す配置の木() {
 }
 
 #[test]
-fn ファイラの枠_ペインのフォルダか_paths_の_files() {
+fn ファイラ_ペインのフォルダか_paths_の_files() {
     let root = spaces("filer");
     let dir = root.join(SPACE_DEFAULT);
     std::fs::create_dir_all(&dir).unwrap();
@@ -473,6 +474,27 @@ fn ファイラの枠_ペインのフォルダか_paths_の_files() {
     f.insert("path".into(), json!("/work/src"));
     ok(&mut c, Command::PaneUpdate { pane: a, fields: f });
     assert!(c.wants()[0].cmd.ends_with("'/work/src'"));
+}
+
+#[test]
+fn ファイラは_yazi_field_は_files_の別名_名前は_path_から() {
+    let root = spaces("yazi");
+    std::fs::create_dir_all(root.join(SPACE_DEFAULT)).unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    let mut list = prelude_core::recipes::load(std::path::Path::new("/nonexistent"));
+    // 自分で足したレシピでも、場所(path)を持てば、その最後の名前がタブの名前になる
+    list.push(Recipe { kind: "photos".into(), name: "写真".into(), run: "viewer {path}".into(), class: String::new() });
+    c.set_recipes(list);
+    let spec = |v: Value| serde_json::from_value(v).unwrap();
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "field", "path": "/x/文献/" })), index: None });
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "photos", "path": "/x/旅行" })), index: Some(9) });
+    let s = state(&c);
+    assert_eq!((s.tabs[0].title.as_str(), s.tabs[1].title.as_str()), ("文献", "旅行"));
+    // field の古いペインも files のレシピ(yazi)で開く。種類はそのまま残す
+    assert_eq!(s.tabs[0].layout["type"], json!("field"));
+    let w = c.wants();
+    assert_eq!(w[0].cmd, "konsole --workdir '/x/文献/' -e yazi '/x/文献/'");
+    assert_eq!(w[1].cmd, "viewer '/x/旅行'");
 }
 
 // ------------------------------------------------------------------ コンポジタの並びを受け取る

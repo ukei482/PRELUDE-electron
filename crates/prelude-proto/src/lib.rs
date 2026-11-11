@@ -350,9 +350,9 @@ pub fn panes(layout: &serde_json::Value) -> Vec<PaneView> {
                 let u = s("url");
                 u.split("://").nth(1).unwrap_or(&u).split('/').next().unwrap_or("").to_string()
             }
-            "files" | "field" => base(&s("path")),
             "app" => s("name"),
-            _ => String::new(),
+            // ほかの種類は、場所(path)があればその最後の名前
+            _ => base(&s("path")),
         };
         let title = [s("window_title"), s("title"), place].into_iter().find(|t| !t.is_empty()).unwrap_or_else(|| kind.clone());
         out.push(PaneView { id, kind, title, stopped: l["stopped"] == true });

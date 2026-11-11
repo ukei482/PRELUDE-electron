@@ -8,8 +8,9 @@
 //! ```
 //! - `.prelude` には `type = "console"` のように種類の名前だけを書く。コマンドは自分の設定にしか無いので、人からもらったファイルが勝手なコマンドを実行できない
 //! - 既定で `console` を持つ。同じ名前のファイルを置くと置き換わる。ペインに `cwd` があれば `{paths.terminal}` の代わりにそれを使う(ファイラの「ここで端末を開く」)
-//! - **ファイラ**(「ファイラ」): `files`(一覧)と `field`(フィールド表示)のペインもレシピで開く。既定は PRELUDE のファイラ(`prelude-filer`)で、
-//!   `files.toml` を置けば yazi・Dolphin などに替えられる。`{path}` はペインのフォルダ(無ければ paths の `files`)、`{pane}` はペインの id
+//! - **ファイラ**(docs/redesign-rust.md の「ファイラ」): `files` のペインもただのレシピ。既定は端末の中の yazi で、
+//!   `files.toml` を置けば Dolphin などに替えられる。`{path}` はペインの `path`(無ければ paths の `files`)、`{pane}` はペインの id。
+//!   `field`(やめたフィールド表示)は `files` の別名として読む
 //!
 //!   ```toml
 //!   # ~/.config/prelude/panes/files.toml
@@ -51,9 +52,28 @@ fn builtin() -> Vec<Recipe> {
         r("cli", "CLI", "konsole --workdir {paths.terminal} -e prelude shell", "org.kde.konsole"),
         r("console", "Console", "konsole --workdir {paths.terminal}", "org.kde.konsole"),
         r("settings", "Settings", "prelude-settings", "prelude-settings"),
-        r("files", "Files", "prelude-filer --pane {pane} {path}", "prelude-filer"),
-        r("field", "Field", "prelude-filer --pane {pane} --view field {path}", "prelude-filer"),
+        r("files", "Files", "konsole --workdir {path} -e yazi {path}", "org.kde.konsole"),
     ]
+}
+
+/// 古い種類の名前を今の名前にする(`field` は `files` の別名)
+pub fn alias(kind: &str) -> &str {
+    if kind == "field" {
+        "files"
+    } else {
+        kind
+    }
+}
+
+/// 種類のレシピ(別名も見る)
+pub fn find<'a>(list: &'a [Recipe], kind: &str) -> Option<&'a Recipe> {
+    let kind = alias(kind);
+    list.iter().find(|r| r.kind == kind)
+}
+
+/// run がペインの `path` を使うか(`{path}` を含むか)。使うペインには、ブックマークを開くときに paths の `files` を入れておく
+pub fn uses_path(r: &Recipe) -> bool {
+    r.run.contains("{path}")
 }
 
 /// レシピの一覧(名前順)。読めないファイルは飛ばす
@@ -157,11 +177,14 @@ mod tests {
         let v: Vec<(&str, &str, &str)> = list.iter().map(|r| (r.kind.as_str(), r.name.as_str(), r.run.as_str())).collect();
         assert_eq!(v[0].0, "cli");
         assert_eq!(v[1], ("console", "console", "xterm"));
-        assert_eq!(v[4], ("notes", "メモ", "kate"));
-        assert_eq!(v[5].0, "settings");
-        // ファイラの枠は既定を持ち、置き換えられる
-        assert_eq!((v[2].0, v[3].0), ("field", "files"));
-        assert!(v[3].2.starts_with("prelude-filer"));
+        assert_eq!(v[3], ("notes", "メモ", "kate"));
+        assert_eq!(v[4].0, "settings");
+        // ファイラは既定(yazi)を持ち、置き換えられる。field は files の別名
+        assert_eq!(v[2].0, "files");
+        assert!(v[2].2.contains("yazi {path}"));
+        assert!(uses_path(&list[2]) && !uses_path(&list[1]));
+        assert_eq!(find(&list, "field").map(|r| r.kind.as_str()), Some("files"));
+        assert!(find(&list, "nope").is_none());
         std::fs::write(d.join("files.toml"), "run = \"dolphin {path}\"\n").unwrap();
         assert!(load(&d).iter().any(|r| r.kind == "files" && r.run == "dolphin {path}"));
     }
