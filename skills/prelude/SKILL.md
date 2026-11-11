@@ -102,6 +102,10 @@ class = "org.kde.kate"           # 省略できる。窓を見分ける名前
 
 `.prelude` には種類の名前(`type = "notes"`)だけを書く。人からもらったファイルが勝手なコマンドを実行できないようにするため。
 
+## AI のペイン
+
+`prelude new agent` は、端末を今のタブの paths の `terminal`(ブックマークの作業フォルダ)で開き、その中で既定の AI を起動する。`prelude agent [頼みごと]` は今のフォルダで起動する。AI は環境変数 `PRELUDE_AGENT`(シェルのコマンド)、無ければ claude・codex・gemini・opencode の順に探す。
+
 ## MCP
 
 `prelude mcp` は、PRELUDE の命令を MCP のツールとして出すサーバー(標準入出力)。つないであれば、コマンドの文字列を組み立てるより、ツール(`state`・`bookmark_save`・`open` など)を使うほうが確か。

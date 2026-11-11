@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
 
+mod agent;
 mod choose;
 mod mcp;
 mod skill;
@@ -63,6 +64,8 @@ usage: prelude <command> [args]
   choose <open|open-multiple|directory|save> --output <file> [--name <name>] [--terminal <cmd>] <folder>
                          The file chooser of app dialogs: yazi in a terminal. Writes the chosen paths to <file>
                          (what prelude-core's dialog portal runs by default)
+  agent [<prompt>...]    Start the default AI agent in the current folder ($PRELUDE_AGENT, else claude, codex,
+                         gemini or opencode from PATH). The agent pane (new agent) runs this in the bookmark's folder
   mcp                    Run an MCP server on stdin/stdout: PRELUDE's commands as tools for AI agents
                          (e.g. claude mcp add prelude -- prelude mcp)
   skill [show [<file>]]  Print the skill that teaches AI agents how to use PRELUDE (SKILL.md, format.md)
@@ -412,6 +415,9 @@ fn run(args: &[String]) -> Result<(), String> {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     if a.first() == Some(&"choose") {
         return choose::run(&a[1..]);
+    }
+    if a.first() == Some(&"agent") {
+        return agent::run(&a[1..]);
     }
     if a.as_slice() == ["mcp"] {
         return mcp::run();

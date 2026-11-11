@@ -7,7 +7,7 @@
 //! class = "org.kde.konsole"                     # 省略できる。窓を見分ける名前(起動したプロセスで見つからないとき)
 //! ```
 //! - `.prelude` には `type = "console"` のように種類の名前だけを書く。コマンドは自分の設定にしか無いので、人からもらったファイルが勝手なコマンドを実行できない
-//! - 既定で `console` を持つ。同じ名前のファイルを置くと置き換わる。ペインに `cwd` があれば `{paths.terminal}` の代わりにそれを使う(ファイラの「ここで端末を開く」)
+//! - 既定で `console`・`cli`・`files`・`settings` と、AI のペイン `agent`(端末の中で `prelude agent`)を持つ。同じ名前のファイルを置くと置き換わる。ペインに `cwd` があれば `{paths.terminal}` の代わりにそれを使う(ファイラの「ここで端末を開く」)
 //! - **ファイラ**(docs/redesign-rust.md の「ファイラ」): `files` のペインもただのレシピ。既定は端末の中の yazi で、
 //!   `files.toml` を置けば Dolphin などに替えられる。`{path}` はペインの `path`(無ければ paths の `files`)、`{pane}` はペインの id。
 //!   `field`(やめたフィールド表示)は `files` の別名として読む
@@ -49,6 +49,7 @@ fn builtin() -> Vec<Recipe> {
         class: class.into(),
     };
     vec![
+        r("agent", "AI", "konsole --workdir {paths.terminal} -e prelude agent", "org.kde.konsole"),
         r("cli", "CLI", "konsole --workdir {paths.terminal} -e prelude shell", "org.kde.konsole"),
         r("console", "Console", "konsole --workdir {paths.terminal}", "org.kde.konsole"),
         r("settings", "Settings", "prelude-settings", "prelude-settings"),
@@ -175,14 +176,17 @@ mod tests {
         std::fs::write(d.join("bad.toml"), "run = = 1").unwrap();
         let list = load(&d);
         let v: Vec<(&str, &str, &str)> = list.iter().map(|r| (r.kind.as_str(), r.name.as_str(), r.run.as_str())).collect();
-        assert_eq!(v[0].0, "cli");
-        assert_eq!(v[1], ("console", "console", "xterm"));
-        assert_eq!(v[3], ("notes", "メモ", "kate"));
-        assert_eq!(v[4].0, "settings");
+        // AI のペイン: 端末を今のブックマークの作業フォルダで開いて、既定の AI を起動する
+        assert_eq!((v[0].0, v[0].1), ("agent", "AI"));
+        assert!(v[0].2.contains("{paths.terminal}") && v[0].2.ends_with("prelude agent"));
+        assert_eq!(v[1].0, "cli");
+        assert_eq!(v[2], ("console", "console", "xterm"));
+        assert_eq!(v[4], ("notes", "メモ", "kate"));
+        assert_eq!(v[5].0, "settings");
         // ファイラは既定(yazi)を持ち、置き換えられる。field は files の別名
-        assert_eq!(v[2].0, "files");
-        assert!(v[2].2.contains("yazi {path}"));
-        assert!(uses_path(&list[2]) && !uses_path(&list[1]));
+        assert_eq!(v[3].0, "files");
+        assert!(v[3].2.contains("yazi {path}"));
+        assert!(uses_path(&list[3]) && !uses_path(&list[2]));
         assert_eq!(find(&list, "field").map(|r| r.kind.as_str()), Some("files"));
         assert!(find(&list, "nope").is_none());
         std::fs::write(d.join("files.toml"), "run = \"dolphin {path}\"\n").unwrap();
