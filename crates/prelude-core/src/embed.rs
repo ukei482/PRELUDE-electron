@@ -49,6 +49,9 @@ impl Compositor for Handle {
     fn name(&self) -> &'static str {
         "kwin"
     }
+    fn level(&self) -> crate::compositor::Level {
+        crate::compositor::Level::Arrange
+    }
     fn arrange(&self, scene: Scene) {
         self.want(scene.panes);
     }

@@ -406,6 +406,9 @@ impl Compositor for Handle {
     fn name(&self) -> &'static str {
         "sway"
     }
+    fn level(&self) -> crate::compositor::Level {
+        crate::compositor::Level::Follow
+    }
     fn arrange(&self, scene: Scene) {
         let _ = self.tx.send(Msg::Arrange(scene));
     }
@@ -670,6 +673,10 @@ impl Sway {
         }
         let tree = self.ipc.tree().await;
         let Some(v) = views(&tree).into_iter().find(|v| v.id == con).filter(|v| !v.floating) else { return };
+        // PRELUDE の UI(サイドバー・ランチャー)の窓はペインではない
+        if crate::compositor::is_prelude_ui(&v.app) {
+            return;
+        }
         // Web のペインの窓は、題名の印が付くまで見分けられない
         let web_pending = self.panes.values().any(|p| !p.want.marker.is_empty() && p.con.is_none());
         if web_pending && v.app.contains("chrom") && tries < 10 {

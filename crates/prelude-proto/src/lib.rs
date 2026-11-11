@@ -289,6 +289,18 @@ pub struct State {
     pub active: Option<u64>,
     /// 上から順
     pub tabs: Vec<TabInfo>,
+    /// 窓のつなぎ(項目を足しただけなので、古いコアの状態にも無くてよい)
+    #[serde(default)]
+    pub windows: Windows,
+}
+
+/// 窓のつなぎ(docs/redesign-rust.md の「窓のつなぎ」)。UI は level を見て、分割で開くなどを出すか決める
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Windows {
+    /// `sway`・`kwin`・`none`(つなぎ無し。アプリは起動し、窓の置き場所は環境)。空ならアプリを起動しない(`--no-embed`)
+    pub backend: String,
+    /// 段: 0 起動だけ、1 並べる、2 読む、3 追う
+    pub level: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

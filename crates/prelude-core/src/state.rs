@@ -8,7 +8,9 @@ use crate::compositor::{Scene, TabScene, Tree, Want};
 use crate::recipes::{self, Recipe};
 use crate::web::WebWant;
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, SplitAt, State, TabInfo, TabRef};
+use prelude_proto::{
+    BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, SplitAt, State, TabInfo, TabRef, Windows,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as Json};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -335,6 +337,8 @@ pub struct Core {
     places: HashMap<u64, PaneRect>,
     /// ペインのレシピ(窓を取り込むペインの種類)
     recipes: Vec<Recipe>,
+    /// 窓のつなぎ(状態に出すだけ)
+    backend: Windows,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
@@ -373,6 +377,7 @@ impl Core {
             last_id: 0,
             places: HashMap::new(),
             recipes: vec![],
+            backend: Windows::default(),
             stopped: HashSet::new(),
             titles: HashMap::new(),
             download_dir: String::new(),
@@ -478,6 +483,7 @@ impl Core {
                     layout: self.live(t.layout.to_json()),
                 })
                 .collect(),
+            windows: self.backend.clone(),
         }
     }
 
@@ -500,6 +506,11 @@ impl Core {
             }
         }
         v
+    }
+
+    /// 窓のつなぎの名前と段(状態の `windows` に出す)
+    pub fn set_windows(&mut self, backend: &str, level: u8) {
+        self.backend = Windows { backend: backend.to_string(), level };
     }
 
     pub fn set_recipes(&mut self, r: Vec<Recipe>) {

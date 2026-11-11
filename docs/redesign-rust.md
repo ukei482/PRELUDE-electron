@@ -192,12 +192,14 @@ Web は全部 Chromium で、PRELUDE は Web エンジンを持たない(Electro
 
 | 段 | できること |
 |---|---|
-| 0. 無し | アプリを起動するだけ。置き場所は環境に任せる |
+| 0. 無し | アプリを起動するだけ。置き場所は環境に任せる(`plain.rs`) |
 | 1. 並べる | ブックマークを開くときに `[layout]` のとおりに並べる |
 | 2. 読む | 今の並びを読む(タブの保存・ブックマークの配置を書くとき) |
 | 3. 追う | 窓の動き・PRELUDE を通さずに開いた窓を追いかけて、コアの状態に合わせる |
 
 - `[layout]` は分割の木と比率。つなぎが無ければ「開くものの一覧」として読む
+- 対応するコンポジタが無ければ、つなぎ無し(`plain.rs`。段 0)で動く。アプリはペインごとに 1 回だけ起動し、Web のペインの Chromium の窓も環境が置く。`--no-embed` はアプリも起動しない(状態だけを試す)
+- 今のつなぎの名前と段は、状態の `windows`(`backend`・`level`)に出す
 - 分割で開く(ランチャーの Ctrl+→ など)は、つなぎが並べられるときだけ出す
 - 窓の持ち主を見分ける `/proc`(`procs.rs`)や窓の印は、つなぎの中の事情として扱う
 
@@ -358,20 +360,23 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | 0 | Rust の開発環境、UI の試作(`proto/gpui`・`proto/slint`) | 済(上の「Slint の試作で分かったこと」) |
 | 1 | `.prelude`・`space.toml` の TOML(`prelude-format`)。Electron 版も TOML を読み書きする | 済 |
 | 2 | `prelude-core` の骨組み(状態・ソケットの約束・`prelude` コマンド) | 済 |
-| 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(`web.rs`)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済。残り: 段 0〜2 のつなぎの扱い(下の「これから」) |
+| 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(`web.rs`)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`・つなぎ無しの `plain.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済 |
 | 4 | UI: サイドバー・ランチャー・設定 | GPUI で作ったものを Slint で作り直す(下の「これから」) |
-| 5 | ファイラ | 自作のファイラ(`prelude-filer`)を作ったが、外のファイラに任せることにした(下の「これから」) |
+| 5 | ファイラ | 自作のファイラ(`prelude-filer`)を作ったが、外のファイラ(yazi)に任せることにした。コアの側は済。`prelude-filer` は UI を Slint にするときに消す |
 | 6 | 環境とのつなぎ: `prelude watch --bar`(waybar の custom モジュールの形)、作者の環境の NixOS のモジュール(`nix/module.nix`) | 済 |
 | 7 | アプリのダイアログ(`portal.rs`。`OpenFile`・`SaveFile`・`Request.Close`・`filters`(glob だけ)・`current_folder`・`SaveFiles`) | 済。まだ: `choices`(受け取るが出さない)、MIME の型での絞り込み |
 | 8 | 引き継ぎ(`migrate.rs`)、配布、Rust 版をリリースにして Electron 版を消す | 引き継ぎは済(8-a)。残り: 配布の仕上げ(8-b)、Electron 版を消す(8-c) |
 
 ### これから
-1. **ファイラを外す**: コアの `files`・`field` の名指しを消す、`field` を `files` の別名にする、`prelude pane path`、既定の `files` のレシピを yazi に、`ui/prelude-filer`(と `FilerView`)を消す、サイドバーの + の Field と種類の印の `field` を外す、テストの見本(`test/fixtures/format/full.prelude`)から `sort`・`[ui.field]` を外す
-2. **アプリのダイアログ**: 最初のフォルダの優先順を変える、既定の選ぶ画面を yazi(`prelude-choose`)に、ポータルを別のプログラムに分ける
-3. **つなぎ無しでも動く**: つなぎが無くても起動する(段 0。今の `--no-embed` はアプリも起動しない)、タブを論理の単位にして作業領域との対応を sway のつなぎへ寄せる、つなぎが段を名乗る、窓のつなぎが PRELUDE の UI の窓(`prelude-sidebar`・`prelude-launcher`)を引き取らない、アプリの一覧を差し替えられる形にする
-4. **UI を Slint で作り直す**: サイドバー(普通のウィンドウ。`global Prelude` の決まり、`prelude sidebar show` は動いていれば前に出す、幅の切り替えでウィンドウの大きさを頼む)・ランチャー・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消し、NixOS のモジュールの起動の断片(層の順番を待つ `sleep`)を外し、左端に置く決まりは作者の rice へ。日本語入力を画面のある PC で確かめる
-5. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。移ったフォルダをコアに伝える yazi のプラグインの例を `docs/rice.md` に書く
-6. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
+済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない
+
+1. **UI を Slint で作り直す**: サイドバー(普通のウィンドウ。`global Prelude` の決まり、`prelude sidebar show` は動いていれば前に出す、幅の切り替えでウィンドウの大きさを頼む)・ランチャー(状態の `windows.level` が 1 以上のときだけ分割で開くを出す)・設定。共通の色・字は `theme.toml` から。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消し、NixOS のモジュールの起動の断片(層の順番を待つ `sleep`)を外し、左端に置く決まりは作者の rice へ。日本語入力を画面のある PC で確かめる
+2. **ダイアログのポータルを別のプログラムに分ける**(コアに最初のフォルダを聞くだけにする)。`prelude choose` の保存・フォルダを選ぶ操作を、画面のある PC で確かめる
+3. **アプリの一覧を差し替えられる形にする**(今は XDG の `.desktop` だけ)
+4. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
+5. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
+
+- テストの見本(`test/fixtures/format/full.prelude`)の `sort`・`[ui.field]` は残す。「知らない項目を残す」と「古いファイルも読める」を確かめるテストになっている
 
 ### 引き継ぎ
 - 試している間、**Electron 版と Rust 版は同じデータを使う**(同じ `~/スペース` の TOML の `.prelude`・`space.toml`)。Rust 版で足したブックマークは Electron 版にも出る

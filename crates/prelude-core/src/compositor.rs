@@ -77,10 +77,33 @@ pub enum Note {
     Download(serde_json::Value),
 }
 
-/// コンポジタの裏側。部品のトレイトなので版は付けない(「トレイトの版」)
+/// 窓のつなぎができること(docs/redesign-rust.md の「窓のつなぎ」の段)。上の段は下の段のこともできる
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Level {
+    /// 0. アプリを起動するだけ。置き場所は環境に任せる
+    Launch = 0,
+    /// 1. ブックマークを開くときに `[layout]` のとおりに並べる
+    Arrange = 1,
+    /// 2. 今の並びを読む
+    Read = 2,
+    /// 3. 窓の動き・PRELUDE を通さずに開いた窓を追いかけて、コアの状態に合わせる
+    Follow = 3,
+}
+
+/// PRELUDE の UI の窓(Wayland の app_id・X11 のクラス)。ペインではないので、窓のつなぎは引き取らない
+pub const UI_APPS: [&str; 3] = ["prelude-sidebar", "prelude-launcher", "prelude-slint-proto"];
+
+/// PRELUDE の UI の窓か
+pub fn is_prelude_ui(app: &str) -> bool {
+    UI_APPS.iter().any(|a| app.eq_ignore_ascii_case(a))
+}
+
+/// コンポジタの裏側(窓のつなぎ)。部品のトレイトなので版は付けない(「決まりの版」)
 pub trait Compositor: Send + Sync {
-    /// 裏側の名前(ログ用)
+    /// 裏側の名前(ログ用。状態の `windows` にも出す)
     fn name(&self) -> &'static str;
+    /// できること(段)
+    fn level(&self) -> Level;
     /// 今の状態に合わせる(起動する・閉じる・並べ直す)。何度呼んでもよい
     fn arrange(&self, scene: Scene);
     /// 起動したアプリを閉じて後片付けをする。終わるまで待つ
@@ -135,20 +158,22 @@ pub fn detect_from(get: impl Fn(&str) -> Option<String>) -> Option<Kind> {
     None
 }
 
-/// 裏側を始める。tag はこのコアの印(別のソケットで動かすコアと取り合わないように)。使えなければ None(ペインに窓は出ない)
-pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Box<dyn Compositor>> {
-    let Some(kind) = detect() else {
-        eprintln!("prelude-core: no supported compositor (KDE Plasma on Wayland or sway). Panes will not show windows");
-        return None;
-    };
-    match kind {
-        Kind::Kwin => crate::embed::start(tag, notes).await.map(|h| Box::new(h) as Box<dyn Compositor>),
-        Kind::Sway => crate::sway::start(tag, notes).await.map(|h| Box::new(h) as Box<dyn Compositor>),
-        Kind::Hyprland => {
-            eprintln!("prelude-core: the {} backend is not written yet. Panes will not show windows", kind.name());
+/// 裏側を始める。tag はこのコアの印(別のソケットで動かすコアと取り合わないように)。
+/// 対応するコンポジタが無い・始められなければ、つなぎ無し(段 0。[`crate::plain`])にする: アプリは起動し、窓の置き場所は環境に任せる
+pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Box<dyn Compositor> {
+    let found: Option<Box<dyn Compositor>> = match detect() {
+        Some(Kind::Kwin) => crate::embed::start(tag, notes.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
+        Some(Kind::Sway) => crate::sway::start(tag, notes.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
+        Some(Kind::Hyprland) => {
+            eprintln!("prelude-core: the hyprland backend is not written yet");
             None
         }
-    }
+        None => None,
+    };
+    found.unwrap_or_else(|| {
+        eprintln!("prelude-core: no window backend for this desktop. Apps are started and the desktop places their windows");
+        Box::new(crate::plain::start(notes))
+    })
 }
 
 #[cfg(test)]
@@ -159,6 +184,13 @@ mod tests {
     fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
         let m: HashMap<String, String> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         move |k| m.get(k).cloned()
+    }
+
+    #[test]
+    fn 段と_ui_の窓() {
+        assert!(Level::Follow > Level::Arrange && Level::Arrange > Level::Launch);
+        assert!(is_prelude_ui("prelude-sidebar") && is_prelude_ui("Prelude-Launcher"));
+        assert!(!is_prelude_ui("org.kde.konsole") && !is_prelude_ui("prelude-settings"));
     }
 
     #[test]
