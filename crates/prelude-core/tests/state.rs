@@ -404,7 +404,7 @@ fn web_のペイン_印_url_の知らせ_戻る() {
         ww.iter().map(|w| (w.pane, w.url.as_str())).collect::<Vec<_>>(),
         vec![(old, "https://b.example/"), (web, "https://a.example/")]
     );
-    assert_eq!(dl, HOME); // ダウンロードの保存先(paths の download。どこにも無ければホーム)
+    assert_eq!(dl, ""); // ダウンロードの保存先: paths の download → 設定の download_dir。どこにも無ければ空(Chromium が置いた場所のまま)
 
     // ページの中で移った URL は残し、題名は今の様子として出す
     assert_eq!(c.note_web(web, "https://a.example/next".into(), "Next".into()), (true, true));
@@ -813,6 +813,34 @@ fn ブックマークのフォルダを外から変えたら知らせる() {
     ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
     ok(&mut c, Command::BookmarkSave { tab: None, title: "保存".into(), folder: String::new() });
     assert!(!c.poll_bookmarks());
+}
+
+#[test]
+fn 設定を当てはめる_閉じたタブの数_ダウンロード() {
+    use prelude_format::settings::Config;
+    let mut c = Core::new(HOME, spaces("config"), None);
+    let rev = state(&c).config_rev;
+    for i in 0..5 {
+        ok(&mut c, Command::TabOpen { pane: web(&format!("https://{i}/")), index: None });
+    }
+    for _ in 0..5 {
+        ok(&mut c, Command::TabClose { tab: None });
+    }
+    assert_eq!(state(&c).closed, 5);
+    // 減らしたら古いものから捨てる。当てはめたら知らせのために config_rev が上がる
+    c.apply_config(&Config::from_text("[tabs]\nclosed_max = 2\ndownload_dir = \"~/DL\"\n", &|_| None));
+    assert_eq!(state(&c).closed, 2);
+    assert!(state(&c).config_rev > rev);
+    let reopened = ok(&mut c, Command::TabReopen {}).as_u64().unwrap();
+    assert!(state(&c).tabs.iter().any(|t| t.id == reopened));
+    // 0 なら覚えない
+    c.apply_config(&Config::from_text("[tabs]\nclosed_max = 0\n", &|_| None));
+    ok(&mut c, Command::TabClose { tab: None });
+    assert_eq!(state(&c).closed, 0);
+    // ダウンロードの保存先(設定の download_dir。~ はホーム)
+    c.apply_config(&Config::from_text("download_dir = \"~/DL\"\n", &|_| None));
+    ok(&mut c, Command::TabOpen { pane: web("https://x/"), index: None });
+    assert_eq!(c.web_wants().1, format!("{HOME}/DL"));
 }
 
 #[test]

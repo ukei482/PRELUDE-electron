@@ -285,9 +285,6 @@ struct Closed {
     index: usize,
 }
 
-/// 覚えておく閉じたタブの数(スペースごと)
-const CLOSED_MAX: usize = 20;
-
 /// スペース 1 つのタブ
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Tabs {
@@ -361,6 +358,10 @@ pub struct Core {
     closed: BTreeMap<String, Vec<Closed>>,
     /// ブックマークのファイルを書いた回数(状態の bookmarks_rev)
     bookmarks_rev: u64,
+    /// 覚えておく閉じたタブの数(設定の tabs.closed_max)
+    closed_max: usize,
+    /// 設定を当てはめた回数(状態の config_rev)
+    config_rev: u64,
     /// スペースのフォルダの中身の印(名前・更新時刻・大きさ)。外から変わったかを見る([`Core::poll_bookmarks`])。0 はまだ取っていない
     bookmarks_sig: u64,
     /// ブックマークの種類(パス → 更新時刻と種類)。一覧のたびに全部を読まないため
@@ -414,6 +415,8 @@ impl Core {
             backend: Windows::default(),
             closed: BTreeMap::new(),
             bookmarks_rev: 0,
+            closed_max: 20,
+            config_rev: 0,
             kinds: Default::default(),
             bookmarks_sig: 0,
             trash_dir: crate::trash::dir(),
@@ -528,6 +531,7 @@ impl Core {
             windows: self.backend.clone(),
             closed: self.closed.get(&self.space).map_or(0, Vec::len),
             bookmarks_rev: self.bookmarks_rev,
+            config_rev: self.config_rev,
         }
     }
 
@@ -645,6 +649,19 @@ impl Core {
         self.backend = Windows { backend: backend.to_string(), level };
     }
 
+    /// 設定を当てはめる(起動のときと、settings.toml が変わったとき)。すぐ効く項目だけを使う。状態の知らせのために config_rev を上げる
+    pub fn apply_config(&mut self, c: &prelude_format::settings::Config) {
+        self.closed_max = c.int("tabs.closed_max").max(0) as usize;
+        for list in self.closed.values_mut() {
+            while list.len() > self.closed_max {
+                list.remove(0);
+            }
+        }
+        let dl = c.str("download_dir");
+        self.download_dir = if dl.is_empty() { String::new() } else { prelude_format::abs_path(dl, &self.home, &self.home) };
+        self.config_rev += 1;
+    }
+
     /// ゴミ箱のフォルダ(テスト用)
     pub fn set_trash_dir(&mut self, d: PathBuf) {
         self.trash_dir = d;
@@ -691,9 +708,10 @@ impl Core {
                 }
             }
         }
+        // ブックマーク・スペースの paths に書いてあればそこ、無ければ設定の download_dir(空なら Chromium の既定)。
+        // paths はホームまで必ず何かを返すので、書いてあるときだけを見る
         let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
-        let dl = self.paths(active).get("download").and_then(Json::as_str).unwrap_or("").to_string();
-        let dl = if dl.is_empty() { self.download_dir.clone() } else { dl };
+        let dl = self.resolver_get(active, "download").unwrap_or_else(|| self.download_dir.clone());
         (out, dl)
     }
 
@@ -1091,7 +1109,7 @@ impl Core {
         if let Some(layout) = self.reopenable(&t.layout) {
             let list = self.closed.entry(self.space.clone()).or_default();
             list.push(Closed { layout, bookmark: t.bookmark.clone(), index: i });
-            if list.len() > CLOSED_MAX {
+            while list.len() > self.closed_max {
                 list.remove(0);
             }
         }

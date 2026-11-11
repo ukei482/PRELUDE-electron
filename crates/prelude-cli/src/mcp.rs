@@ -186,6 +186,22 @@ fn defs() -> Vec<Def> {
             false,
             true,
         ),
+        (
+            "config_get",
+            "PRELUDE settings: every item (or one, with key) with its value, where it comes from (default, profile, settings.toml), what it does and when it applies",
+            json!({ "key": prop("string", "Setting like windows.level. Omit for all") }),
+            vec![],
+            true,
+            false,
+        ),
+        (
+            "config_set",
+            "Change one PRELUDE setting in ~/.config/prelude/settings.toml (checked against the catalog; comments are kept). Only when the user asks",
+            json!({ "key": prop("string", "Setting like windows.level"), "value": prop("string", "New value, e.g. arrange, true, 30, or a TOML value") }),
+            vec!["key", "value"],
+            false,
+            false,
+        ),
     ]
 }
 
@@ -298,6 +314,26 @@ pub fn call_tool(c: &mut impl Call, name: &str, a: &Value) -> Result<Value, Stri
         "folder_remove" => {
             let path = target::folder_path(c, s(a, "folder")?)?;
             c.call("folder.remove", json!({ "path": path }))
+        }
+        "config_get" => {
+            let c = prelude_format::settings::Config::load();
+            match a["key"].as_str().filter(|k| !k.is_empty()) {
+                Some(k) => {
+                    let i = prelude_format::settings::find(k).ok_or_else(|| format!("Unknown setting: {k}"))?;
+                    Ok(crate::config::item_json(&c, i))
+                }
+                None => Ok(crate::config::all_json(&c)),
+            }
+        }
+        "config_set" => {
+            let key = s(a, "key")?;
+            let raw = match &a["value"] {
+                Value::String(v) => v.clone(),
+                Value::Null => return Err("`value` is required".into()),
+                other => other.to_string(),
+            };
+            let (v, note) = crate::config::set(key, &raw)?;
+            Ok(json!({ "key": key, "value": v.to_string(), "note": note }))
         }
         _ => Err(format!("Unknown tool: {name}")),
     }

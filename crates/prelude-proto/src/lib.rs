@@ -371,6 +371,9 @@ pub struct State {
     /// ブックマークのファイルをコアが書くたびに増える数。変わったら `bookmark.list` を読み直す
     #[serde(default)]
     pub bookmarks_rev: u64,
+    /// 設定(`settings.toml`)を読み直すたびに増える数。変わったら UI も設定を読み直す
+    #[serde(default)]
+    pub config_rev: u64,
 }
 
 /// 窓のつなぎ(docs/redesign-rust.md の「窓のつなぎ」)。UI は level を見て、分割で開くなどを出すか決める

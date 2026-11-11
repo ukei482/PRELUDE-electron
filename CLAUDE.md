@@ -23,7 +23,7 @@
   - コアの命令はどれも `prelude` コマンドからも使えるようにする(サイドバーなどの UI にだけ許された操作を作らない)。ソケットの約束(`prelude-proto`)は、足すだけなら版を上げない
   - 別のソケットで動かしたコアは、D-Bus の名前(`org.prelude.Core.d…`)と KWin スクリプトの名前に印が付き、ふだんのコア・Electron 版と取り合わない。窓を出さずに試すなら `--no-embed`
   - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
-  - 設定は `~/.config/prelude/theme.toml`・`settings.toml`(`prelude-format` の `config`)。Electron 版からの引き継ぎは `prelude-core` の `migrate.rs`(別のソケットのコアでは動かない)
+  - 設定は `~/.config/prelude/theme.toml`・`settings.toml`。settings.toml の項目は台帳(`prelude-format` の `settings.rs` の `ITEMS`)が正で、層は 既定 → おすすめの組み合わせ(`crates/prelude-format/profiles/`)→ 使用者。項目を足すときは台帳に足す(`prelude config`・MCP・既定のファイルはそこから作られる)。`prelude-cli` の `config.rs` が `prelude config`。Electron 版からの引き継ぎは `prelude-core` の `migrate.rs`(別のソケットのコアでは動かない)
 - `ui/` — GPUI で作った前の UI(`prelude-ui`・`prelude-sidebar`・`prelude-launcher`・`prelude-filer`・`prelude-settings`)。**UI は Slint で作り直すことにした**(`docs/redesign-rust.md` の「UI」)ので、手を入れない。Slint の UI ができたら、`prelude-filer`(ファイラは yazi に任せた)も含めて消す。ルートとは別のワークスペースで、ビルドには GPUI の開発用のライブラリと Rust 1.98.1 が要る
 - `skills/prelude/` — AI のための PRELUDE のスキル(`SKILL.md`・`format.md`)。`prelude` コマンドに埋め込み、`prelude skill install` で書き出す。コマンド・ファイルの形・決まりを変えたら、ここも直す
 - `proto/slint/` — Slint の試作と、**サイドバーの部品の決まり**(`ui/parts.slint`。部品ごとの `global`: `SidebarFrame`・`Spaces`・`Bookmarks`・`Tabs`・`NewTab`・`PaneBar`・`BookmarkButton`)。決まりを破るとビルドで止まることのテストを含む(`cargo test`。画面なしで動く)。ルートのワークスペースの外。手順は `proto/slint/README.md`

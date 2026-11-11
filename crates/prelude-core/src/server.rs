@@ -6,6 +6,7 @@
 use crate::compositor::{self, Compositor, Note};
 use crate::state::{Core, Saved};
 use crate::{recipes, web};
+use prelude_format::settings::{self, Config};
 use prelude_proto::{Command, ErrorCode, Event, Hello, PaneSpec, Request, Response, TabRef, WebAction, MAX_LINE, PROTOCOL, SUPPORTED};
 use serde_json::{json, Value};
 use std::future::Future;
@@ -92,7 +93,13 @@ fn spawn_portal(socket: &Path) -> Option<tokio::process::Child> {
     c.spawn().map_err(|e| eprintln!("prelude-core: cannot start the file chooser portal ({e})")).ok()
 }
 
-/// ブックマークのフォルダを見る間隔
+/// 設定のファイルの印(更新時刻と大きさ。無ければ None)
+fn config_stamp() -> Option<(std::time::SystemTime, u64)> {
+    let m = std::fs::metadata(Config::path()).ok()?;
+    Some((m.modified().ok()?, m.len()))
+}
+
+/// ブックマークのフォルダ・設定のファイルを見る間隔
 const BOOKMARK_POLL: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn line(v: &impl serde::Serialize) -> String {
@@ -148,6 +155,12 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     core.set_recipes(recipes::load(&opt.recipes_dir));
     core.set_tag(&tag);
     core.set_download_dir(opt.download_dir.clone());
+    // 設定(settings.toml)。すぐ効く項目を当てはめる(起動し直しが要る項目は main.rs が使う)
+    let config = Config::load();
+    for w in &config.warnings {
+        eprintln!("prelude-core: settings: {w}");
+    }
+    core.apply_config(&config);
     let (events, _) = broadcast::channel(64);
     let (notes_tx, mut notes) = tokio::sync::mpsc::unbounded_channel();
     // --no-embed でなければ、窓のつなぎが無くてもつなぎ無し(段 0)でアプリは起動する
@@ -245,19 +258,40 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
         })
     };
 
-    // ブックマークのフォルダの見張り: 外から変わったら(ファイラで足した・消したなど)UI に知らせる。
-    // OS の仕組み(inotify など)に頼らず、中身の印を比べる(ほかの OS にも載るように。見るのはスペースの直下と 1 段下だけ)
+    // 見張り: ブックマークのフォルダが外から変わったら(ファイラで足した・消したなど)、設定(settings.toml)が変わったら、
+    // UI に知らせる。OS の仕組み(inotify など)に頼らず、中身の印を比べる(ほかの OS にも載るように)
     let _watcher = {
         let shared = shared.clone();
         tokio::spawn(async move {
+            let mut config = config_stamp();
+            let mut last = Config::load();
             loop {
-                {
-                    let mut core = shared.core.lock().unwrap();
-                    if core.poll_bookmarks() {
-                        shared.changed(&core, false);
-                    }
-                }
                 tokio::time::sleep(BOOKMARK_POLL).await;
+                let mut core = shared.core.lock().unwrap();
+                if core.poll_bookmarks() {
+                    shared.changed(&core, false);
+                }
+                let now = config_stamp();
+                if now != config {
+                    config = now;
+                    let c = Config::load();
+                    for w in &c.warnings {
+                        eprintln!("prelude-core: settings: {w}");
+                    }
+                    // 書きかけなどでまるごと読めなければ、前の設定を使い続ける(既定に戻さない)
+                    if c.unreadable {
+                        eprintln!("prelude-core: settings: keeping the last settings until settings.toml can be read");
+                        continue;
+                    }
+                    for i in settings::ITEMS.iter().filter(|i| i.apply == settings::Apply::Restart) {
+                        if c.get(i.key) != last.get(i.key) {
+                            eprintln!("prelude-core: settings: {} changes after PRELUDE restarts", i.key);
+                        }
+                    }
+                    core.apply_config(&c);
+                    shared.changed(&core, false);
+                    last = c;
+                }
             }
         })
     };

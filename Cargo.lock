@@ -298,8 +298,11 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 name = "prelude-cli"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "prelude-format",
  "prelude-proto",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -322,6 +325,7 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]
@@ -578,6 +582,7 @@ dependencies = [
  "indexmap",
  "toml_datetime 1.1.2+spec-1.1.0",
  "toml_parser",
+ "toml_writer",
  "winnow 1.0.4",
 ]
 

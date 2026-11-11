@@ -9,6 +9,7 @@
 use std::fmt;
 
 pub mod config;
+pub mod settings;
 
 /// 今の `.prelude` の版。これより新しい版のファイルは読まない
 pub const VERSION: i64 = 2;

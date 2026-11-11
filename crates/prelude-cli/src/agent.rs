@@ -1,6 +1,6 @@
 //! `prelude agent [<頼みごと>...]`: 既定の AI(Claude Code・Codex など)を、今のフォルダで起動する(docs/redesign-rust.md の「AI 連携」)。
 //! レシピ `agent`(AI のペイン)は、端末を今のブックマークの作業フォルダで開いて、これを動かす。
-//! どの AI か: 環境変数 `PRELUDE_AGENT`(コマンド)、無ければ PATH から [`AGENTS`] の順に探す
+//! どの AI か: 環境変数 `PRELUDE_AGENT`、設定の `agent`(どちらもシェルのコマンド)、無ければ PATH から [`AGENTS`] の順に探す
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 
@@ -41,8 +41,13 @@ pub fn choose(env_agent: Option<String>, path: &str) -> Option<(String, Vec<Stri
 }
 
 pub fn run(prompt: &[&str]) -> Result<(), String> {
-    let Some((name, mut cmd)) = choose(std::env::var("PRELUDE_AGENT").ok(), &std::env::var("PATH").unwrap_or_default()) else {
-        return Err(format!("No AI agent found. Install one of {} or set PRELUDE_AGENT", AGENTS.join(", ")));
+    // 環境変数 → 設定(auto でなければ)→ PATH
+    let configured = std::env::var("PRELUDE_AGENT").ok().filter(|s| !s.trim().is_empty()).or_else(|| {
+        let a = prelude_format::settings::Config::load().str("agent").to_string();
+        (a != "auto").then_some(a)
+    });
+    let Some((name, mut cmd)) = choose(configured, &std::env::var("PATH").unwrap_or_default()) else {
+        return Err(format!("No AI agent found. Install one of {}, or set `prelude config set agent <command>`", AGENTS.join(", ")));
     };
     if !prompt.is_empty() {
         let prompt = prompt.join(" ");

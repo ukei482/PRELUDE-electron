@@ -9,6 +9,14 @@
 - AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする
 - MCP のサーバー `prelude mcp`(標準入出力)。PRELUDE の命令を AI のツールにする(状態・一覧・開く・タブ・ペイン・Web・スペース・ブックマーク・フォルダ。31 個)。消す・閉じるツールには印を付け、人からもらったブックマークの起動コマンドは AI からは実行させない。例: `claude mcp add prelude -- prelude mcp`。`prelude` のコマンドでも、ブックマークを番号(b3)で指せる
 - AI のペイン: 既定のレシピ `agent`(「AI」)。端末を今のブックマークの作業フォルダで開き、既定の AI を起動する。`prelude agent [頼みごと]` は今のフォルダで起動する(AI は `PRELUDE_AGENT`、無ければ claude・codex・gemini・opencode の順に探す)
+- 設定の台帳と `prelude config`(`docs/redesign-rust.md` の「設定」の作る順番の 1)
+  - 項目は台帳(`prelude-format` の `settings.rs`)の 1 か所に置き、型・既定・説明・効き方を持つ。層は 既定 → おすすめの組み合わせ(sway・kde・omarchy。`profile = "auto"` なら環境から)→ `settings.toml`
+  - `prelude config list [--json]`・`get`・`set`(型を確かめ、コメントと知らない項目を残して書く)・`unset`・`defaults`・`path`。MCP にも `config_get`・`config_set`
+  - コアは settings.toml を見張り、すぐ効く項目(覚えておく閉じたタブの数 `tabs.closed_max`、`download_dir`)を当てはめて状態の `config_rev` を上げる。起動し直しが要る項目はログで知らせる。書きかけで読めない間は前の設定を使い続ける
+  - `prelude agent` は設定の `agent` も使う(`PRELUDE_AGENT` → 設定 → PATH の順)
+  - まだ効かない項目(窓のつなぎ・サイドバー・端末など)は `prelude config list` で「not used by PRELUDE yet」と出る
+  - 直した不具合: ダウンロードの保存先が、paths にも設定にも無いときにホームの直下になっていた(paths がホームまで必ず返すため、設定の `download_dir` も使われていなかった)。今は paths → 設定 → Chromium の既定の順
+  - `prelude` コマンドの出力を `head` などで途中で切っても、落ちずに静かに終わる
 - Rust 版のコアを、設計の見直し(ファイラを外す・OS の役割を持たない)に合わせた。ふだんの PRELUDE(Electron 版)は変わらない
   - 既定のファイラは端末の中の yazi(`files` のレシピ)。コアは `files`・`field` を名指ししない(`field` は `files` の別名として読む)。ペイン・タブの名前は、種類によらず `path` の最後の名前
   - 起動したペインに `PRELUDE_PANE` を渡す。`prelude pane path [--pane <id>] <folder>` でペインの今の場所をコアに伝えると、タブを開き直したときにそこで開く(yazi から呼ぶ例は `docs/rice.md`)

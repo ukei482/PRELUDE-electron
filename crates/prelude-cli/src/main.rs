@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 mod agent;
 mod choose;
+mod config;
 mod mcp;
 mod skill;
 mod target;
@@ -68,6 +69,11 @@ usage: prelude <command> [args]
                          gemini or opencode from PATH). The agent pane (new agent) runs this in the bookmark's folder
   mcp                    Run an MCP server on stdin/stdout: PRELUDE's commands as tools for AI agents
                          (e.g. claude mcp add prelude -- prelude mcp)
+  config [list [--json]] Settings: every item with its value, where it comes from and what it does
+  config get <key> | set <key> <value> | unset <key>
+                         Read or change one setting in ~/.config/prelude/settings.toml (checked; comments are kept).
+                         The core picks changes up within 2 seconds
+  config defaults | path The default settings file with comments | where settings.toml is
   skill [show [<file>]]  Print the skill that teaches AI agents how to use PRELUDE (SKILL.md, format.md)
   skill install [<dir>...]
                          Write the skill into <dir>/prelude/ (default: ~/.agents/skills and ~/.claude/skills)
@@ -416,6 +422,9 @@ fn run(args: &[String]) -> Result<(), String> {
     if a.first() == Some(&"choose") {
         return choose::run(&a[1..]);
     }
+    if a.first() == Some(&"config") {
+        return config::run(&a[1..]);
+    }
     if a.first() == Some(&"agent") {
         return agent::run(&a[1..]);
     }
@@ -645,6 +654,11 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn main() {
+    // 出力を head などで途中で切られたら、慌てずに黙って終わる(Rust は SIGPIPE を無視して、書けずに panic する)
+    // SAFETY: 起動の直後に、シグナルの扱いを既定に戻すだけ
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = run(&args) {
         eprintln!("prelude: {e}");

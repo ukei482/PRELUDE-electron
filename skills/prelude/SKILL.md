@@ -82,11 +82,27 @@ prelude mute <pane>                     # Web のペインの音を消す
 
 ブックマークの保存先・作業フォルダを変える: その `.prelude` の `[paths]` を書き換える(書き方は [`format.md`](format.md))。スペース全体の既定なら `space.toml` の `[paths]`。
 
+## 設定
+
+設定は `prelude config` で読み書きする。項目・今の値・どこから来た値か(既定・おすすめの組み合わせ・settings.toml)・説明は `prelude config list` が正(`--json` もある)。
+
+```bash
+prelude config list                      # 全部の項目と、今の値・出どころ・説明
+prelude config get windows.level
+prelude config set tabs.closed_max 30    # 型を確かめて settings.toml に書く(コメント・知らない項目は残す)
+prelude config unset tabs.closed_max     # 使用者の値を消す(組み合わせ・既定に戻る)
+prelude config defaults                  # 既定の設定ファイル(説明つき)
+```
+
+- settings.toml には、変えたい項目だけを書けばよい。手で書き換えてもよい(コアは 2 秒以内に読み直す。書きかけで読めない間は、前の設定のまま)
+- 「(not used by PRELUDE yet)」と出る項目は、まだ効かない(設計で決めた項目)。「(applies after PRELUDE restarts)」は起動し直すと効く
+- 設定を変えるのは、使用者が頼んだときだけ
+
 ## 設定のファイル
 
 | ファイル | 中身 |
 |---|---|
-| `~/.config/prelude/settings.toml` | 検索エンジン・隠しファイル・スペースのフォルダ・ダウンロードのフォルダ |
+| `~/.config/prelude/settings.toml` | 動きの設定(`prelude config` で読み書きする。上) |
 | `~/.config/prelude/theme.toml` | 色・字の大きさ・サイドバーの幅 |
 | `~/.config/prelude/panes/<種類>.toml` | ペインの種類(レシピ)。同じ名前で既定(`files`・`console`・`cli`・`settings`)を置き換える |
 | `~/.config/prelude/chooser.toml` | アプリのダイアログの選ぶ画面(既定は端末の中の yazi) |

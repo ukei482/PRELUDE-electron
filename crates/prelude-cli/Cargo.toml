@@ -9,5 +9,8 @@ name = "prelude"
 path = "src/main.rs"
 
 [dependencies]
+prelude-format = { path = "../prelude-format" }
 prelude-proto = { path = "../prelude-proto" }
 serde_json = "1"
+toml = "0.9"
+libc = "0.2"

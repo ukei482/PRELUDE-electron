@@ -449,7 +449,7 @@ prelude config path              # settings.toml の場所
 - MCP にも `config_get`・`config_set` を出す。スキルの設定の一覧は台帳から作る
 
 ### 作る順番(案)
-1. 台帳・層・`prelude config`・反映(コアとコマンド。画面なしでテストできる)
+1. 台帳・層・`prelude config`・反映(コアとコマンド。画面なしでテストできる)。**済**(2026-11-11): 台帳は `prelude-format` の `settings.rs`、組み合わせは `crates/prelude-format/profiles/`。コアは settings.toml を見張り、すぐ効く項目(`tabs.closed_max`・`download_dir`)を当てはめて状態の `config_rev` を上げる。まるごと読めなければ前の設定を使い続ける。`agent` は `prelude agent` が使う。まだ効かない項目は `prelude config list` で「not used by PRELUDE yet」と出る。MCP に `config_get`・`config_set`
 2. `prelude term`(端末の表)と、既定のレシピ・選ぶ画面をそれに替える
 3. `[windows]`(任せる段の上限・引き取り・浮かせる・触らない)
 4. おすすめの組み合わせ(まず sway と Omarchy)
