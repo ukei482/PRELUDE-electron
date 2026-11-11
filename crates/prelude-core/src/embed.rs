@@ -294,7 +294,7 @@ impl Embedder {
                 let _ = self.tx.send(m);
             }
         }
-        let mut child = match launch::spawn(&w.cmd, &w.cwd) {
+        let mut child = match launch::spawn(&w.cmd, &w.cwd, w.pane) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("prelude-core: cannot launch {} ({e})", w.cmd);

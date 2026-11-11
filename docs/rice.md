@@ -67,6 +67,20 @@ PRELUDE の外にある好みの部分は、モジュールではなく `nix/ric
 - タイトルバーを出さない、sway の素のバーを隠す、キー配列、fcitx5、鍵の保管庫(`pam_kwallet_init`)
 - **分割は sway の機能を使う:** `$mod+b`(次の窓を右へ)・`$mod+v`(次の窓を下へ)の後に開いた窓は、その場所のペインになり、配置はコアに戻る
 
+## yazi(ファイラ)
+PRELUDE の `files` のペインは、既定で端末の中の yazi を開く(`konsole --workdir {path} -e yazi {path}`)。ほかのファイラにするなら `~/.config/prelude/panes/files.toml`。
+
+yazi で移ったフォルダを PRELUDE に伝えると、タブを開き直したときにそのフォルダで開く(伝えなければ、ブックマークに書いた場所から始まる)。PRELUDE が起動したペインには `PRELUDE_PANE` が入っているので、`prelude pane path` を呼ぶだけでよい。
+
+```lua
+-- ~/.config/yazi/init.lua(まだ試していない)
+ps.sub("cd", function()
+	if os.getenv("PRELUDE_PANE") then
+		Command("prelude"):arg({ "pane", "path", tostring(cx.active.current.cwd) }):spawn()
+	end
+end)
+```
+
 ## まだのもの
 - GPUI の UI(`ui/`。サイドバー・ランチャー・ファイラ)の Nix のパッケージ。GPUI は Zed のリポジトリを git で使うので、`cargoLock.outputHashes` が要る。手元でのビルドが重い(下の「nix-daemon のビルドには上限が効かない」)ので、GitHub Actions でビルドしてキャッシュで配るとき(段階 8)にまとめる
 - Hyprland の断片(裏側と一緒に)

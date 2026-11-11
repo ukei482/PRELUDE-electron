@@ -13,6 +13,9 @@ usage: prelude <command> [args]
   tab <n>                Switch to tab n
   close [n]              Close tab n (default: current)
   pane close [id]        Close a pane (default: the current pane of the current tab)
+  pane path [--pane <id>] <folder>
+                         Tell the core where a pane is now (e.g. the folder a file manager moved to), so the tab reopens there.
+                         The pane defaults to $PRELUDE_PANE (set for programs PRELUDE starts in a pane), then the current pane
   open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name
                          (--run: also run commands that do not match an installed app)
   open [--run]           Read one line from stdin: a line of `prelude items`, or a target as above
@@ -80,6 +83,22 @@ fn print_tabs(s: &State) {
 fn abs(p: &str) -> PathBuf {
     let p = Path::new(p);
     std::fs::canonicalize(p).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(p))
+}
+
+/// ペインの今の場所(path)をコアに伝える。ペインは --pane、無ければ $PRELUDE_PANE、それも無ければ今のペイン
+fn pane_path(id: Option<&str>, folder: &str) -> Result<(), String> {
+    let id = id.map(str::to_string).or_else(|| std::env::var("PRELUDE_PANE").ok().filter(|s| !s.is_empty()));
+    let mut c = Conn::open(false)?;
+    let pane: u64 = match id {
+        Some(id) => id.parse().map_err(|_| format!("Not a pane id: {id}"))?,
+        None => {
+            let s = c.state()?;
+            s.tabs.iter().find(|t| Some(t.id) == s.active).map(|t| t.active_pane).ok_or("No tab")?
+        }
+    };
+    let path = abs(folder);
+    c.call("pane.update", json!({ "pane": pane, "fields": { "path": path.to_string_lossy() } }))?;
+    Ok(())
 }
 
 /// ブックマークを開く。インストール済みのアプリと一致しない起動コマンドは、run でなければ外して開き、知らせる
@@ -398,6 +417,8 @@ fn run(args: &[String]) -> Result<(), String> {
             let pane = s.tabs.iter().find(|t| Some(t.id) == s.active).map(|t| t.active_pane).ok_or("No tab")?;
             c.call("pane.close", json!({ "pane": pane }))?;
         }
+        ["pane", "path", folder] => pane_path(None, folder)?,
+        ["pane", "path", "--pane", id, folder] => pane_path(Some(id), folder)?,
         ["pane", "close", id] => {
             let pane: u64 = id.parse().map_err(|_| format!("Not a pane id: {id}"))?;
             Conn::open(false)?.call("pane.close", json!({ "pane": pane }))?;

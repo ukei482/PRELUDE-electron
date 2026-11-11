@@ -46,8 +46,12 @@ pub fn keys_of(cmd: &str, cls: &str) -> Vec<String> {
     keys
 }
 
-/// シェルのコマンドを起動する。作業フォルダが無ければホーム。PRELUDE の端末のシグナル(Ctrl+C など)は受けない
-pub fn spawn(cmd: &str, cwd: &str) -> std::io::Result<tokio::process::Child> {
+/// 起動したペインのプロセスに渡す、ペインの id の環境変数。ファイラなどは `prelude pane path` がこれを読んで、自分のペインに場所を伝える
+pub const PANE_ENV: &str = "PRELUDE_PANE";
+
+/// ペインのシェルのコマンドを起動する。作業フォルダが無ければホーム。PRELUDE の端末のシグナル(Ctrl+C など)は受けない。
+/// 環境変数 `PRELUDE_PANE` にペインの id を入れる
+pub fn spawn(cmd: &str, cwd: &str, pane: u64) -> std::io::Result<tokio::process::Child> {
     let cwd = if std::path::Path::new(cwd).is_dir() { cwd.to_string() } else { std::env::var("HOME").unwrap_or_else(|_| "/".into()) };
     let mut c = tokio::process::Command::new("/bin/sh");
     c.arg("-c")
@@ -55,7 +59,24 @@ pub fn spawn(cmd: &str, cwd: &str) -> std::io::Result<tokio::process::Child> {
         .current_dir(&cwd)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .stderr(std::process::Stdio::null())
+        .env(PANE_ENV, pane.to_string());
     c.process_group(0);
     c.spawn()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn ペインの_id_を環境変数で渡す() {
+        let d = std::env::temp_dir().join(format!("prelude-launch-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let out = d.join("pane");
+        let mut child = spawn(&format!("printf %s \"$PRELUDE_PANE\" > '{}'", out.display()), &d.to_string_lossy(), 42).unwrap();
+        child.wait().await.unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "42");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

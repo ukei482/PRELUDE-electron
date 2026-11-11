@@ -754,7 +754,7 @@ impl Sway {
             self.later(Msg::Keyboard, Duration::from_millis(ms));
         }
         if w.marker.is_empty() {
-            match launch::spawn(&w.cmd, &w.cwd) {
+            match launch::spawn(&w.cmd, &w.cwd, w.pane) {
                 Ok(mut child) => {
                     let pid = child.id().unwrap_or(0);
                     let (tx, pane) = (self.tx.clone(), w.pane);
