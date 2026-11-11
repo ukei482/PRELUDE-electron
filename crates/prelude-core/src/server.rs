@@ -84,6 +84,9 @@ impl Shared {
     }
 }
 
+/// ブックマークのフォルダを見る間隔
+const BOOKMARK_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
 fn line(v: &impl serde::Serialize) -> String {
     serde_json::to_string(v).unwrap_or_default()
 }
@@ -236,6 +239,23 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                         let _ = shared.events.send(line(&Event { event: "download".into(), data }).into());
                     }
                 }
+            }
+        })
+    };
+
+    // ブックマークのフォルダの見張り: 外から変わったら(ファイラで足した・消したなど)UI に知らせる。
+    // OS の仕組み(inotify など)に頼らず、中身の印を比べる(ほかの OS にも載るように。見るのはスペースの直下と 1 段下だけ)
+    let _watcher = {
+        let shared = shared.clone();
+        tokio::spawn(async move {
+            loop {
+                {
+                    let mut core = shared.core.lock().unwrap();
+                    if core.poll_bookmarks() {
+                        shared.changed(&core, false);
+                    }
+                }
+                tokio::time::sleep(BOOKMARK_POLL).await;
             }
         })
     };

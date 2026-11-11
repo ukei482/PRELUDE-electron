@@ -16,6 +16,7 @@
   - ブックマークを書く命令: `bookmark.save`(タブを保存。同じ名前は「(2)」)・`bookmark.overwrite`(今の配置で上書き。題名・paths・知らない項目は残す)・`bookmark.rename`・`bookmark.move`・`bookmark.trash`(freedesktop のゴミ箱へ)、フォルダの `folder.create`・`folder.rename`・`folder.remove`(中身はスペースの直下へ)。書けるのは今のスペースの中だけ。開いているタブ・閉じたタブ・ランチャーの点数が指すパスも合わせる。書いたら状態の `bookmarks_rev` が増える。コマンドは `prelude bookmark save|overwrite|rename|move|trash`・`prelude folder new|rename|remove`
   - ブックマークの並びと番号: `bookmark.reorder`(並べ替えた順は `space.toml` の `order`。名前の変更・移動にも付いていく)。`bookmark.list` に `num`(ランチャーの b3 と同じ番号)と `kind`(1 つのペインならその種類、分割なら layout)。空のフォルダも出す `folder.list`。コマンドは `prelude bookmark reorder`・`prelude folders`・`prelude open b3`。`prelude bookmarks` は番号も出す
   - 消音とアイコン: `web.mute`(書き出さない。Chromium を起動し直してもかけ直す)。配置のペインに `icon`(アプリは `.desktop` のアイコン、Web は拡張機能が送るファビコンを `~/.cache/prelude/favicons` に保存したもの)と `muted`。コマンドは `prelude mute <pane> [on|off]`
+  - ブックマークのフォルダの監視: ファイラなどで外から `.prelude` を足す・消す・書き換えると、2 秒以内に状態の知らせ(`bookmarks_rev`)を配る。中身の印を比べる形で、OS の監視の仕組みには頼らない
 - Rust 版(sway)の使いやすさ。ふだんの PRELUDE(Electron 版)には入らない
   - この PC の rice(`nix/rice.nix`): 通知を mako から swaync に替えた。バーの Wi-Fi・電池・音量・時計を押すと、通知(× で消す・全部消す・通知を止める)とクイック設定(音量・明るさ・Wi-Fi と Bluetooth の入/切・スクリーンショット・ロック・スリープ・ログアウト・再起動・シャットダウン)が開く。Wi-Fi の一覧はトレイの nm-applet
   - バーの左に、今のペインを左右・上下に分割するボタン(出すものをランチャーで選ぶ)と、今のペインを閉じるボタンを足した

@@ -361,6 +361,8 @@ pub struct Core {
     closed: BTreeMap<String, Vec<Closed>>,
     /// ブックマークのファイルを書いた回数(状態の bookmarks_rev)
     bookmarks_rev: u64,
+    /// スペースのフォルダの中身の印(名前・更新時刻・大きさ)。外から変わったかを見る([`Core::poll_bookmarks`])。0 はまだ取っていない
+    bookmarks_sig: u64,
     /// ブックマークの種類(パス → 更新時刻と種類)。一覧のたびに全部を読まないため
     kinds: std::cell::RefCell<HashMap<String, (std::time::SystemTime, String)>>,
     /// ゴミ箱(テストで差し替える)
@@ -415,6 +417,7 @@ impl Core {
             closed: BTreeMap::new(),
             bookmarks_rev: 0,
             kinds: Default::default(),
+            bookmarks_sig: 0,
             trash_dir: crate::trash::dir(),
             muted: HashSet::new(),
             favicons: HashMap::new(),
@@ -529,6 +532,50 @@ impl Core {
             closed: self.closed.get(&self.space).map_or(0, Vec::len),
             bookmarks_rev: self.bookmarks_rev,
         }
+    }
+
+    /// スペースのフォルダが外から変わったか(ファイラで .prelude を足した・消した・書き換えたなど)。
+    /// 変わっていれば bookmarks_rev を増やして true(状態の知らせを配る)。最初の 1 回は印を取るだけ
+    pub fn poll_bookmarks(&mut self) -> bool {
+        let sig = self.bookmarks_signature();
+        if sig == self.bookmarks_sig {
+            return false;
+        }
+        let first = self.bookmarks_sig == 0;
+        self.bookmarks_sig = sig;
+        if !first {
+            self.bookmarks_rev += 1;
+        }
+        !first
+    }
+
+    /// スペースのフォルダの中身の印: 直下と 1 段下のフォルダの、隠しでない名前と、.prelude・space.toml の更新時刻と大きさ
+    fn bookmarks_signature(&self) -> u64 {
+        fn walk(dir: &Path, depth: u32, out: &mut Vec<String>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') {
+                    continue;
+                }
+                let Ok(m) = e.metadata() else { continue };
+                if m.is_dir() {
+                    out.push(format!("{}/{name}/", dir.display()));
+                    if depth == 0 {
+                        walk(&e.path(), 1, out);
+                    }
+                } else if name.ends_with(".prelude") || (depth == 0 && name == Space::FILE) {
+                    let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+                    out.push(format!("{}/{name}\0{t}\0{}", dir.display(), m.len()));
+                }
+            }
+        }
+        let mut v = vec![self.space.clone()];
+        walk(&self.space_dir(), 0, &mut v);
+        v.sort();
+        // FNV-1a(64 ビット)。0 は「まだ取っていない」に使うので避ける
+        let h = v.iter().flat_map(|s| s.bytes().chain([0xff])).fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+        h.max(1)
     }
 
     /// Web のペインのファビコンを保存した → 変わったか
@@ -864,6 +911,10 @@ impl Core {
         let reply = self.run(cmd);
         // ブックマークのファイルを書いただけ・消音しただけでも、UI に知らせる
         let changed = reply.is_ok() && (self.saved() != before || self.bookmarks_rev != rev || self.live_rev != live);
+        if self.bookmarks_rev != rev {
+            // 自分で書いた分は、外からの変化として二度知らせない
+            self.bookmarks_sig = self.bookmarks_signature();
+        }
         Outcome { reply, changed }
     }
 

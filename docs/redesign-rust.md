@@ -351,7 +351,9 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 
 サイドバーの部品のために足したもの(2026-11-11): `tab.duplicate`・`tab.renumber`・`tab.reopen`、`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`、`folder.list`・`folder.create`・`folder.rename`・`folder.remove`、`web.mute`。状態に `windows`・`closed`・`bookmarks_rev`、`bookmark.list` に `num`・`kind`、配置のペインに `icon`(ファイルのパス)・`muted`。どれも足しただけなので、版は 1 のまま
 
-まだしていないこと: ブックマークのフォルダの監視、ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
+ブックマークのフォルダの監視: コアが 2 秒ごとにスペースのフォルダ(直下と 1 段下)の中身の印を比べ、外から変わったら `bookmarks_rev` を上げて知らせる。OS の監視の仕組み(inotify など)には頼らない(ほかの OS にも載るように)
+
+まだしていないこと: ショートカット、`prelude-core` を systemd で常駐させること、UI の窓より上に取り込んだ窓を出し直すこと(UI ができてから。今は最前面に置くだけ)
 
 ---
 

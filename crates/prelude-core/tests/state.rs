@@ -744,6 +744,39 @@ fn ブックマークを書く_リンクの下のスペース_外の上書き_�
 }
 
 #[test]
+fn ブックマークのフォルダを外から変えたら知らせる() {
+    let root = spaces("bmpoll");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(dir.join("執筆")).unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    let leaf = "version = 2\n[layout]\nk = \"leaf\"\ntype = \"web\"\n";
+    // 最初は印を取るだけ
+    assert!(!c.poll_bookmarks());
+    assert!(!c.poll_bookmarks());
+    let rev = state(&c).bookmarks_rev;
+    // 外から足す・1 段下に足す・書き換える・消すと知らせる
+    std::fs::write(dir.join("a.prelude"), leaf).unwrap();
+    assert!(c.poll_bookmarks());
+    assert!(state(&c).bookmarks_rev > rev);
+    assert!(!c.poll_bookmarks());
+    std::fs::write(dir.join("執筆/b.prelude"), leaf).unwrap();
+    assert!(c.poll_bookmarks());
+    std::fs::write(dir.join("a.prelude"), format!("{leaf}url = \"https://x/\"\n")).unwrap();
+    assert!(c.poll_bookmarks());
+    std::fs::remove_file(dir.join("執筆/b.prelude")).unwrap();
+    assert!(c.poll_bookmarks());
+    // 関係ないもの(隠しファイル・ほかの種類のファイル)では知らせない
+    std::fs::write(dir.join(".hidden"), "x").unwrap();
+    std::fs::write(dir.join("memo.txt"), "x").unwrap();
+    assert!(!c.poll_bookmarks());
+    // コアが自分で書いた分は、二重に知らせない
+    ok(&mut c, Command::FolderCreate { name: "新".into() });
+    ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
+    ok(&mut c, Command::BookmarkSave { tab: None, title: "保存".into(), folder: String::new() });
+    assert!(!c.poll_bookmarks());
+}
+
+#[test]
 fn ダイアログの最初のフォルダは書いてあるときだけ() {
     let root = spaces("dialog");
     let dir = root.join(SPACE_DEFAULT);
