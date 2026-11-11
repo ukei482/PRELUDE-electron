@@ -25,6 +25,7 @@
   - コアを試すときは、ソケット・状態・スペースを別にする: `PRELUDE_CORE_SOCK=/tmp/…sock target/debug/prelude-core --state <ファイル> --spaces <フォルダ>`(ソケットのパスは 108 バイトまで)
   - 設定は `~/.config/prelude/theme.toml`・`settings.toml`(`prelude-format` の `config`)。Electron 版からの引き継ぎは `prelude-core` の `migrate.rs`(別のソケットのコアでは動かない)
 - `ui/` — GPUI で作った前の UI(`prelude-ui`・`prelude-sidebar`・`prelude-launcher`・`prelude-filer`・`prelude-settings`)。**UI は Slint で作り直すことにした**(`docs/redesign-rust.md` の「UI」)ので、手を入れない。Slint の UI ができたら、`prelude-filer`(ファイラは yazi に任せた)も含めて消す。ルートとは別のワークスペースで、ビルドには GPUI の開発用のライブラリと Rust 1.98.1 が要る
+- `skills/prelude/` — AI のための PRELUDE のスキル(`SKILL.md`・`format.md`)。`prelude` コマンドに埋め込み、`prelude skill install` で書き出す。コマンド・ファイルの形・決まりを変えたら、ここも直す
 - `proto/slint/` — Slint の試作と、**サイドバーの部品の決まり**(`ui/parts.slint`。部品ごとの `global`: `SidebarFrame`・`Spaces`・`Bookmarks`・`Tabs`・`NewTab`・`PaneBar`・`BookmarkButton`)。決まりを破るとビルドで止まることのテストを含む(`cargo test`。画面なしで動く)。ルートのワークスペースの外。手順は `proto/slint/README.md`
 - `proto/gpui/` — GPUI の試作(段階 0)。Slint に替えたので、Slint の UI ができたら消す
 - `flake.nix`・`nix/` — NixOS へ移るための開発環境(`nix develop`)と作者の PC の OS の設定(`docs/rice.md`。PRELUDE の設計は `docs/redesign-rust.md`)。`nix/prelude.nix` はコア・コマンドのパッケージ、`nix/module.nix` は NixOS のモジュール(`services.prelude`。コアのサービス・sway の断片・ダイアログ)。rice とのつなぎ方は `docs/rice.md`

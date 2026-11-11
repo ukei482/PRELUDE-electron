@@ -89,6 +89,12 @@ in
       };
     };
 
+    skill.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "ログインのたびに、AI(Claude Code・Codex など)のための PRELUDE のスキルを ~/.agents/skills と ~/.claude/skills に書き出す(prelude skill install)。PRELUDE の版とスキルの中身がそろう";
+    };
+
     portal.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -100,6 +106,16 @@ in
     # Web のペインは Chromium そのもの(「Web のペイン」。無いときの扱いは作らない)
     # 既定のファイラ(files のペイン)とアプリのダイアログの選ぶ画面(prelude choose)は、端末の中の yazi
     environment.systemPackages = [ cfg.package pkgs.chromium pkgs.yazi ] ++ lib.optional cfg.ui.enable cfg.ui.package;
+
+    # AI のための PRELUDE のスキル(ほかのスキルは上書きしない)
+    systemd.user.services.prelude-skill = lib.mkIf cfg.skill.enable {
+      description = "PRELUDE のスキルを AI のスキルのフォルダに書き出す";
+      wantedBy = [ "default.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${cfg.package}/bin/prelude skill install";
+      };
+    };
 
     systemd.user.services.prelude-core = {
       description = "PRELUDE のコア";

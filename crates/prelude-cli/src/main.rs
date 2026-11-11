@@ -6,6 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 mod choose;
+mod skill;
 
 const HELP: &str = "\
 usage: prelude <command> [args]
@@ -58,6 +59,9 @@ usage: prelude <command> [args]
   choose <open|open-multiple|directory|save> --output <file> [--name <name>] [--terminal <cmd>] <folder>
                          The file chooser of app dialogs: yazi in a terminal. Writes the chosen paths to <file>
                          (what prelude-core's dialog portal runs by default)
+  skill [show [<file>]]  Print the skill that teaches AI agents how to use PRELUDE (SKILL.md, format.md)
+  skill install [<dir>...]
+                         Write the skill into <dir>/prelude/ (default: ~/.agents/skills and ~/.claude/skills)
   raw <cmd> [args-json]  Send a command and print the result as JSON
 
 The core socket is $PRELUDE_CORE_SOCK or $XDG_RUNTIME_DIR/prelude/core.sock.";
@@ -451,6 +455,9 @@ fn run(args: &[String]) -> Result<(), String> {
     if a.first() == Some(&"choose") {
         return choose::run(&a[1..]);
     }
+    if a.first() == Some(&"skill") {
+        return skill::run(&a[1..], &home());
+    }
     match a.as_slice() {
         ["shell"] => shell()?,
         ["sidebar"] => sidebar("toggle")?,
@@ -519,6 +526,11 @@ fn run(args: &[String]) -> Result<(), String> {
             pane.insert("type".into(), json!(kind));
             for kv in rest {
                 let (k, v) = kv.split_once('=').ok_or_else(|| format!("Not key=value: {kv}"))?;
+                // 引用符で囲まれてシェルが ~ を直さなかったときも、ホームにする
+                let v = match v.strip_prefix('~') {
+                    Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("{}{rest}", home()),
+                    _ => v.to_string(),
+                };
                 pane.insert(k.into(), json!(v));
             }
             Conn::open(false)?.call("tab.open", json!({ "pane": pane }))?;

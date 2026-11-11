@@ -6,6 +6,7 @@
 ## [未リリース]
 
 ### 追加
+- AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする
 - Rust 版のコアを、設計の見直し(ファイラを外す・OS の役割を持たない)に合わせた。ふだんの PRELUDE(Electron 版)は変わらない
   - 既定のファイラは端末の中の yazi(`files` のレシピ)。コアは `files`・`field` を名指ししない(`field` は `files` の別名として読む)。ペイン・タブの名前は、種類によらず `path` の最後の名前
   - 起動したペインに `PRELUDE_PANE` を渡す。`prelude pane path [--pane <id>] <folder>` でペインの今の場所をコアに伝えると、タブを開き直したときにそこで開く(yazi から呼ぶ例は `docs/rice.md`)
