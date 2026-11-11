@@ -1,8 +1,8 @@
 //! ブックマークのファイルを書く命令(docs/redesign-rust.md の「サイドバー」の「コアに足すもの」)。
 //! 使用者がサイドバーなどで頼んだことを、コアが代わりに書く。書くのは今のスペースの中(直下と、その 1 段下のフォルダ)だけ。
 //! 書いたら `bookmarks_rev` を増やし、開いているタブ・閉じたタブ・ランチャーの点数が指すパスも合わせる
-use super::{Core, Fail, Reply, fail, not_found, stem, valid_name};
-use prelude_format::{Bookmark, EXT, Node, Space, Value, file_name};
+use super::{fail, not_found, stem, valid_name, Core, Fail, Reply};
+use prelude_format::{file_name, Bookmark, Node, Space, Value, EXT};
 use prelude_proto::{ErrorCode, FolderInfo, TabRef};
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -89,7 +89,12 @@ impl Core {
     /// ブックマークのパスが変わった(new が None なら消えた)ことを、タブ・閉じたタブ・点数・並びに伝える。
     /// prefix なら、old の下のパスを全部 new の下にする(フォルダの名前を変えたとき)
     fn relink(&mut self, old: &str, new: Option<(&str, Option<&str>)>, prefix: bool) {
-        let r = Remap { old: old.to_string(), new: new.map(|(n, _)| n.to_string()), title: new.and_then(|(_, t)| t).map(str::to_string), prefix };
+        let r = Remap {
+            old: old.to_string(),
+            new: new.map(|(n, _)| n.to_string()),
+            title: new.and_then(|(_, t)| t).map(str::to_string),
+            prefix,
+        };
         self.relink_all(&[r]);
     }
 
@@ -98,11 +103,7 @@ impl Core {
         // パス → Some(新しいパス、新しい題名)。消えたなら Some(None)。関係なければ None
         let map = |p: &str| -> Option<Option<(String, Option<String>)>> {
             remaps.iter().find_map(|r| {
-                let rest = if p == r.old {
-                    ""
-                } else {
-                    p.strip_prefix(r.old.as_str()).filter(|rest| r.prefix && rest.starts_with('/'))?
-                };
+                let rest = if p == r.old { "" } else { p.strip_prefix(r.old.as_str()).filter(|rest| r.prefix && rest.starts_with('/'))? };
                 Some(r.new.as_ref().map(|n| (format!("{n}{rest}"), r.title.clone())))
             })
         };
@@ -136,7 +137,8 @@ impl Core {
                 eprintln!("prelude-core: cannot update the bookmark order ({})", e.1);
             }
         }
-        let keys: Vec<String> = self.history.keys().filter(|k| k.strip_prefix("bookmark:").is_some_and(|p| map(p).is_some())).cloned().collect();
+        let keys: Vec<String> =
+            self.history.keys().filter(|k| k.strip_prefix("bookmark:").is_some_and(|p| map(p).is_some())).cloned().collect();
         for k in keys {
             let v = self.history.remove(&k).unwrap();
             if let Some(Some((np, _))) = map(&k["bookmark:".len()..]) {
@@ -235,7 +237,8 @@ impl Core {
         if title.is_empty() {
             return Err(fail(ErrorCode::BadRequest, "No title"));
         }
-        let layout = self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
+        let layout =
+            self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
         let dir = self.space_folder(folder, true)?;
         std::fs::create_dir_all(&dir).map_err(io)?;
         let path = unique(&dir, &file_name(title));
@@ -247,10 +250,12 @@ impl Core {
 
     pub(super) fn bookmark_overwrite(&mut self, tab: Option<TabRef>) -> Reply {
         let i = self.tab_index(tab)?;
-        let (path, _) = self.tabs.tabs[i].bookmark.clone().ok_or_else(|| fail(ErrorCode::BadRequest, "This tab was not opened from a bookmark"))?;
+        let (path, _) =
+            self.tabs.tabs[i].bookmark.clone().ok_or_else(|| fail(ErrorCode::BadRequest, "This tab was not opened from a bookmark"))?;
         // 書くのは今のスペースの中だけ(ほかの所の .prelude を開いたタブは、上書きせずに保存してもらう)
         let path = s(&self.space_bookmark(&path)?);
-        let layout = self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
+        let layout =
+            self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
         // 題名・paths・知らない項目は残し、配置だけを替える
         let mut bm = self.read_bookmark(&path)?;
         bm.layout = layout.to_node();

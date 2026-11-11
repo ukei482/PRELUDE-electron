@@ -64,14 +64,14 @@ fn apply(ui: &Sidebar, s: core::Snap) {
     g.set_space(s.space.into());
     let spaces: Vec<SharedString> = s.spaces.into_iter().map(Into::into).collect();
     g.set_spaces(ModelRc::new(VecModel::from(spaces)));
-    let bookmarks: Vec<Bookmark> =
-        s.bookmarks.into_iter().map(|(path, title, folder)| Bookmark { path: path.into(), title: title.into(), folder: folder.into() }).collect();
-    g.set_bookmarks(ModelRc::new(VecModel::from(bookmarks)));
-    let tabs: Vec<Tab> = s
-        .tabs
+    let bookmarks: Vec<Bookmark> = s
+        .bookmarks
         .into_iter()
-        .map(|t| Tab { id: t.id, num: t.num, title: t.title.into(), kind: t.kind.into(), active: t.active })
+        .map(|(path, title, folder)| Bookmark { path: path.into(), title: title.into(), folder: folder.into() })
         .collect();
+    g.set_bookmarks(ModelRc::new(VecModel::from(bookmarks)));
+    let tabs: Vec<Tab> =
+        s.tabs.into_iter().map(|t| Tab { id: t.id, num: t.num, title: t.title.into(), kind: t.kind.into(), active: t.active }).collect();
     g.set_tabs(ModelRc::new(VecModel::from(tabs)));
 }
 

@@ -280,7 +280,10 @@ fn 取り込むペイン_レシピ_止まったペイン() {
     assert!(w.iter().all(|w| w.marker.is_empty()));
     assert_eq!(ok(&mut c, Command::RecipeList {}), json!([{ "type": "console", "name": "Console" }]));
     // cwd のあるコンソール(ファイラの「ここで端末を開く」)は paths.terminal の代わりにそこで開く
-    let here = ok(&mut c, Command::PaneSplit { pane: console, dir: prelude_proto::Dir::Col, new: spec(json!({ "type": "console", "cwd": "/data/x y" })) });
+    let here = ok(
+        &mut c,
+        Command::PaneSplit { pane: console, dir: prelude_proto::Dir::Col, new: spec(json!({ "type": "console", "cwd": "/data/x y" })) },
+    );
     let here = here.as_u64().unwrap();
     let w = c.wants();
     let h = w.iter().find(|w| w.pane == here).unwrap();
@@ -525,7 +528,10 @@ fn タブを複製する_番号を変える_閉じたタブを開き直す() {
     let s = state(&c);
     assert_eq!((s.tabs[0].id, s.tabs[0].layout["url"].clone(), s.active), (r, json!("https://a/"), Some(r)));
     ok(&mut c, Command::TabReopen {});
-    assert_eq!(state(&c).tabs.iter().map(|t| t.layout["url"].clone()).collect::<Vec<_>>(), vec![json!("https://a/"), json!("https://a/"), json!("https://b/")]);
+    assert_eq!(
+        state(&c).tabs.iter().map(|t| t.layout["url"].clone()).collect::<Vec<_>>(),
+        vec![json!("https://a/"), json!("https://a/"), json!("https://b/")]
+    );
     assert_eq!(c.handle(Command::TabReopen {}).reply.unwrap_err().0, ErrorCode::NotFound);
     // 閉じたタブはスペースごと
     ok(&mut c, Command::TabClose { tab: None });
@@ -571,7 +577,10 @@ fn ブックマークを書く_保存_上書き_名前_移動_ゴミ箱() {
     ok(&mut c, Command::PaneUpdate { pane, fields: f });
     ok(&mut c, Command::BookmarkOverwrite { tab: Some(TabRef::Id { id: tab }) });
     let bm = read(&p);
-    assert_eq!((bm.title.as_str(), bm.paths.get("save"), bm.rest.get("memo").and_then(|v| v.as_str())), ("下書き", Some("/out"), Some("残す")));
+    assert_eq!(
+        (bm.title.as_str(), bm.paths.get("save"), bm.rest.get("memo").and_then(|v| v.as_str())),
+        ("下書き", Some("/out"), Some("残す"))
+    );
     assert!(std::fs::read_to_string(&p).unwrap().contains("https://new/"));
     assert_eq!(c.handle(Command::BookmarkOverwrite { tab: Some(TabRef::Num { num: 9 }) }).reply.unwrap_err().0, ErrorCode::NotFound);
 
@@ -595,7 +604,11 @@ fn ブックマークを書く_保存_上書き_名前_移動_ゴミ箱() {
     assert_eq!(state(&c).tabs[0].title, "本文");
 
     // フォルダを消す: 中身は直下へ(同じ名前は「(2)」にして、題名も合わせる)
-    std::fs::write(dir.join("本文.prelude"), "version = 2\ntitle = \"本文\"\n[layout]\nk = \"leaf\"\ntype = \"web\"\nurl = \"https://x/\"\n").unwrap();
+    std::fs::write(
+        dir.join("本文.prelude"),
+        "version = 2\ntitle = \"本文\"\n[layout]\nk = \"leaf\"\ntype = \"web\"\nurl = \"https://x/\"\n",
+    )
+    .unwrap();
     ok(&mut c, Command::FolderRemove { path: f2.clone() });
     assert!(!Path::new(&f2).exists());
     assert_eq!(state(&c).tabs[0].bookmark.as_deref(), Some(d("本文 (2).prelude").as_str()));
@@ -614,7 +627,10 @@ fn ブックマークを書く_保存_上書き_名前_移動_ゴミ箱() {
     for bad in [outside.to_string_lossy().into_owned(), "relative.prelude".into(), d("a.txt")] {
         assert!(c.handle(Command::BookmarkTrash { path: bad.clone() }).reply.is_err(), "{bad}");
     }
-    assert_eq!(c.handle(Command::BookmarkMove { path: p2s.clone(), folder: root.to_string_lossy().into_owned() }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    assert_eq!(
+        c.handle(Command::BookmarkMove { path: p2s.clone(), folder: root.to_string_lossy().into_owned() }).reply.unwrap_err().0,
+        ErrorCode::BadRequest
+    );
     assert!(Path::new(&p2s).exists());
 }
 
@@ -628,7 +644,11 @@ fn ブックマークの並び_番号_種類_フォルダの一覧() {
     let leaf = |t: &str| format!("version = 2\n[layout]\nk = \"leaf\"\ntype = \"{t}\"\n");
     std::fs::write(dir.join("a.prelude"), leaf("web")).unwrap();
     std::fs::write(dir.join("b.prelude"), leaf("field")).unwrap();
-    std::fs::write(dir.join("c.prelude"), "version = 2\n[layout]\nk = \"split\"\n[layout.a]\nk = \"leaf\"\ntype = \"web\"\n[layout.b]\nk = \"leaf\"\ntype = \"app\"\n").unwrap();
+    std::fs::write(
+        dir.join("c.prelude"),
+        "version = 2\n[layout]\nk = \"split\"\n[layout.a]\nk = \"leaf\"\ntype = \"web\"\n[layout.b]\nk = \"leaf\"\ntype = \"app\"\n",
+    )
+    .unwrap();
     std::fs::write(dir.join("執筆/図.prelude"), leaf("app")).unwrap();
     let mut c = Core::new(HOME, &root, None);
     let d = |name: &str| dir.join(name).to_string_lossy().into_owned();
@@ -639,7 +659,12 @@ fn ブックマークの並び_番号_種類_フォルダの一覧() {
     // 直下 → フォルダの名前の順、その中は題名の順。番号は並びの順。種類は 1 つのペインならその種類(field は files)、分割は layout
     assert_eq!(
         list(&mut c),
-        vec![("a".into(), 1, "web".into()), ("b".into(), 2, "files".into()), ("c".into(), 3, "layout".into()), ("執筆/図".into(), 4, "app".into())]
+        vec![
+            ("a".into(), 1, "web".into()),
+            ("b".into(), 2, "files".into()),
+            ("c".into(), 3, "layout".into()),
+            ("執筆/図".into(), 4, "app".into())
+        ]
     );
     // 空のフォルダも一覧に出る
     let folders: Vec<prelude_proto::FolderInfo> = serde_json::from_value(ok(&mut c, Command::FolderList {})).unwrap();
@@ -656,7 +681,10 @@ fn ブックマークの並び_番号_種類_フォルダの一覧() {
     let conf = std::fs::read_to_string(dir.join("space.toml")).unwrap();
     assert!(conf.contains("files = \"/data\"") && conf.contains("order"), "{conf}");
     // 違うフォルダのものの前には置けない
-    assert_eq!(c.handle(Command::BookmarkReorder { path: d("a.prelude"), before: d("執筆/図.prelude") }).reply.unwrap_err().0, ErrorCode::BadRequest);
+    assert_eq!(
+        c.handle(Command::BookmarkReorder { path: d("a.prelude"), before: d("執筆/図.prelude") }).reply.unwrap_err().0,
+        ErrorCode::BadRequest
+    );
     // 名前を変えても、並びの位置は変わらない
     ok(&mut c, Command::BookmarkRename { path: d("b.prelude"), title: "z".into() });
     assert_eq!(names(&mut c), vec!["c", "z", "a", "執筆/図"]);
@@ -675,7 +703,13 @@ fn 消音とアイコンは状態に出すが書き出さない() {
     let mut c = Core::new(HOME, &root, None);
     fn apps() -> Vec<prelude_core::apps::App> {
         let icon = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("state/live/kate.svg");
-        vec![prelude_core::apps::App { name: "Kate".into(), exec: "kate".into(), cls: "kate".into(), id: "org.kde.kate".into(), icon: icon.to_string_lossy().into() }]
+        vec![prelude_core::apps::App {
+            name: "Kate".into(),
+            exec: "kate".into(),
+            cls: "kate".into(),
+            id: "org.kde.kate".into(),
+            icon: icon.to_string_lossy().into(),
+        }]
     }
     c.set_apps(apps);
     ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
@@ -839,15 +873,19 @@ mod compositor_layout {
     #[test]
     fn アプリを分割して開く() {
         let mut c = core("item-split");
-        c.set_apps(|| vec![prelude_core::apps::App { name: "Kate".into(), exec: "kate".into(), cls: "kate".into(), id: "org.kde.kate".into(), icon: String::new() }]);
+        c.set_apps(|| {
+            vec![prelude_core::apps::App {
+                name: "Kate".into(),
+                exec: "kate".into(),
+                cls: "kate".into(),
+                id: "org.kde.kate".into(),
+                icon: String::new(),
+            }]
+        });
         let a = open(&mut c, "a");
         let at = prelude_proto::SplitAt { pane: a, dir: Dir::Col };
-        let new = c
-            .handle(Command::ItemOpen { key: "app:org.kde.kate".into(), allow: vec![], split: Some(at) })
-            .reply
-            .unwrap()
-            .as_u64()
-            .unwrap();
+        let new =
+            c.handle(Command::ItemOpen { key: "app:org.kde.kate".into(), allow: vec![], split: Some(at) }).reply.unwrap().as_u64().unwrap();
         let s = c.state();
         assert_eq!(s.tabs.len(), 1);
         assert_eq!(s.tabs[0].active_pane, new);
@@ -916,7 +954,13 @@ mod compositor_layout {
     fn 外から開いた窓はペインになる() {
         let mut c = core("foreign");
         c.set_apps(|| {
-            vec![prelude_core::apps::App { name: "Okular".into(), exec: "okular".into(), cls: "".into(), id: "org.kde.okular".into(), icon: String::new() }]
+            vec![prelude_core::apps::App {
+                name: "Okular".into(),
+                exec: "okular".into(),
+                cls: "".into(),
+                id: "org.kde.okular".into(),
+                icon: String::new(),
+            }]
         });
         let a = open(&mut c, "a");
         let tab = c.state().active.unwrap();

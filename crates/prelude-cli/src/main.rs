@@ -606,7 +606,8 @@ fn run(args: &[String]) -> Result<(), String> {
             c.call("bookmark.reorder", json!({ "path": path, "before": before }))?;
         }
         ["folders"] => {
-            let list: Vec<FolderInfo> = serde_json::from_value(Conn::open(false)?.call("folder.list", json!({}))?).map_err(|e| e.to_string())?;
+            let list: Vec<FolderInfo> =
+                serde_json::from_value(Conn::open(false)?.call("folder.list", json!({}))?).map_err(|e| e.to_string())?;
             for f in list {
                 println!("  {}", f.title);
             }

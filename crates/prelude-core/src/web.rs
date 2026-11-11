@@ -199,7 +199,8 @@ pub fn download_target(from: &Path, dir: &str) -> Option<PathBuf> {
     if !first.exists() {
         return Some(first);
     }
-    let (stem, ext) = (from.file_stem()?.to_string_lossy(), from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default());
+    let (stem, ext) =
+        (from.file_stem()?.to_string_lossy(), from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default());
     (1..1000).map(|i| Path::new(dir).join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists())
 }
 
@@ -212,7 +213,8 @@ pub fn start(tag: &str, socket: PathBuf, notes: mpsc::UnboundedSender<Note>) -> 
     };
     let base = page.parent().unwrap_or(Path::new("/")).to_path_buf();
     let extension = base.join(format!("prelude-extension{tag}"));
-    let ready = std::fs::create_dir_all(&base).and_then(|_| std::fs::write(&page, PANE_PAGE)).and_then(|_| install_extension(&extension, &profile));
+    let ready =
+        std::fs::create_dir_all(&base).and_then(|_| std::fs::write(&page, PANE_PAGE)).and_then(|_| install_extension(&extension, &profile));
     if let Err(e) = ready {
         eprintln!("prelude-core: cannot prepare Chromium ({e})");
         return None;
@@ -557,7 +559,11 @@ fn favicon_dir() -> PathBuf {
 fn favicon_name(url: &str, tab: i64) -> String {
     let host = url.split("://").nth(1).unwrap_or("").split(['/', '?', '#']).next().unwrap_or("");
     let host: String = host.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')).take(100).collect();
-    if host.is_empty() || host.starts_with('.') { format!("tab-{tab}") } else { host }
+    if host.is_empty() || host.starts_with('.') {
+        format!("tab-{tab}")
+    } else {
+        host
+    }
 }
 
 /// FNV-1a(32 ビット)。ファビコンのファイル名に中身を表す印を付ける

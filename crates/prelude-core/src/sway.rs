@@ -356,10 +356,7 @@ pub fn ratio_cmds(t: &Tree, con: &impl Fn(u64) -> i64, sway: &Value) -> Vec<Stri
 
 /// 浮かせた選ぶ画面を、画面の中に収まる大きさで真ん中に置くコマンド
 pub fn dialog_cmds(con: i64) -> Vec<String> {
-    vec![
-        format!("[con_id={con}] resize set width 60 ppt height 70 ppt"),
-        format!("[con_id={con}] move position center"),
-    ]
+    vec![format!("[con_id={con}] resize set width 60 ppt height 70 ppt"), format!("[con_id={con}] move position center")]
 }
 
 /// sway のコマンドの文字列の引用

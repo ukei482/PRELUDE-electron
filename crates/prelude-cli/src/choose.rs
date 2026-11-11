@@ -79,12 +79,7 @@ pub fn finish(output: &Path, placeholder: Option<&Path>) {
 pub fn run(args: &[&str]) -> Result<(), String> {
     let o = parse(args)?;
     let (target, placeholder) = prepare(&o).map_err(|e| format!("{}: {e}", o.folder.display()))?;
-    let cmd = format!(
-        "{} yazi --chooser-file {} {}",
-        o.terminal,
-        quote(&o.output.to_string_lossy()),
-        quote(&target.to_string_lossy())
-    );
+    let cmd = format!("{} yazi --chooser-file {} {}", o.terminal, quote(&o.output.to_string_lossy()), quote(&target.to_string_lossy()));
     let r = std::process::Command::new("/bin/sh").arg("-c").arg(&cmd).status();
     finish(&o.output, placeholder.as_deref());
     r.map(|_| ()).map_err(|e| format!("{cmd}: {e}"))
@@ -108,7 +103,7 @@ mod tests {
         assert_eq!(o.folder, PathBuf::from("/"));
         assert!(parse(&["delete", "--output", "/o", "/"]).is_err());
         assert!(parse(&["open", "/"]).is_err()); // --output が要る
-        // 無いフォルダはホーム
+                                                 // 無いフォルダはホーム
         assert_ne!(parse(&["open", "--output", "/o", "/nonexistent/x"]).unwrap().folder, PathBuf::from("/nonexistent/x"));
     }
 

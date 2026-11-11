@@ -25,7 +25,8 @@ pub fn compile(path: &str) -> Result<ComponentDefinition, Vec<String>> {
     // 決まり(prelude.slint)は PRELUDE が出すものを使う
     compiler.set_include_paths(vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("ui")]);
     let r = spin_on::spin_on(compiler.build_from_path(path));
-    let errors: Vec<String> = r.diagnostics().filter(|d| d.level() == slint_interpreter::DiagnosticLevel::Error).map(|d| d.to_string()).collect();
+    let errors: Vec<String> =
+        r.diagnostics().filter(|d| d.level() == slint_interpreter::DiagnosticLevel::Error).map(|d| d.to_string()).collect();
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -47,7 +48,11 @@ fn apply(ui: &ComponentInstance, s: core::Snap) {
     set(ui, "space", Value::String(s.space.into()));
     set(ui, "spaces", model(s.spaces.into_iter().map(|s| Value::String(s.into())).collect()));
     let bm = s.bookmarks.into_iter().map(|(p, t, f)| {
-        Value::Struct(Struct::from_iter([("path".into(), Value::String(p.into())), ("title".into(), Value::String(t.into())), ("folder".into(), Value::String(f.into()))]))
+        Value::Struct(Struct::from_iter([
+            ("path".into(), Value::String(p.into())),
+            ("title".into(), Value::String(t.into())),
+            ("folder".into(), Value::String(f.into())),
+        ]))
     });
     set(ui, "bookmarks", model(bm.collect()));
     let tabs = s.tabs.into_iter().map(|t| {

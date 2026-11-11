@@ -48,8 +48,13 @@ fn main() {
     let bm = |t: &str, f: &str| Bookmark { path: format!("/s/{t}.prelude").into(), title: t.into(), folder: f.into() };
     g.set_bookmarks(ModelRc::new(VecModel::from(vec![bm("本文", ""), bm("文献を探す", ""), bm("図", "執筆")])));
     let tab = |id: i32, title: &str, kind: &str, active: bool| Tab { id, num: id, title: title.into(), kind: kind.into(), active };
-    g.set_tabs(ModelRc::new(VecModel::from(vec![tab(1, "本文 - Kate", "app", true), tab(2, "scholar.google.com", "web", false), tab(3, "~/研究/論文", "files", false)])));
-    let rows: Vec<SharedString> = (1..=10_000).map(|i| format!("{i:05}  資料_{}.txt", ["議事録", "論文", "写真", "見積"][i % 4]).into()).collect();
+    g.set_tabs(ModelRc::new(VecModel::from(vec![
+        tab(1, "本文 - Kate", "app", true),
+        tab(2, "scholar.google.com", "web", false),
+        tab(3, "~/研究/論文", "files", false),
+    ])));
+    let rows: Vec<SharedString> =
+        (1..=10_000).map(|i| format!("{i:05}  資料_{}.txt", ["議事録", "論文", "写真", "見積"][i % 4]).into()).collect();
     ui.set_rows(ModelRc::new(VecModel::from(rows)));
     ui.set_rows_info("10000 件(作ったもの)".into());
 

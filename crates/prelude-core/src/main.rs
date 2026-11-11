@@ -7,8 +7,8 @@
 //! - 最初の起動で Electron 版の設定を引き継ぐ(`migrate.rs`)。別のソケットで試しているコアでは動かさない
 //! - ペインのレシピ: 既定は `$XDG_CONFIG_HOME/prelude/panes`
 //! - `--no-embed`: アプリを起動せず、窓も取り込まない(状態だけを試す)
-use prelude_core::{migrate, recipes};
 use prelude_core::server::{run, Options, VERSION};
+use prelude_core::{migrate, recipes};
 use std::path::PathBuf;
 
 const USAGE: &str = "usage: prelude-core [--socket PATH] [--state PATH] [--spaces DIR] [--recipes DIR] [--no-embed]";

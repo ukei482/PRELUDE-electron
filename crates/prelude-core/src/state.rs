@@ -574,7 +574,8 @@ impl Core {
         walk(&self.space_dir(), 0, &mut v);
         v.sort();
         // FNV-1a(64 ビット)。0 は「まだ取っていない」に使うので避ける
-        let h = v.iter().flat_map(|s| s.bytes().chain([0xff])).fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+        let h =
+            v.iter().flat_map(|s| s.bytes().chain([0xff])).fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
         h.max(1)
     }
 
@@ -963,7 +964,9 @@ impl Core {
             }
             Command::TabDuplicate { tab } => {
                 let i = self.tab_index(tab)?;
-                let layout = self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
+                let layout = self
+                    .reopenable(&self.tabs.tabs[i].layout)
+                    .ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
                 Ok(json!(self.insert_tab(layout, None, Some(i + 1))))
             }
             Command::TabRenumber { tab, num } => {
@@ -981,8 +984,10 @@ impl Core {
             Command::TabReopen {} => {
                 let c = self.closed.get_mut(&self.space).and_then(Vec::pop).ok_or_else(|| not_found("closed tab"))?;
                 self.live_rev += 1; // 開き直せる数(状態の closed)が変わった
-                // そのブックマークを開いたタブがもうあれば、そのタブにする(1 ブックマーク = 最大 1 タブ)
-                if let Some(t) = c.bookmark.as_ref().and_then(|(p, _)| self.tabs.tabs.iter().find(|t| t.bookmark.as_ref().is_some_and(|(q, _)| q == p))) {
+                                    // そのブックマークを開いたタブがもうあれば、そのタブにする(1 ブックマーク = 最大 1 タブ)
+                if let Some(t) =
+                    c.bookmark.as_ref().and_then(|(p, _)| self.tabs.tabs.iter().find(|t| t.bookmark.as_ref().is_some_and(|(q, _)| q == p)))
+                {
                     let id = t.id;
                     self.tabs.active = Some(id);
                     return Ok(json!(id));
