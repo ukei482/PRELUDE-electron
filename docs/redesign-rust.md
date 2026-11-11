@@ -281,11 +281,17 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 - 窓の出し方は環境に合わせる(layer-shell があればそれ、無ければ浮いた普通の窓)
 
 ### サイドバー
+**サイドバーは普通のウィンドウ** にする。画面の端に貼り付けて場所を予約する(layer-shell)のはデスクトップの外回りの仕事なのでやめ、置き場所は環境に任せる。
+
 - つなぎの 1 つで、無くてもよい。スペース・ブックマーク・タブ・今のペインを出す
+- **普通のウィンドウ**(Wayland の app_id・X11 のクラスは `prelude-sidebar`)。layer-shell の無いデスクトップ(GNOME など)や、ほかの OS でも同じに動く
+  - どこに置くか・どの作業領域に出すかは環境が決める。タイル型のコンポジタなら並び、普通のデスクトップなら好きな場所に動かせる。いつも左端に出したいときは環境の決まりで書く(sway なら `for_window [app_id="prelude-sidebar"] floating enable, sticky enable, move position 0 0` のような断片。作者の rice に置く)
+  - **ペインではない**。`[layout]` に書かず、タブにも入らない。窓のつなぎは PRELUDE の UI の窓(`prelude-sidebar`・`prelude-launcher`)を「PRELUDE を通さずに開いた窓」として引き取らない
+  - 1 つだけ動く。もう動いていれば、`prelude sidebar show` はそのウィンドウを前に出す
 - サイドバーも同じソケットの約束を使う。ほかの人が別のサイドバーを作ることもできる
 - GPUI(`prelude-proto` の上の型付きのクライアント)。PRELUDE と強く結び付いていて、頻繁に付け替えるものではないので、ビルドが要ることは弱みにならない
-- layer-shell で画面の端に貼り付く。layer-shell の無い環境では出さないか、浮いた窓にする
-- 幅は「広い」と「細い列」の 2 つで、一番上の PRELUDE の行(つまみ)で切り替える。見た目だけの状態なのでコアには持たせず、サイドバーが `$XDG_STATE_HOME/prelude/sidebar` に覚える(`prelude_proto::sidebar`)。`prelude sidebar toggle` はこのファイルを書き換え、完全に隠すのは `prelude sidebar hide`(プロセスを止める)だけ
+- 幅は「広い」と「細い列」の 2 つで、一番上の PRELUDE の行(つまみ)で切り替える。切り替えると、その幅にウィンドウの大きさを頼む(タイル型の環境では、環境が決めた幅が勝つ)。見た目だけの状態なのでコアには持たせず、サイドバーが `$XDG_STATE_HOME/prelude/sidebar` に覚える(`prelude_proto::sidebar`)。`prelude sidebar toggle` はこのファイルを書き換える
+- 閉じるのはウィンドウを閉じる(プロセスが終わる)。`prelude sidebar hide` も同じ。出すのは `prelude sidebar show`(ランチャーからも)
 
 ### GPUI の試作で分かったこと
 この PC(Kubuntu・KDE Plasma 6 の Wayland・Iris Xe)で、`proto/gpui`(サイドバーの形の試作)を動かして確かめた。
@@ -354,7 +360,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | 1 | `.prelude`・`space.toml` の TOML(`prelude-format`)。Electron 版も TOML を読み書きする | 済 |
 | 2 | `prelude-core` の骨組み(状態・ソケットの約束・`prelude` コマンド) | 済 |
 | 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(`web.rs`)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済。残り: 段 0〜2 のつなぎの扱い(下の「これから」) |
-| 4 | UI: `prelude-ui`・サイドバー・ランチャー(GPUI) | 済。ランチャーのアイコンはまだ |
+| 4 | UI: `prelude-ui`・サイドバー・ランチャー(GPUI) | 済。ランチャーのアイコンはまだ。サイドバーを普通のウィンドウにする(下の「これから」) |
 | 5 | ファイラ | 自作のファイラ(`prelude-filer`)を作ったが、外のファイラに任せることにした(下の「これから」) |
 | 6 | 環境とのつなぎ: `prelude watch --bar`(waybar の custom モジュールの形)、作者の環境の NixOS のモジュール(`nix/module.nix`) | 済 |
 | 7 | アプリのダイアログ(`portal.rs`。`OpenFile`・`SaveFile`・`Request.Close`・`filters`(glob だけ)・`current_folder`・`SaveFiles`) | 済。まだ: `choices`(受け取るが出さない)、MIME の型での絞り込み |
@@ -364,8 +370,9 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 1. **ファイラを外す**: コアの `files`・`field` の名指しを消す、`field` を `files` の別名にする、`prelude pane path`、既定の `files` のレシピを yazi に、`ui/prelude-filer`(と `FilerView`)を消す、サイドバーの + の Field と種類の印の `field` を外す、テストの見本(`test/fixtures/format/full.prelude`)から `sort`・`[ui.field]` を外す
 2. **アプリのダイアログ**: 最初のフォルダの優先順を変える、既定の選ぶ画面を yazi(`prelude-choose`)に、ポータルを別のプログラムに分ける
 3. **つなぎ無しでも動く**: つなぎが無くても起動する(段 0。今の `--no-embed` はアプリも起動しない)、タブを論理の単位にして作業領域との対応を sway のつなぎへ寄せる、つなぎが段を名乗る、アプリの一覧を差し替えられる形にする
-4. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。移ったフォルダをコアに伝える yazi のプラグインの例を `docs/rice.md` に書く
-5. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
+4. **サイドバーを普通のウィンドウにする**: `--window` を既定にして layer-shell をやめる、窓のつなぎ(sway・KWin)が `prelude-sidebar`・`prelude-launcher` の窓を引き取らないようにする、`prelude sidebar show`(動いていれば前に出す)、幅の切り替えでウィンドウの大きさを頼む、NixOS のモジュールの起動の断片(層の順番を待つ `sleep`)を外し、左端に置く決まりは作者の rice へ
+5. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。移ったフォルダをコアに伝える yazi のプラグインの例を `docs/rice.md` に書く
+6. **8-c**: Electron 版と一緒に、`sys/`・`theme/`・シェル関係の `scripts/` と、フォルダ・フィールドのペイン(`fileops.js`・`src/files.js`・`src/field.js`・`src/fieldlayout.js`)を消す。KWin のつなぎは残す。それまでこれらには手を入れない
 
 ### 引き継ぎ
 - 試している間、**Electron 版と Rust 版は同じデータを使う**(同じ `~/スペース` の TOML の `.prelude`・`space.toml`)。Rust 版で足したブックマークは Electron 版にも出る
