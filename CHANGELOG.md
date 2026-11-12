@@ -18,7 +18,7 @@
   - まだ効かない項目(窓のつなぎ・サイドバー・端末など)は `prelude config list` で「not used by PRELUDE yet」と出る
   - 直した不具合: ダウンロードの保存先が、paths にも設定にも無いときにホームの直下になっていた(paths がホームまで必ず返すため、設定の `download_dir` も使われていなかった)。今は paths → 設定 → Chromium の既定の順
   - `prelude` コマンドの出力を `head` などで途中で切っても、落ちずに静かに終わる
-- HTML/CSS の UI の試作(`proto/web`)。Slint と比べるため。部品の決まり(`parts.js`。決まりに無い部品・props・頼みごとを使うと止まる)、コアとのつなぎ(`glue.js`)、サイドバー(テーマ: 白・黒・クリア・クリア黒。右クリックのメニュー・ドラッグでの並べ替え・細い列)、偽のコア、本物のコアのソケットへの橋(`bridge.js`)。`node proto/web/build.js` で見る用の 1 枚の HTML を作る
+- HTML/CSS の UI の試作(`proto/web`)。Slint と比べるため。部品の決まり(`parts.js`。決まりに無い部品・props・頼みごとを使うと止まる)、コアとのつなぎ(`glue.js`)、サイドバー(テーマ: 白・黒・クリア・クリア黒。右クリックのメニュー・ドラッグでの並べ替え・細い列)、偽のコア、本物のコアのソケットへの橋(`bridge.js`)。`node proto/web/build.js` で見る用の 1 枚の HTML を作る。色は 背景・文字・強調 の 3 つと透け具合だけで作る(ほかの色はこの 3 つを薄めたもの)
 - 設定の `[windows]`(作る順番の 3)。コアの起動のときに当てはめる
   - 窓のつなぎの段を 0 起動だけ・1 作業領域だけ・2 並べる・3 読む・4 追う に振り直した(状態の `windows.level` の数も変わる。分割で開けるのは 2 から)
   - `windows.backend`(auto・sway・kwin・hyprland・none)でつなぎを選び、`windows.level` で任せる段を止める。sway のつなぎは `workspace` なら窓をタブの作業領域へ移すだけで、並べ方・大きさは環境に任せる。`read` から使用者の並び・選んだ窓を読み、`follow` で PRELUDE を通さずに開いた窓を引き取る(`windows.adopt = "none"` なら引き取らない)

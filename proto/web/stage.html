@@ -81,14 +81,15 @@
 <div class="tiles" id="tiles">
   <div class="win editor focus">
     <div class="bar">sidebar.css — Kate</div>
-<pre><span class="c">/* 色・大きさ・角丸・透け具合は :root の変数だけで決める */</span>
+<pre><span class="c">/* 色は 3 つだけ。ほかはこれを薄めて作る */</span>
 <span class="k">:root</span> {
-  --radius: <span class="n">8px</span>;
-  --accent: <span class="n">#1a3cc8</span>;
   --bg: <span class="n">#ffffff</span>;
+  --fg: <span class="n">#15161a</span>;
+  --accent: <span class="n">#1a3cc8</span>;
+  --opacity: <span class="n">0.45</span>;  <span class="c">/* 透け具合 */</span>
 }
-<span class="k">:root[data-theme="clear"]</span> {
-  --bg: <span class="n">rgba(255, 255, 255, .42)</span>;
+<span class="k">:root</span> {
+  --line: color-mix(in srgb, var(--fg) <span class="n">12%</span>, transparent);
   <span class="c">/* 後ろをぼかすのはコンポジタ */</span>
 }
 <span class="k">.row.active</span> {
@@ -123,8 +124,10 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
 <div class="panel" id="panel">
   <h1>見た目を試す <button id="min">たたむ</button></h1>
   <div class="r"><span>テーマ</span><div class="seg" id="themes">
-    <button data-theme="light">白</button><button data-theme="dark">黒</button><button data-theme="clear" class="on">クリア</button><button data-theme="clear-dark">クリア黒</button>
+    <button data-theme="light" class="on">白</button><button data-theme="dark">黒</button>
   </div></div>
+  <div class="r"><span>透け具合</span><input type="range" id="opacity" min="20" max="100" value="45"></div>
+  <div class="r"><span>アイコン</span><div class="seg" id="icons"><button data-v="color" class="on">アプリの色</button><button data-v="mono">単色</button></div></div>
   <div class="r"><span>後ろのぼかし</span><div class="seg" id="blur"><button class="on" data-v="1">コンポジタがぼかす</button><button data-v="0">無し</button></div></div>
   <div class="r"><span>壁紙</span><div class="seg" id="walls"><button data-w="aurora" class="on">オーロラ</button><button data-w="dusk">夕暮れ</button><button data-w="paper">白</button></div></div>
   <div class="r"><span>強調の色</span><input type="color" id="accent" value="#1a3cc8"><button id="accentReset">テーマのまま</button></div>
@@ -145,7 +148,7 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
   const side = document.getElementById('side');
   // 橋(bridge.js)から開いたら本物のコアにつなぐ(?fake なら偽のコアのまま)
   if (location.protocol.startsWith('http') && !new URLSearchParams(location.search).has('fake')) side.src = 'sidebar.html';
-  const look = { theme: 'clear', vars: {} };
+  const look = { theme: 'light', vars: { opacity: '0.45' } };
   const send = (m) => side.contentWindow && side.contentWindow.postMessage(m, '*');
   const push = () => send({ look });
   side.addEventListener('load', push);
@@ -180,14 +183,14 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
   v('font', 'font-size', 'px');
   document.getElementById('accent').addEventListener('input', (e) => {
     look.vars.accent = e.target.value;
-    look.vars['active-bg'] = e.target.value;
-    look.vars.hover = e.target.value + '1f';
     push();
   });
   document.getElementById('accentReset').addEventListener('click', () => {
-    for (const k of ['accent', 'active-bg', 'hover']) look.vars[k] = '';
+    look.vars.accent = '';
     push();
   });
+  document.getElementById('opacity').addEventListener('input', (e) => { look.vars.opacity = String(e.target.value / 100); push(); });
+  seg('icons', (b) => { look.vars['icon-filter'] = b.dataset.v === 'mono' ? 'grayscale(1) contrast(1.1)' : ''; push(); });
   document.getElementById('level').addEventListener('change', (e) => send({ level: Number(e.target.value) }));
   document.getElementById('min').addEventListener('click', () => document.getElementById('panel').classList.toggle('min'));
   // 細い列: サイドバーの中の状態を見て、台の幅を合わせる(本番では layer-shell の面の幅を変える)

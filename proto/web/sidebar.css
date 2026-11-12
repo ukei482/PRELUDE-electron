@@ -1,5 +1,7 @@
-/* サイドバーの見た目。色・大きさ・角丸・透け具合は :root の変数だけで決め、テーマ(theme.toml)はその値を差し替える。
-   背景のぼかしはコンポジタの仕事(SwayFX の layer_effects・Hyprland の layerrule)。ここは半透明の色を出すだけ。 */
+/* サイドバーの見た目。色は 3 つだけ: --bg(背景)・--fg(文字)・--accent(強調)。ほかの色は、この 3 つを薄めたもの。
+   透け具合(--opacity)は色ではなく、背景をどれだけ透かすか。テーマ(theme.toml)はこの 4 つと大きさの値を差し替える。
+   背景のぼかしはコンポジタの仕事(SwayFX の layer_effects・Hyprland の layerrule)。ここは透けた色を出すだけ。
+   アプリのアイコン・ファビコンはアプリの持ち物なので、この 3 色には入れない(--icon-filter で単色にできる)。 */
 :root {
   --font: "Inter", "Noto Sans CJK JP", "Noto Sans JP", "IPAPGothic", system-ui, sans-serif;
   --font-size: 13px;
@@ -8,58 +10,30 @@
   --gap: 6px;
   --pad: 10px;
 
+  /* 3 つの色と透け具合 */
   --bg: #ffffff;
-  --surface: #f3f4f8;
-  --text: #15161a;
-  --dim: #6b6f7b;
-  --line: #e3e5ec;
+  --fg: #15161a;
   --accent: #1a3cc8;
-  --accent-text: #ffffff;
-  --hover: rgba(26, 60, 200, 0.08);
+  --opacity: 1;
+  --icon-filter: none;
+
+  /* ここから下は 3 つの色から作る(テーマで変えない) */
+  --text: var(--fg);
+  --dim: color-mix(in srgb, var(--fg) 58%, transparent);
+  --line: color-mix(in srgb, var(--fg) 12%, transparent);
+  --surface: color-mix(in srgb, var(--fg) 5%, transparent);
+  --hover: color-mix(in srgb, var(--fg) 8%, transparent);
   --active-bg: var(--accent);
-  --active-text: var(--accent-text);
-  --open-dot: #2fb36b;
-  --danger: #d23a3a;
-  --shadow: 0 8px 24px rgba(10, 15, 40, 0.18);
-  --blur-hint: none; /* 窓の中のぼかし(メニューなど)。透けるテーマだけ */
+  --active-text: var(--bg);
+  --open-dot: var(--accent);
+  --sheet: color-mix(in srgb, var(--bg) calc(var(--opacity) * 100%), transparent);
+  --sheet-strong: color-mix(in srgb, var(--bg) calc(min(1, var(--opacity) + 0.35) * 100%), transparent);
 }
 
 :root[data-theme="dark"] {
   --bg: #17181c;
-  --surface: #222329;
-  --text: #e9eaee;
-  --dim: #8d919c;
-  --line: #2c2e36;
+  --fg: #e9eaee;
   --accent: #7b93ff;
-  --accent-text: #0d1020;
-  --hover: rgba(123, 147, 255, 0.12);
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-}
-
-/* クリア: 背景を透かす。後ろをぼかすのはコンポジタ */
-:root[data-theme="clear"] {
-  --bg: rgba(255, 255, 255, 0.42);
-  --surface: rgba(255, 255, 255, 0.45);
-  --text: #101218;
-  --dim: rgba(16, 18, 24, 0.62);
-  --line: rgba(255, 255, 255, 0.55);
-  --accent: rgba(26, 60, 200, 0.88);
-  --hover: rgba(255, 255, 255, 0.5);
-  --shadow: 0 10px 30px rgba(10, 15, 40, 0.25);
-  --blur-hint: blur(18px) saturate(1.6);
-}
-
-:root[data-theme="clear-dark"] {
-  --bg: rgba(16, 18, 26, 0.45);
-  --surface: rgba(255, 255, 255, 0.08);
-  --text: #f1f2f6;
-  --dim: rgba(241, 242, 246, 0.62);
-  --line: rgba(255, 255, 255, 0.12);
-  --accent: rgba(140, 160, 255, 0.9);
-  --accent-text: #0b0e1c;
-  --hover: rgba(255, 255, 255, 0.1);
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --blur-hint: blur(18px) saturate(1.4);
 }
 
 * { box-sizing: border-box; }
@@ -81,7 +55,7 @@ input { font: inherit; color: inherit; }
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--sheet);
   /* 縁の線。窓と同じ間で浮いているなら四方(ホストが --sb-edge を入れる)、端に付いているなら隣の窓の側だけ */
   box-shadow: var(--sb-edge, inset -1px 0 0 var(--line));
   transition: background 0.25s;
@@ -110,7 +84,7 @@ input { font: inherit; color: inherit; }
 .space:hover { background: var(--hover); }
 .space .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--open-dot); flex: none; }
-.dot.off { background: var(--danger); }
+.dot.off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--dim); }
 .iconbtn {
   width: 30px;
   height: 30px;
@@ -165,7 +139,7 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 .sec .lbl { flex: 1; }
 .sec .iconbtn { width: 24px; height: 24px; }
 
-.scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: var(--pad); scrollbar-width: thin; }
+.scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: var(--pad); scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 
 /* 行(タブ・ペイン・ブックマーク・フォルダ) */
 .row {
@@ -209,7 +183,7 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 
 /* アイコン: 画像があれば画像、無ければ種類の記号 */
 .ico { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px; }
-.ico img { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; }
+.ico img { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; filter: var(--icon-filter); }
 .ico svg.i { width: 15px; height: 15px; }
 
 /* 編集の欄 */
@@ -220,7 +194,7 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
   padding: 0 6px;
   border: 1px solid var(--accent);
   border-radius: 5px;
-  background: var(--bg);
+  background: var(--sheet-strong);
   outline: none;
 }
 
@@ -231,16 +205,14 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
   min-width: 180px;
   padding: 5px;
   border-radius: calc(var(--radius) + 2px);
-  background: var(--bg);
+  background: var(--sheet-strong);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow);
-  backdrop-filter: var(--blur-hint);
+  backdrop-filter: blur(18px) saturate(1.4); /* 透けているときだけ効いて見える */
   animation: pop 0.12s ease-out;
 }
-:root[data-theme^="clear"] .menu { background: var(--surface); }
-.menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 10px; border-radius: 6px; text-align: left; }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; white-space: nowrap; padding: 0 10px; border-radius: 6px; text-align: left; }
 .menu button:hover { background: var(--hover); }
-.menu button.danger { color: var(--danger); }
+.menu button.danger { font-weight: 600; } /* 赤は使わない。消すものは太字と記号で分ける */
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 .menu .ttl { padding: 4px 10px 2px; color: var(--dim); font-size: 0.82em; }
 @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
