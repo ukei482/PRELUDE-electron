@@ -73,11 +73,11 @@ pub const ITEMS: &[Item] = &[
     item("show_hidden", Kind::Bool, "false", "ファイラで隠しファイルを最初から出す", Apply::Now),
     item("space_dir", Kind::Str, "\"\"", "スペースのフォルダ。空なら ~/スペース", Apply::Restart),
     item("download_dir", Kind::Str, "\"\"", "ダウンロードの保存先の既定(paths の download が無いとき)。空なら Chromium の既定", Apply::Now),
-    planned(
+    item(
         "terminal",
         Kind::Str,
         "\"auto\"",
-        "端末。auto は PATH から foot・kitty・ghostty・alacritty・wezterm・konsole の順に探す",
+        "端末(名前かパス)。auto は PATH から foot・kitty・ghostty・alacritty・wezterm・konsole の順に探す。知らない端末は -e でコマンドを渡す",
         Apply::Now,
     ),
     item(

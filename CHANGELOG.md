@@ -9,6 +9,7 @@
 - AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする
 - MCP のサーバー `prelude mcp`(標準入出力)。PRELUDE の命令を AI のツールにする(状態・一覧・開く・タブ・ペイン・Web・スペース・ブックマーク・フォルダ。31 個)。消す・閉じるツールには印を付け、人からもらったブックマークの起動コマンドは AI からは実行させない。例: `claude mcp add prelude -- prelude mcp`。`prelude` のコマンドでも、ブックマークを番号(b3)で指せる
 - AI のペイン: 既定のレシピ `agent`(「AI」)。端末を今のブックマークの作業フォルダで開き、既定の AI を起動する。`prelude agent [頼みごと]` は今のフォルダで起動する(AI は `PRELUDE_AGENT`、無ければ claude・codex・gemini・opencode の順に探す)
+- `prelude term [--cwd <フォルダ>] [-- <コマンド>]`: 設定の端末(`terminal`。auto は foot・kitty・ghostty・alacritty・wezterm・konsole の順)を、端末ごとの作業フォルダとコマンドの渡し方の表のとおりに開く。新しいプロセスで開く引数をいつも付ける(選ぶ画面が待てるように、窓を起動したプロセスで見分けられるように)。既定のレシピ(ファイラ・コンソール・CLI・AI)とダイアログの選ぶ画面はこれを使い、konsole の決め打ちをやめた。レシピの窓の名前 `@terminal` は設定の端末の窓の名前になる
 - 設定の台帳と `prelude config`(`docs/redesign-rust.md` の「設定」の作る順番の 1)
   - 項目は台帳(`prelude-format` の `settings.rs`)の 1 か所に置き、型・既定・説明・効き方を持つ。層は 既定 → おすすめの組み合わせ(sway・kde・omarchy。`profile = "auto"` なら環境から)→ `settings.toml`
   - `prelude config list [--json]`・`get`・`set`(型を確かめ、コメントと知らない項目を残して書く)・`unset`・`defaults`・`path`。MCP にも `config_get`・`config_set`

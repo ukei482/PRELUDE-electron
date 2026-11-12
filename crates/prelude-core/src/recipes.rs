@@ -8,6 +8,7 @@
 //! ```
 //! - `.prelude` には `type = "console"` のように種類の名前だけを書く。コマンドは自分の設定にしか無いので、人からもらったファイルが勝手なコマンドを実行できない
 //! - 既定で `console`・`cli`・`files`・`settings` と、AI のペイン `agent`(端末の中で `prelude agent`)を持つ。同じ名前のファイルを置くと置き換わる。ペインに `cwd` があれば `{paths.terminal}` の代わりにそれを使う(ファイラの「ここで端末を開く」)
+//! - 端末を開くレシピは `prelude term`(設定の端末を、端末の表のとおりに起動する)を使い、窓の名前を `@terminal` にする
 //! - **ファイラ**(docs/redesign-rust.md の「ファイラ」): `files` のペインもただのレシピ。既定は端末の中の yazi で、
 //!   `files.toml` を置けば Dolphin などに替えられる。`{path}` はペインの `path`(無ければ paths の `files`)、`{pane}` はペインの id。
 //!   `field`(やめたフィールド表示)は `files` の別名として読む
@@ -32,6 +33,9 @@ pub struct Recipe {
     pub class: String,
 }
 
+/// レシピの窓の名前に書くと、設定の端末(terminal)の窓の名前になる(端末の表 `prelude_format::term`)
+pub const TERMINAL_CLASS: &str = "@terminal";
+
 /// コアが特別に扱う種類(レシピの名前にできない)
 const RESERVED: [&str; 4] = ["web", "app", "home", "split"];
 
@@ -49,11 +53,11 @@ fn builtin() -> Vec<Recipe> {
         class: class.into(),
     };
     vec![
-        r("agent", "AI", "konsole --workdir {paths.terminal} -e prelude agent", "org.kde.konsole"),
-        r("cli", "CLI", "konsole --workdir {paths.terminal} -e prelude shell", "org.kde.konsole"),
-        r("console", "Console", "konsole --workdir {paths.terminal}", "org.kde.konsole"),
+        r("agent", "AI", "prelude term --cwd {paths.terminal} -- prelude agent", TERMINAL_CLASS),
+        r("cli", "CLI", "prelude term --cwd {paths.terminal} -- prelude shell", TERMINAL_CLASS),
+        r("console", "Console", "prelude term --cwd {paths.terminal}", TERMINAL_CLASS),
         r("settings", "Settings", "prelude-settings", "prelude-settings"),
-        r("files", "Files", "konsole --workdir {path} -e yazi {path}", "org.kde.konsole"),
+        r("files", "Files", "prelude term --cwd {path} -- yazi {path}", TERMINAL_CLASS),
     ]
 }
 

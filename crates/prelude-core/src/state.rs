@@ -360,6 +360,8 @@ pub struct Core {
     bookmarks_rev: u64,
     /// 覚えておく閉じたタブの数(設定の tabs.closed_max)
     closed_max: usize,
+    /// 設定の端末の窓の名前(レシピの窓の名前 @terminal を置き換える)
+    terminal_class: String,
     /// 設定を当てはめた回数(状態の config_rev)
     config_rev: u64,
     /// スペースのフォルダの中身の印(名前・更新時刻・大きさ)。外から変わったかを見る([`Core::poll_bookmarks`])。0 はまだ取っていない
@@ -416,6 +418,7 @@ impl Core {
             closed: BTreeMap::new(),
             bookmarks_rev: 0,
             closed_max: 20,
+            terminal_class: String::new(),
             config_rev: 0,
             kinds: Default::default(),
             bookmarks_sig: 0,
@@ -657,6 +660,10 @@ impl Core {
                 list.remove(0);
             }
         }
+        // 端末を開くレシピ(@terminal)の窓の名前。端末は prelude term と同じ決め方
+        self.terminal_class = prelude_format::term::choose(c.str("terminal"), &std::env::var("PATH").unwrap_or_default())
+            .map(|t| t.class())
+            .unwrap_or_default();
         let dl = c.str("download_dir");
         self.download_dir = if dl.is_empty() { String::new() } else { prelude_format::abs_path(dl, &self.home, &self.home) };
         self.config_rev += 1;
@@ -767,7 +774,8 @@ impl Core {
                         "paths.terminal" if cwd.is_some() => cwd.clone(),
                         _ => n.strip_prefix("paths.").filter(|k| !k.is_empty()).map(get),
                     };
-                    (recipes::expand(&r.run, &vars), r.class.clone())
+                    let cls = if r.class == recipes::TERMINAL_CLASS { self.terminal_class.clone() } else { r.class.clone() };
+                    (recipes::expand(&r.run, &vars), cls)
                 } else {
                     continue;
                 };

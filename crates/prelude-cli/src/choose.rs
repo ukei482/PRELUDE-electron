@@ -1,5 +1,5 @@
 //! `prelude choose`: アプリの「開く」「保存」のダイアログの選ぶ画面(docs/redesign-rust.md の「アプリのダイアログ」)。
-//! コアのポータルが `chooser.toml` の既定として起動する。端末の中で yazi を `--chooser-file` 付きで開き、選んだパスを 1 行ずつ `--output` に書く。
+//! コアのポータルが `chooser.toml` の既定として起動する。設定の端末(`prelude term`)の中で yazi を `--chooser-file` 付きで開き、選んだパスを 1 行ずつ `--output` に書く。
 //! 何も書かずに終われば取り消し。
 //!
 //! 保存: yazi には新しい名前を打つ画面が無いので、最初のフォルダに保存する名前の仮のファイルを置いて選んでもらう
@@ -7,8 +7,12 @@
 //! 終わったら、仮のファイル(中身が [`MARK`] のもの)は名前が変わっていても消す。アプリがそのパスに書く
 use std::path::{Path, PathBuf};
 
-/// 既定の端末(この後に `yazi --chooser-file <出力> <場所>` が続く)。`--separate` は、動いている konsole に任せずに自分で待つため
-pub const TERMINAL: &str = "konsole --separate -e";
+/// 既定の端末(この後に `yazi --chooser-file <出力> <場所>` が続く): 設定の端末を開く `prelude term --`。
+/// 端末の表は新しいプロセスで開くので、選び終わって端末が閉じるまで待てる
+pub fn default_terminal() -> String {
+    let me = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "prelude".into());
+    format!("{} term --", quote(&me))
+}
 
 /// 仮のファイルの中身。これと同じ中身のファイルは、選んだ後に消す
 pub const MARK: &str = "PRELUDE: 保存の仮のファイルです。この名前で保存するならそのまま選び、変えるなら名前を変えるか、別のフォルダへ移ってから選んでください。\n";
@@ -29,7 +33,7 @@ pub fn parse(args: &[&str]) -> Result<Opts, String> {
     if !["open", "open-multiple", "directory", "save"].contains(&mode.as_str()) {
         return Err(usage.into());
     }
-    let (mut output, mut name, mut terminal, mut folder) = (None, String::new(), TERMINAL.to_string(), None);
+    let (mut output, mut name, mut terminal, mut folder) = (None, String::new(), default_terminal(), None);
     while let Some(a) = it.next() {
         match *a {
             "--output" => output = Some(PathBuf::from(it.next().ok_or(usage)?)),
@@ -99,7 +103,8 @@ mod tests {
     #[test]
     fn 引数() {
         let o = parse(&["save", "--output", "/run/o", "--name", "a.txt", "/"]).unwrap();
-        assert_eq!((o.mode.as_str(), o.output.to_str(), o.name.as_str(), o.terminal.as_str()), ("save", Some("/run/o"), "a.txt", TERMINAL));
+        assert_eq!((o.mode.as_str(), o.output.to_str(), o.name.as_str()), ("save", Some("/run/o"), "a.txt"));
+        assert!(o.terminal.ends_with(" term --"), "{}", o.terminal);
         assert_eq!(o.folder, PathBuf::from("/"));
         assert!(parse(&["delete", "--output", "/o", "/"]).is_err());
         assert!(parse(&["open", "/"]).is_err()); // --output が要る

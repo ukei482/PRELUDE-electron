@@ -501,7 +501,11 @@ fn ファイラは_yazi_field_は_files_の別名_名前は_path_から() {
     // field の古いペインも files のレシピ(yazi)で開く。種類はそのまま残す
     assert_eq!(s.tabs[0].layout["type"], json!("field"));
     let w = c.wants();
-    assert_eq!(w[0].cmd, "konsole --workdir '/x/文献/' -e yazi '/x/文献/'");
+    assert_eq!(w[0].cmd, "prelude term --cwd '/x/文献/' -- yazi '/x/文献/'");
+    // 端末を開くレシピの窓の名前(@terminal)は、設定の端末のもの
+    assert_eq!(w[0].cls, "");
+    c.apply_config(&prelude_format::settings::Config::from_text("terminal = \"konsole\"\n", &|_| None));
+    assert_eq!(c.wants()[0].cls, "org.kde.konsole");
     assert_eq!(w[1].cmd, "viewer '/x/旅行'");
 }
 
