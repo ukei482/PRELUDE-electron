@@ -113,6 +113,18 @@ fn focused_name(v: &Value) -> Option<String> {
     v.as_array()?.iter().find(|w| w["focused"] == true)?["name"].as_str().map(str::to_string)
 }
 
+/// ペインを閉じる前に選んでおく窓: 閉じるペインがあるとき、今のタブの今のペイン(閉じるものでなく、窓があるもの)の窓
+fn pre_focus(scene: &Scene, closing: &[u64], con: impl Fn(u64) -> Option<i64>) -> Option<i64> {
+    if closing.is_empty() {
+        return None;
+    }
+    let tab = scene.tabs.iter().find(|t| Some(t.id) == scene.active)?;
+    if closing.contains(&tab.active_pane) {
+        return None;
+    }
+    con(tab.active_pane)
+}
+
 // ------------------------------------------------------------------ sway の木を読む
 
 /// sway の窓 1 つ
@@ -653,7 +665,13 @@ impl Sway {
     /// コアの状態に合わせる
     async fn sync(&mut self, scene: Scene) {
         let ids: HashSet<u64> = scene.panes.iter().map(|w| w.pane).collect();
-        for id in self.panes.keys().copied().filter(|id| !ids.contains(id)).collect::<Vec<_>>() {
+        let closing: Vec<u64> = self.panes.keys().copied().filter(|id| !ids.contains(id)).collect();
+        // 分割したタブのペインを閉じるときは、先にコアが選んだ次のペインへフォーカスを移してから窓を閉じる。
+        // 先に閉じると、sway が自分の決まりで別の窓を選んで知らせてきて、それが使用者の選んだものとして今のペインになる
+        if let Some(c) = pre_focus(&scene, &closing, |p| self.panes.get(&p).and_then(|w| w.con)) {
+            self.ipc.run(&[format!("[con_id={c}] focus")]).await;
+        }
+        for id in closing {
             self.close_pane(id).await;
         }
         let mut known: Option<HashSet<i64>> = None;
@@ -1289,6 +1307,21 @@ mod tests {
         let v = json!([{ "type": "pointer" }, { "type": "keyboard", "repeat_delay": 600, "repeat_rate": 25 }]);
         assert_eq!(keyboard_cmd(&v).as_deref(), Some("input type:keyboard repeat_delay 600"));
         assert_eq!(keyboard_cmd(&json!([{ "type": "pointer" }])), None);
+    }
+
+    #[test]
+    fn ペインを閉じる前に次のペインを選ぶ() {
+        let tab = |active_pane| TabScene { id: 1, num: 1, tree: P(2), active_pane };
+        let scene = Scene { panes: vec![], tabs: vec![tab(2)], active: Some(1) };
+        let con = |p: u64| (p == 2).then_some(20);
+        // 閉じるものがあり、今のペインに窓があれば、その窓を先に選ぶ
+        assert_eq!(pre_focus(&scene, &[3], con), Some(20));
+        // 閉じるものが無い・今のペインそのものを閉じる・窓がまだ無い・今のタブが無いときは何もしない
+        assert_eq!(pre_focus(&scene, &[], con), None);
+        assert_eq!(pre_focus(&scene, &[2], con), None);
+        assert_eq!(pre_focus(&scene, &[3], |_| None), None);
+        let none = Scene { active: None, ..scene.clone() };
+        assert_eq!(pre_focus(&none, &[3], con), None);
     }
 
     #[test]

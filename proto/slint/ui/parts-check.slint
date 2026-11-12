@@ -3,8 +3,8 @@
 import { SidebarFrame, Spaces, Bookmarks, Tabs, NewTab, PaneBar, BookmarkButton, BookmarkItem, BookmarkFolder, TabItem, PaneItem, PaneKind } from "parts.slint";
 
 export component PartsCheck inherits Window {
-    property <string> s: SidebarFrame.status + Spaces.current + PaneBar.kind + PaneBar.title + PaneBar.url + BookmarkButton.bookmark + BookmarkButton.bookmark-title;
-    property <bool> b: SidebarFrame.online && SidebarFrame.compact && Tabs.can-reopen && PaneBar.can-split && PaneBar.can-mute && PaneBar.muted;
+    property <string> s: SidebarFrame.status + Spaces.current + PaneBar.kind + PaneBar.title + PaneBar.url + PaneBar.split-mode + PaneBar.auto-split + BookmarkButton.bookmark + BookmarkButton.bookmark-title;
+    property <bool> b: SidebarFrame.online && SidebarFrame.compact && Tabs.can-reopen && PaneBar.can-split && PaneBar.can-mute && PaneBar.muted && PaneBar.can-go-back;
     property <int> n: SidebarFrame.windows-level + PaneBar.pane + BookmarkButton.pane-count + Spaces.all.length + NewTab.kinds.length + Bookmarks.folders.length + Tabs.panes.length;
     for b in Bookmarks.items: Image { source: b.icon; }
     for t in Tabs.items: Text { text: t.title + t.num + t.bookmark + t.pane-count; }
@@ -38,6 +38,8 @@ export component PartsCheck inherits Window {
             PaneBar.close();
             PaneBar.change-url();
             PaneBar.set-muted(true);
+            PaneBar.back();
+            PaneBar.forward();
             BookmarkButton.save("題名");
             BookmarkButton.overwrite();
         }

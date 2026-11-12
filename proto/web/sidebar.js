@@ -1,5 +1,6 @@
 // サイドバー(部品の決まり parts.js だけを使う、サイドバーの 1 つの作り)。
-// 使う部品: SidebarFrame・Spaces・Tabs・NewTab・Bookmarks。PaneBar・BookmarkButton は使わない(情報を絞るため。使わない部品があってよい)。
+// 使う部品: SidebarFrame・Spaces・Tabs・NewTab・Bookmarks・PaneBar。BookmarkButton は使わない(情報を絞るため。使わない部品があってよい)。
+// PaneBar は 2 か所に分けて出す: 上の行に今のペインの 戻る・進む・閉じる、下に分割のボタン(1 つ。左右・上下はここで決める)。
 // - render(parts, view): 部品の props と、サイドバーだけが持つ一時的な見た目(開いているメニュー・編集中の欄)→ HTML の文字列。
 //   DOM を使わないので node のテストで描ける(決まりに無いものを読めばそこで止まる)
 // - mount(el, host): 画面に付ける。クリック・右クリック・ドラッグ・キーを部品の callback にする
@@ -41,11 +42,19 @@
     open: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
     folderPlus: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/>',
     below: '<path d="M5 6h14M5 11h14M12 14v6M9 17l3 3 3-3"/>',
+    back: '<path d="M15 6l-6 6 6 6"/>',
+    split: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M3 12h18"/>',
     save: '<path d="M6 4h12v16l-6-4-6 4z"/>',
   };
   const svg = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${PATHS[name] || PATHS.grid}</svg>`;
   const KIND_ICON = { web: 'globe', files: 'folder', console: 'terminal', cli: 'terminal', agent: 'sparkle', app: 'grid', layout: 'layout' };
   const ico = (src, kind) => `<span class="ico">${src ? `<img src="${esc(src)}" alt="">` : svg(KIND_ICON[kind] || 'grid')}</span>`;
+
+  // 分割の向きの絵: 窓の枠と、新しいペインが入る側の半分を塗る
+  const HALF = { right: 'x="12" y="4" width="9" height="16"', left: 'x="3" y="4" width="9" height="16"', down: 'x="3" y="12" width="18" height="8"', up: 'x="3" y="4" width="18" height="8"' };
+  const splitIcon = (dir) =>
+    `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect ${HALF[dir] || HALF.right} rx="1" class="fill"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>`;
+  const DIR_NAME = { right: '右に分割', left: '左に分割', down: '下に分割', up: '上に分割' };
 
   function editBox(view, key, value) {
     if (!view.edit || view.edit.key !== key) return null;
@@ -56,12 +65,21 @@
   function head(p) {
     const f = p.SidebarFrame;
     const sp = p.Spaces;
+    const pb = p.PaneBar;
+    // 広げているときだけ、開閉の横に今のペインの 戻る・進む と、右端に 閉じる
+    const nav = f.compact
+      ? ''
+      : `<span class="navs">
+        <button class="iconbtn" ${call('PaneBar.back')} ${pb.canGoBack ? '' : 'disabled'} title="戻る">${svg('back')}</button>
+        <button class="iconbtn" ${call('PaneBar.forward')} ${pb.canGoBack ? '' : 'disabled'} title="進む">${svg('chev')}</button>
+      </span>
+      <button class="iconbtn closepane" ${call('PaneBar.close')} ${pb.pane ? '' : 'disabled'} title="今のペインを閉じる${pb.title ? `(${esc(pb.title)})` : ''}">${svg('x')}</button>`;
     return `<div class="top">
-      <button class="iconbtn" ${call('SidebarFrame.toggleCompact')} title="${f.compact ? '広げる' : '細くする'}">${svg('side')}</button>
+      <button class="iconbtn" ${call('SidebarFrame.toggleCompact')} title="${f.compact ? '広げる' : '細くする'}">${svg('side')}</button>${nav}
     </div>
     <div class="head">
       <button class="space" data-menu="space" title="スペース">
-        <span class="dot${f.online ? '' : ' off'}"></span><span class="name">${esc(sp.current || '(スペース無し)')}</span>${svg('updown')}
+        <span class="dot${f.online ? '' : ' off'}"></span><span class="name">${esc(sp.current || '(スペース無し)')}</span><span class="initial">${esc([...(sp.current || '-')][0])}</span>${svg('updown')}
       </button>
     </div>`;
   }
@@ -123,6 +141,16 @@
       </div>${newFolder ? `<div class="row">${ico('', 'files')}${newFolder}</div>` : ''}${top}${folders}`;
   }
 
+  // 下の分割のボタン。auto は押すとペインの形で決めた向きに分け(右クリックで向きを選ぶ)、pick は押すと向きを選ぶ
+  function dock(p) {
+    const pb = p.PaneBar;
+    if (!pb.canSplit) return '';
+    const auto = pb.splitMode !== 'pick';
+    const attrs = auto ? `${call('PaneBar.split', pb.autoSplit)} data-ctx="split:"` : 'data-menu="split"';
+    const title = auto ? `${DIR_NAME[pb.autoSplit] || '分割'}(右クリックで向きを選ぶ)` : '分割(向きを選ぶ)';
+    return `<div class="dock"><button class="splitbtn" ${attrs} title="${esc(title)}">${auto ? splitIcon(pb.autoSplit) : svg('split')}<span class="t">${auto ? esc(DIR_NAME[pb.autoSplit] || '分割') : '分割'}</span></button></div>`;
+  }
+
   function foot(p) {
     const f = p.SidebarFrame;
     const lv = ['起動だけ', '作業領域だけ', '並べる', '読む', '追う'][f.windowsLevel] || '';
@@ -140,6 +168,11 @@
       if (view.edit && view.edit.key === 'space-new') body += `<div style="padding:4px 6px">${editBox(view, 'space-new', '')}</div>`;
     } else if (m.kind === 'newtab') {
       body = '<div class="ttl">新しいタブ</div>' + p.NewTab.kinds.map((k) => item(KIND_ICON[k.kind] || 'grid', k.name, call('NewTab.open', k.kind))).join('');
+    } else if (m.kind === 'split') {
+      // 十字: 新しいペインを入れる側を、押すか矢印キーで選ぶ。真ん中は今のペイン
+      const b = (dir) => `<button class="${dir}" ${call('PaneBar.split', dir)} title="${DIR_NAME[dir]}(${{ right: '→', left: '←', down: '↓', up: '↑' }[dir]})">${splitIcon(dir)}</button>`;
+      const cur = p.PaneBar;
+      body = `<div class="ttl">新しいペインを置く側</div><div class="splitpad">${b('up')}${b('left')}<span class="here" title="${esc(cur.title)}">${ico('', cur.kind)}</span>${b('right')}${b('down')}</div>`;
     } else if (m.kind === 'tab') {
       const id = Number(m.target);
       body =
@@ -169,7 +202,7 @@
         '<hr>' +
         item('trash', 'フォルダを消す(中身は直下へ)', call('Bookmarks.removeFolder', path), 'danger');
     }
-    return `<div class="menu" style="left:${m.x}px;top:${m.y}px">${body}</div>`;
+    return `<div class="menu${m.kind === 'split' ? ' splitmenu" tabindex="-1' : ''}" style="left:${m.x}px;top:${m.y}px">${body}</div>`;
   }
 
   function render(p, view = {}) {
@@ -177,7 +210,7 @@
     return `<div class="sb${f.compact ? ' compact' : ''}">
       ${head(p)}
       <div class="scroll">${tabs(p, view)}${bookmarks(p, view)}</div>
-      ${foot(p)}
+      ${dock(p)}${foot(p)}
     </div>${menu(p, view)}`;
   }
 
@@ -206,10 +239,13 @@
       if (s2) s2.scrollTop = top;
       const m = el.querySelector('.menu');
       if (m) {
+        if (view.menu.above) m.style.top = `${Math.max(6, view.menu.y - m.getBoundingClientRect().height)}px`;
         const r = m.getBoundingClientRect();
         if (r.right > innerWidth - 6) m.style.left = `${Math.max(6, innerWidth - r.width - 6)}px`;
         if (r.bottom > innerHeight - 6) m.style.top = `${Math.max(6, innerHeight - r.height - 6)}px`;
       }
+      // 十字は開いたら矢印キーを受けられるように、メニューにフォーカスを置く
+      if (m && m.classList.contains('splitmenu')) m.focus();
       const inp = el.querySelector('[data-edit-input]');
       if (inp && document.activeElement !== inp) {
         inp.focus();
@@ -245,6 +281,12 @@
       if (mb) {
         const r = mb.getBoundingClientRect();
         if (view.menu && view.menu.kind === mb.dataset.menu) return close();
+        // 下にあるボタン(分割)のメニューは、ボタンを隠さないよう上に開く
+        if (mb.dataset.menu === 'split') {
+          openMenu('split', '', r.left, r.top - 4);
+          view.menu.above = true;
+          return draw();
+        }
         return openMenu(mb.dataset.menu, '', Math.min(r.left, innerWidth - 200), r.bottom + 4);
       }
       const c = t.closest('[data-call]');
@@ -270,6 +312,14 @@
     el.addEventListener('keydown', (e) => {
       const inp = e.target.closest('[data-edit-input]');
       if (e.key === 'Escape') return close();
+      const arrow = { ArrowRight: 'right', ArrowLeft: 'left', ArrowDown: 'down', ArrowUp: 'up' }[e.key];
+      if (arrow && view.menu && view.menu.kind === 'split') {
+        e.preventDefault();
+        view.menu = null;
+        host.parts().PaneBar.call('split', arrow);
+        draw();
+        return;
+      }
       if (inp && e.key === 'Enter' && !e.isComposing) {
         const key = inp.dataset.editInput;
         const v = inp.value;

@@ -68,7 +68,8 @@
   function start(el, opts = {}) {
     const transport = opts.transport || (location.protocol.startsWith('http') && !opts.fake ? bridgeTransport() : fakeTransport());
     let core = { online: false, status: 'つないでいます…', state: null };
-    const ui = { compact: store.get('compact', false), expanded: store.get('expanded', {}) };
+    // splitMode は分割のボタンの動き(本番では settings.toml)、screen は画面の形(自動の分割の向きに使う)
+    const ui = { compact: store.get('compact', false), expanded: store.get('expanded', {}), splitMode: store.get('splitMode', 'auto'), screen: { w: screen.width || 16, h: screen.height || 9 } };
     let parts = null;
     const listeners = [];
     const changed = () => {
@@ -91,7 +92,7 @@
           toast('サイドバーを隠す(本番では layer-shell の面を隠す)');
         } else if (s.launcher) {
           const a = s.launcher;
-          toast(`ランチャーを開く: prelude-launcher${a.split ? ` --split ${a.split}` : ''}${a.pane ? ` --pane ${a.pane}` : ''}${a.url ? ` --url ${a.url}` : ''}`);
+          toast(`ランチャーを開く: prelude-launcher${a.split ? ` --split ${a.split}${a.before ? ' --before' : ''}` : ''}${a.pane ? ` --pane ${a.pane}` : ''}${a.url ? ` --url ${a.url}` : ''}`);
         } else if (s.cmd) {
           try {
             await transport.run(s.cmd, s.args);
@@ -112,6 +113,14 @@
       },
       transport,
     };
+    // 見た目の確かめ(stage)から分割のボタンの動きを変える
+    window.addEventListener('message', (e) => {
+      const m = (e.data || {}).splitMode;
+      if (m !== 'auto' && m !== 'pick') return;
+      ui.splitMode = m;
+      store.set('splitMode', m);
+      changed();
+    });
     transport.start((snap) => {
       core = snap;
       changed();

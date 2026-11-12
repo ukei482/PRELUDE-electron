@@ -32,12 +32,25 @@
     return [l.window_title, l.title, place].find((t) => t) || kind;
   }
 
+  // ペインの画面の上の大きさ(配置の比率から。画面全体を screen とする)
+  function paneRect(l, id, r = { w: 16, h: 9 }) {
+    if (!l || typeof l !== 'object') return null;
+    if (l.k !== 'split') return l.id === id ? r : null;
+    const t = typeof l.ratio === 'number' ? l.ratio : 0.5;
+    const [ra, rb] = l.dir === 'col' ? [{ w: r.w, h: r.h * t }, { w: r.w, h: r.h * (1 - t) }] : [{ w: r.w * t, h: r.h }, { w: r.w * (1 - t), h: r.h }];
+    return paneRect(l.a, id, ra) || paneRect(l.b, id, rb);
+  }
+  // 自動の分割の向き: 横長(幅が高さ以上)なら右、縦長なら下
+  const autoSplit = (r) => (!r || r.w >= r.h ? 'right' : 'down');
+  // 分割の向き → ランチャーの引数(コアの分割は row・col と、前に置くか)
+  const SPLIT = { right: ['row', false], left: ['row', true], down: ['col', false], up: ['col', true], row: ['row', false], col: ['col', false] };
+
   const folderOf = (path) => path.replace(/\/[^/]*$/, '');
   // bookmark.list の folder はスペースの中の名前(「研究」)。部品と命令はフォルダのパスで指すので、パスにする
   const bmFolder = (b, st) => (b.folder ? `${(st && st.space_dir) || ''}/${b.folder}` : '');
 
   // core: { online, status, state, spaces, bookmarks, folders, recipes }
-  // ui: { compact, expanded: { フォルダのパス: bool } }
+  // ui: { compact, expanded: { フォルダのパス: bool }, splitMode: 'auto' | 'pick', screen: { w, h } }
   // iconUrl(パス) → 画像の URL(ホストがファイルを出す道。空なら空)
   function values(core, ui, iconUrl = (p) => p) {
     const st = core.state || { space: '', tabs: [], active: null, windows: { backend: '', level: 0 }, closed: 0 };
@@ -103,6 +116,9 @@
         canSplit: level >= 2 && !!cur,
         canMute: !!cur && cur.type === 'web',
         muted: !!(cur && cur.muted),
+        canGoBack: !!cur && cur.type === 'web',
+        splitMode: ui.splitMode === 'pick' ? 'pick' : 'auto',
+        autoSplit: autoSplit(activeTab && cur ? paneRect(activeTab.layout, cur.id, ui.screen || undefined) : null),
       },
       BookmarkButton: {
         bookmark: activeTab ? activeTab.bookmark || '' : '',
@@ -113,7 +129,7 @@
   }
 
   // 部品の callback → 手順の配列。手順は次のどれか:
-  // { cmd, args }(コアの命令)・{ ui: 'compact' | 'hide' } ・{ ui: 'expand', path, on }・{ launcher: { split?, pane?, url? } }(prelude-launcher の引数)
+  // { cmd, args }(コアの命令)・{ ui: 'compact' | 'hide' } ・{ ui: 'expand', path, on }・{ launcher: { split?, before?, pane?, url? } }(prelude-launcher の引数)
   function steps(part, cb, args, core) {
     const st = (core && core.state) || { tabs: [] };
     const c = (cmd, a = {}) => ({ cmd, args: a });
@@ -173,7 +189,13 @@
         return a === 'web' ? [{ launcher: {} }] : [c('tab.open', { pane: { type: a } })];
       case 'PaneBar.split': {
         const v = values(core, {}).PaneBar;
-        return [{ launcher: { split: a, pane: v.pane } }];
+        const [dir, before] = SPLIT[a] || SPLIT.right;
+        return v.pane ? [{ launcher: { split: dir, before, pane: v.pane } }] : [];
+      }
+      case 'PaneBar.back':
+      case 'PaneBar.forward': {
+        const v = values(core, {}).PaneBar;
+        return v.pane && v.canGoBack ? [c('web.go', { pane: v.pane, action: cb })] : [];
       }
       case 'PaneBar.close':
         return [c('pane.close', { pane: values(core, {}).PaneBar.pane })];
@@ -191,5 +213,5 @@
     throw new Error(`${k}: つなぎが無い`);
   }
 
-  return { values, steps, leaves, paneTitle };
+  return { values, steps, leaves, paneTitle, paneRect, autoSplit };
 });

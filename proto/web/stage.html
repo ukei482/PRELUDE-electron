@@ -33,6 +33,11 @@
   }
   .side.compact { --sw: 60px; }
   .side.blur { backdrop-filter: blur(22px) saturate(1.5); -webkit-backdrop-filter: blur(22px) saturate(1.5); }
+  /* ガラス: 強めにぼかして彩度を上げる(SwayFX なら blur・saturation の設定にあたる) */
+  .side.glass.blur { backdrop-filter: blur(26px) saturate(1.7); -webkit-backdrop-filter: blur(26px) saturate(1.7); }
+  /* この PC の壁紙(橋から開いたときだけ。swaybg と同じ画像を /icon で読む) */
+  .wall.pc .blob { display: none; }
+  .wall.pc { background: #1a2b45 url('/icon?path=/run/current-system/sw/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png') center / cover; }
 
   /* 偽の窓(sway のタイル) */
   .tiles {
@@ -44,6 +49,8 @@
   .win .bar { height: 26px; display: flex; align-items: center; padding: 0 10px; font: 12px var(--stage-font); }
   .win.editor { grid-row: 1 / 3; background: #fbfbfd; color: #222; }
   .win.editor.focus { outline: 2px solid #1a3cc8; }
+  /* ガラスのとき: フォーカスの枠も今のタブと同じ材質(細い白い光)にする */
+  body.glass .win.editor.focus { outline: 0; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75), 0 0 14px rgba(255, 255, 255, 0.22), 0 6px 24px rgba(0, 0, 0, 0.35); }
   .win.editor .bar { background: #eceef3; }
   .win.term { background: #1b1d24; color: #cfd3dc; }
   .win.term .bar { background: #262933; color: #aab; }
@@ -124,12 +131,12 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
 <div class="panel" id="panel">
   <h1>見た目を試す <button id="min">たたむ</button></h1>
   <div class="r"><span>テーマ</span><div class="seg" id="themes">
-    <button data-theme="light" class="on">白</button><button data-theme="dark">黒</button>
+    <button data-theme="light" class="on">白</button><button data-theme="dark">黒</button><button data-theme="glass">ガラス</button>
   </div></div>
   <div class="r"><span>透け具合</span><input type="range" id="opacity" min="20" max="100" value="45"></div>
   <div class="r"><span>アイコン</span><div class="seg" id="icons"><button data-v="color" class="on">アプリの色</button><button data-v="mono">単色</button></div></div>
   <div class="r"><span>後ろのぼかし</span><div class="seg" id="blur"><button class="on" data-v="1">コンポジタがぼかす</button><button data-v="0">無し</button></div></div>
-  <div class="r"><span>壁紙</span><div class="seg" id="walls"><button data-w="aurora" class="on">オーロラ</button><button data-w="dusk">夕暮れ</button><button data-w="paper">白</button></div></div>
+  <div class="r"><span>壁紙</span><div class="seg" id="walls"><button data-w="pc" id="wallPc">この PC</button><button data-w="aurora" class="on">オーロラ</button><button data-w="dusk">夕暮れ</button><button data-w="paper">白</button></div></div>
   <div class="r"><span>強調の色</span><input type="color" id="accent" value="#1a3cc8"><button id="accentReset">テーマのまま</button></div>
   <div class="r"><span>窓と窓の間</span><input type="checkbox" id="giOn" checked><input type="range" id="gi" min="1" max="24" value="8"></div>
   <div class="r"><span>画面の端との間</span><input type="checkbox" id="goOn" checked><input type="range" id="go" min="1" max="24" value="8"></div>
@@ -137,6 +144,7 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
   <div class="r"><span>行の角丸</span><input type="range" id="radius" min="0" max="16" value="8"></div>
   <div class="r"><span>行の高さ</span><input type="range" id="row" min="24" max="40" value="30"></div>
   <div class="r"><span>字の大きさ</span><input type="range" id="font" min="11" max="16" value="13"></div>
+  <div class="r"><span>分割のボタン</span><div class="seg" id="splitMode"><button data-v="auto" class="on">自動</button><button data-v="pick">向きを選ぶ</button></div></div>
   <div class="r"><span>窓のつなぎ</span><select id="level">
     <option value="4">4 追う(sway)</option><option value="3">3 読む</option><option value="2">2 並べる</option><option value="1">1 作業領域だけ</option><option value="0">0 起動だけ</option>
   </select></div>
@@ -149,6 +157,10 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
   // 橋(bridge.js)から開いたら本物のコアにつなぐ(?fake なら偽のコアのまま)
   if (location.protocol.startsWith('http') && !new URLSearchParams(location.search).has('fake')) side.src = 'sidebar.html';
   const look = { theme: 'light', vars: { opacity: '0.45' } };
+  if (location.protocol.startsWith('http')) {
+    document.getElementById('wall').className = 'wall pc';
+    document.querySelectorAll('#walls button').forEach((x) => x.classList.toggle('on', x.dataset.w === 'pc'));
+  } else document.getElementById('wallPc').remove();
   const send = (m) => side.contentWindow && side.contentWindow.postMessage(m, '*');
   const push = () => send({ look });
   side.addEventListener('load', push);
@@ -158,7 +170,8 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
     document.querySelectorAll(`#${id} button`).forEach((x) => x.classList.toggle('on', x === b));
     f(b);
   });
-  seg('themes', (b) => { look.theme = b.dataset.theme; push(); });
+  seg('themes', (b) => { look.theme = b.dataset.theme; side.classList.toggle('glass', look.theme === 'glass'); document.body.classList.toggle('glass', look.theme === 'glass'); push(); });
+  seg('splitMode', (b) => send({ splitMode: b.dataset.v }));
   seg('blur', (b) => side.classList.toggle('blur', b.dataset.v === '1'));
   seg('walls', (b) => { document.getElementById('wall').className = `wall ${b.dataset.w}`; });
   const v = (id, name, unit) => document.getElementById(id).addEventListener('input', (e) => { look.vars[name] = e.target.value + unit; push(); });

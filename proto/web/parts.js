@@ -105,8 +105,12 @@
         canSplit: 'bool', // 窓のつなぎの段が 2 以上
         canMute: 'bool',
         muted: 'bool',
+        canGoBack: 'bool', // 戻る・進むができる種類か(今は Web)
+        splitMode: 'string', // 分割のボタンの動き(設定): auto(ペインの形で向きを決める)・pick(押すと向きを選ぶ)
+        autoSplit: 'string', // auto のときの向き: right(横長のペイン)・down(縦長のペイン)
       },
-      callbacks: { split: ['string'], close: [], changeUrl: [], setMuted: ['bool'] },
+      // split の向き: right・left・down・up(row は right、col は down と同じ)。back・forward は今のペインの戻る・進む
+      callbacks: { split: ['string'], close: [], changeUrl: [], setMuted: ['bool'], back: [], forward: [] },
     },
     // ブックマークボタン(今のタブをブックマークにする)
     BookmarkButton: {
