@@ -145,13 +145,22 @@ export global PaneBar {
     in property <bool> can-split;
     in property <bool> can-mute;
     in property <bool> muted;
+    // 戻る・進むができる種類か(今は Web)
+    in property <bool> can-go-back;
+    // 分割のボタンの動き(設定): "auto"(ペインの形で向きを決める)・"pick"(押すと向きを選ぶ)
+    in property <string> split-mode;
+    // auto のときの向き: "right"(横長のペイン)・"down"(縦長のペイン)
+    in property <string> auto-split;
 
-    // 右(row)・下(col)に分割する。ランチャーを分割の向きで開き、出すものを選ぶ
+    // 分割する。向きは "right"・"left"・"down"・"up"("row" は right、"col" は down と同じ)。ランチャーを分割の向きで開き、出すものを選ぶ
     callback split(string);
     callback close();
     // 今の URL が入ったランチャーを開く
     callback change-url();
     callback set-muted(bool);
+    // 今のペインの戻る・進む
+    callback back();
+    callback forward();
 }
 
 // ブックマークボタン(今のタブをブックマークにする)

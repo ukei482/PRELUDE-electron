@@ -146,3 +146,40 @@ test('偽のコアは命令をそれらしく当てはめる(命令の名前と�
   assert.strictEqual(c.snapshot().bookmarks.find((b) => b.title === '受信箱').folder, '毎日'); // 本物と同じく名前
   assert.throws(() => c.run('tab.fly', {}), /偽のコアには無い命令/);
 });
+
+test('分割のボタン: 自動の向きはペインの形から、向きはランチャーの引数になる', () => {
+  // 左右に分けたタブの右のペイン(幅 8・高さ 9 で縦長)は下へ、分けていないペイン(16:9 で横長)は右へ
+  const split = { k: 'split', dir: 'row', ratio: 0.5, a: { id: 1, type: 'web' }, b: { id: 2, type: 'files' } };
+  assert.deepStrictEqual(Glue.paneRect(split, 2), { w: 8, h: 9 });
+  assert.strictEqual(Glue.autoSplit(Glue.paneRect(split, 2)), 'down');
+  assert.strictEqual(Glue.autoSplit(Glue.paneRect({ id: 3 }, 3)), 'right');
+  assert.strictEqual(Glue.autoSplit(Glue.paneRect({ k: 'split', dir: 'col', ratio: 0.5, a: { id: 1 }, b: { id: 2 } }, 1)), 'right');
+
+  const core = snap();
+  const pane = Glue.values(core, {}).PaneBar.pane;
+  assert.deepStrictEqual(Glue.steps('PaneBar', 'split', ['left'], core), [{ launcher: { split: 'row', before: true, pane } }]);
+  assert.deepStrictEqual(Glue.steps('PaneBar', 'split', ['down'], core), [{ launcher: { split: 'col', before: false, pane } }]);
+  assert.deepStrictEqual(Glue.steps('PaneBar', 'split', ['row'], core), [{ launcher: { split: 'row', before: false, pane } }]);
+  assert.strictEqual(Glue.values(core, { splitMode: 'pick' }).PaneBar.splitMode, 'pick');
+  assert.strictEqual(Glue.values(core, { splitMode: 'what' }).PaneBar.splitMode, 'auto');
+});
+
+test('戻る・進むは Web のペインだけ web.go になる', () => {
+  const core = snap();
+  const pb = Glue.values(core, {}).PaneBar;
+  const st = Glue.steps('PaneBar', 'back', [], core);
+  if (pb.canGoBack) assert.deepStrictEqual(st, [{ cmd: 'web.go', args: { pane: pb.pane, action: 'back' } }]);
+  else assert.deepStrictEqual(st, []);
+  // Web でないペインでは何もしない
+  const tab = core.state.tabs.find((t) => t.id === core.state.active);
+  const other = { ...core, state: { ...core.state, tabs: core.state.tabs.map((t) => (t === tab ? { ...t, layout: { id: 99, type: 'files' }, active_pane: 99 } : t)) } };
+  assert.deepStrictEqual(Glue.steps('PaneBar', 'forward', [], other), []);
+  // サイドバーは上に 戻る・進む・閉じる、下に分割のボタンを描く(細い列では 戻る・進む・閉じる を出さない)
+  const html = Sidebar.render(partsOf(core));
+  assert.ok(html.includes('data-call="PaneBar.back"') && html.includes('data-call="PaneBar.close"') && html.includes('class="splitbtn"'));
+  const thin = Sidebar.render(partsOf(core, { compact: true }));
+  assert.ok(!thin.includes('PaneBar.back') && thin.includes('class="splitbtn"'));
+  // 向きを選ぶ動きなら、押すと十字が出る
+  assert.ok(Sidebar.render(partsOf(core, { splitMode: 'pick' })).includes('data-menu="split"'));
+  assert.ok(Sidebar.render(partsOf(core, { splitMode: 'pick' }), { menu: { kind: 'split', x: 0, y: 0 } }).includes('class="splitpad"'));
+});
