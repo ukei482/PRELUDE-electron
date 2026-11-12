@@ -61,12 +61,14 @@ input { font: inherit; color: inherit; }
   transition: background 0.25s;
 }
 
-/* 見出し: スペース・つながり・幅 */
+/* 一番上: 開閉 */
+.top { display: flex; padding: var(--pad) var(--pad) 2px; }
+/* その下: スペース */
 .head {
   display: flex;
   align-items: center;
   gap: var(--gap);
-  padding: var(--pad) var(--pad) 6px;
+  padding: 4px var(--pad) 6px;
 }
 .space {
   flex: 1;
@@ -98,32 +100,6 @@ input { font: inherit; color: inherit; }
 .iconbtn:disabled { opacity: 0.35; cursor: default; background: none; }
 .iconbtn.on { color: var(--accent); }
 svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-
-/* 今のペイン(分割ボタン)とブックマークボタン */
-.panebar {
-  margin: 4px var(--pad) 8px;
-  padding: 8px;
-  border-radius: calc(var(--radius) + 2px);
-  background: var(--surface);
-}
-.panebar .what { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 6px; }
-.panebar .what .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.panebar .url {
-  display: block;
-  width: 100%;
-  text-align: left;
-  color: var(--dim);
-  font-size: 0.92em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 3px 6px;
-  border-radius: 6px;
-  margin-bottom: 6px;
-  background: var(--hover);
-}
-.panebar .tools { display: flex; gap: 2px; }
-.panebar .tools .sp { flex: 1; }
 
 /* 区切りの見出し */
 .sec {
@@ -222,11 +198,9 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
 
 /* 細い列 */
 .sb.compact .space .name, .sb.compact .sec .lbl, .sb.compact .row .t, .sb.compact .row .sub, .sb.compact .row .x,
-.sb.compact .panebar .what .t, .sb.compact .panebar .url, .sb.compact .foot .t, .sb.compact .row .num { display: none; }
-.sb.compact .head { flex-direction: column; }
+.sb.compact .foot .t, .sb.compact .row .num { display: none; }
 .sb.compact .space { padding: 0; justify-content: center; width: 34px; flex: none; }
-.sb.compact .panebar .tools { flex-direction: column; align-items: center; }
-.sb.compact .panebar .what { justify-content: center; }
+.sb.compact .top, .sb.compact .head { justify-content: center; }
 .sb.compact .row { justify-content: center; padding: 0; }
 .sb.compact .row.pane, .sb.compact .row.inner { margin-left: var(--pad); }
 .sb.compact .sec { justify-content: center; padding-left: 0; padding-right: 0; }

@@ -1,4 +1,5 @@
 // サイドバー(部品の決まり parts.js だけを使う、サイドバーの 1 つの作り)。
+// 使う部品: SidebarFrame・Spaces・Tabs・NewTab・Bookmarks。PaneBar・BookmarkButton は使わない(情報を絞るため。使わない部品があってよい)。
 // - render(parts, view): 部品の props と、サイドバーだけが持つ一時的な見た目(開いているメニュー・編集中の欄)→ HTML の文字列。
 //   DOM を使わないので node のテストで描ける(決まりに無いものを読めばそこで止まる)
 // - mount(el, host): 画面に付ける。クリック・右クリック・ドラッグ・キーを部品の callback にする
@@ -51,33 +52,17 @@
     return `<input class="edit" data-edit-input="${esc(key)}" value="${esc(view.edit.value ?? value)}" spellcheck="false">`;
   }
 
-  function head(p, view) {
+  // 見出し: 上に開閉、その下にスペース
+  function head(p) {
     const f = p.SidebarFrame;
     const sp = p.Spaces;
-    return `<div class="head">
+    return `<div class="top">
+      <button class="iconbtn" ${call('SidebarFrame.toggleCompact')} title="${f.compact ? '広げる' : '細くする'}">${svg('side')}</button>
+    </div>
+    <div class="head">
       <button class="space" data-menu="space" title="スペース">
         <span class="dot${f.online ? '' : ' off'}"></span><span class="name">${esc(sp.current || '(スペース無し)')}</span>${svg('updown')}
       </button>
-      <button class="iconbtn" ${call('SidebarFrame.toggleCompact')} title="${f.compact ? '広げる' : '細くする'}">${svg('side')}</button>
-    </div>`;
-  }
-
-  function panebar(p) {
-    const b = p.PaneBar;
-    const bm = p.BookmarkButton;
-    if (!b.pane) return '';
-    const saved = !!bm.bookmark;
-    return `<div class="panebar">
-      <div class="what">${ico('', b.kind)}<span class="t" title="${esc(b.title)}">${esc(b.title)}</span></div>
-      ${b.url ? `<button class="url" ${call('PaneBar.changeUrl')} title="URL を変える">${esc(b.url)}</button>` : ''}
-      <div class="tools">
-        <button class="iconbtn" ${call('PaneBar.split', 'row')} ${b.canSplit ? '' : 'disabled'} title="右に分割">${svg('splitRow')}</button>
-        <button class="iconbtn" ${call('PaneBar.split', 'col')} ${b.canSplit ? '' : 'disabled'} title="下に分割">${svg('splitCol')}</button>
-        ${b.canMute ? `<button class="iconbtn${b.muted ? ' on' : ''}" ${call('PaneBar.setMuted', !b.muted)} title="${b.muted ? '音を戻す' : '消音'}">${svg(b.muted ? 'mute' : 'vol')}</button>` : ''}
-        <span class="sp"></span>
-        <button class="iconbtn${saved ? ' on' : ''}" data-menu="save" title="${saved ? `ブックマーク「${esc(bm.bookmarkTitle)}」` : 'ブックマークにする'}">${svg('star')}</button>
-        <button class="iconbtn" ${call('PaneBar.close')} title="ペインを閉じる">${svg('x')}</button>
-      </div>
     </div>`;
   }
 
@@ -155,12 +140,6 @@
       if (view.edit && view.edit.key === 'space-new') body += `<div style="padding:4px 6px">${editBox(view, 'space-new', '')}</div>`;
     } else if (m.kind === 'newtab') {
       body = '<div class="ttl">新しいタブ</div>' + p.NewTab.kinds.map((k) => item(KIND_ICON[k.kind] || 'grid', k.name, call('NewTab.open', k.kind))).join('');
-    } else if (m.kind === 'save') {
-      const bm = p.BookmarkButton;
-      body = bm.bookmark
-        ? `<div class="ttl">ブックマーク「${esc(bm.bookmarkTitle)}」</div>` + item('save', '今の配置で上書き', call('BookmarkButton.overwrite')) + item('plus', '別のブックマークにする', 'data-edit="save"')
-        : `<div class="ttl">${bm.paneCount > 1 ? `配置ごと(${bm.paneCount} つのペイン)` : 'このペインを'}ブックマークにする</div>` + item('plus', '題名を付けて保存', 'data-edit="save"');
-      if (view.edit && view.edit.key === 'save') body += `<div style="padding:4px 6px">${editBox(view, 'save', '')}</div>`;
     } else if (m.kind === 'tab') {
       const id = Number(m.target);
       body =
@@ -196,8 +175,7 @@
   function render(p, view = {}) {
     const f = p.SidebarFrame;
     return `<div class="sb${f.compact ? ' compact' : ''}">
-      ${head(p, view)}
-      ${panebar(p)}
+      ${head(p)}
       <div class="scroll">${tabs(p, view)}${bookmarks(p, view)}</div>
       ${foot(p)}
     </div>${menu(p, view)}`;
@@ -213,7 +191,6 @@
     else if (kind === 'folder') p.Bookmarks.call('renameFolder', target, v);
     else if (kind === 'folder-new') p.Bookmarks.call('createFolder', v);
     else if (kind === 'space-new') p.Spaces.call('create', v);
-    else if (kind === 'save') p.BookmarkButton.call('save', v);
     else if (kind === 'renumber' && /^\d+$/.test(v)) p.Tabs.call('renumber', Number(target), Number(v));
   }
 
@@ -260,7 +237,7 @@
       if (ed) {
         e.stopPropagation();
         view.edit = { key: ed.dataset.edit, value: null };
-        if (!['space-new', 'save'].includes(ed.dataset.edit)) view.menu = null;
+        if (ed.dataset.edit !== 'space-new') view.menu = null;
         draw();
         return;
       }

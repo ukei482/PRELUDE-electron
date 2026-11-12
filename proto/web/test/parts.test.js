@@ -80,7 +80,6 @@ test('サイドバーは決まりの中だけで描け、頼みごとも決ま�
     {},
     { menu: { kind: 'space', x: 0, y: 0 } },
     { menu: { kind: 'newtab', x: 0, y: 0 } },
-    { menu: { kind: 'save', x: 0, y: 0 } },
     { menu: { kind: 'tab', target: String(t.id), x: 0, y: 0 } },
     { menu: { kind: 'bm', target: b.path, x: 0, y: 0 } },
     { menu: { kind: 'folder', target: b.folder, x: 0, y: 0 } },
@@ -98,6 +97,9 @@ test('サイドバーは決まりの中だけで描け、頼みごとも決ま�
   assert.ok(n > 30, `頼みごとの数 ${n}`);
   const compact = partsOf(core, { compact: true });
   assert.match(Sidebar.render(compact, {}), /class="sb compact"/);
+  // 開閉はスペースより上
+  const html = Sidebar.render(p, {});
+  assert.ok(html.indexOf('SidebarFrame.toggleCompact') < html.indexOf('data-menu="space"'));
 });
 
 test('編集の欄の確定は、決まりの callback になる', () => {
@@ -106,11 +108,11 @@ test('編集の欄の確定は、決まりの callback になる', () => {
   const p = partsOf(core, {}, sent);
   Sidebar.submitEdit(p, 'renumber:7', '5');
   Sidebar.submitEdit(p, 'renumber:7', 'x'); // 数でなければ頼まない
-  Sidebar.submitEdit(p, 'save', '  新しい作業 ');
+  Sidebar.submitEdit(p, 'space-new', '  新しい作業 ');
   Sidebar.submitEdit(p, 'folder-new', '');
   assert.deepStrictEqual(sent, [
     ['Tabs', 'renumber', [7, 5]],
-    ['BookmarkButton', 'save', ['新しい作業']],
+    ['Spaces', 'create', ['新しい作業']],
   ]);
 });
 
