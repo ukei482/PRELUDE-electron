@@ -62,7 +62,7 @@ export global SidebarFrame {
     // つながっていない理由など
     in property <string> status;
     in property <bool> compact;
-    // 窓のつなぎの段(0 起動だけ、1 並べる、2 読む、3 追う)
+    // 窓のつなぎの段(0 起動だけ、1 作業領域だけ、2 並べる、3 読む、4 追う)
     in property <int> windows-level;
 
     callback toggle-compact();
@@ -141,7 +141,7 @@ export global PaneBar {
     in property <string> title;
     // Web のペインなら URL
     in property <string> url;
-    // 窓のつなぎが並べられるか(段が 1 以上)
+    // 窓のつなぎが並べられるか(段が 2 以上)
     in property <bool> can-split;
     in property <bool> can-mute;
     in property <bool> muted;

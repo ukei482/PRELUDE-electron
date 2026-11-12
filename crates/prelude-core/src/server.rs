@@ -164,7 +164,8 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     let (events, _) = broadcast::channel(64);
     let (notes_tx, mut notes) = tokio::sync::mpsc::unbounded_channel();
     // --no-embed でなければ、窓のつなぎが無くてもつなぎ無し(段 0)でアプリは起動する
-    let compositor = if opt.embed { Some(compositor::start(&tag, notes_tx.clone()).await) } else { None };
+    let compositor =
+        if opt.embed { Some(compositor::start(&tag, notes_tx.clone(), &compositor::Options::from_config(&config)).await) } else { None };
     if let Some(c) = &compositor {
         core.set_windows(c.name(), c.level() as u8);
     }

@@ -97,6 +97,7 @@ prelude config defaults                  # 既定の設定ファイル(説明つ
 - settings.toml には、変えたい項目だけを書けばよい。手で書き換えてもよい(コアは 2 秒以内に読み直す。書きかけで読めない間は、前の設定のまま)
 - 「(not used by PRELUDE yet)」と出る項目は、まだ効かない(設計で決めた項目)。「(applies after PRELUDE restarts)」は起動し直すと効く
 - 設定を変えるのは、使用者が頼んだときだけ
+- 窓の扱いは `[windows]`(起動し直すと効く)。`windows.level` は PRELUDE に任せる段の上限: `launch`(起動だけ)・`workspace`(タブの作業領域へ移すだけ)・`arrange`(ブックマークの配置のとおりに並べる)・`read`(並び・選んだ窓を読む)・`follow`(PRELUDE を通さずに開いた窓も追う)。`auto` はつなぎの最大。環境の窓の決まりと取り合うなら下げる。`windows.floating` はいつも浮かせる窓、`windows.ignore` は PRELUDE が触らない窓(app_id・クラス)、`windows.adopt = "none"` は PRELUDE を通さずに開いた窓を引き取らない
 - 端末は設定の `terminal`(auto なら foot・kitty・ghostty・alacritty・wezterm・konsole の順に探す)。PRELUDE の端末を開くもの(ファイラ・コンソール・CLI・AI のペイン・ダイアログの選ぶ画面)はどれも `prelude term [--cwd <フォルダ>] [-- <コマンド>]` を通る。自分のレシピでも、端末を開くなら `prelude term` を使い、`class = "@terminal"` にすると窓の名前も合う
 
 ## 設定のファイル

@@ -87,30 +87,30 @@ pub const ITEMS: &[Item] = &[
         "既定の AI(シェルのコマンド)。auto は PRELUDE_AGENT、無ければ claude・codex・gemini・opencode の順に探す",
         Apply::Now,
     ),
-    planned(
+    item(
         "windows.backend",
         Kind::Choice(&["auto", "sway", "kwin", "hyprland", "none"]),
         "\"auto\"",
         "窓のつなぎ。auto は環境から決める。none は起動するだけ",
         Apply::Restart,
     ),
-    planned(
+    item(
         "windows.level",
         Kind::Choice(&["auto", "launch", "workspace", "arrange", "read", "follow"]),
         "\"auto\"",
         "PRELUDE に任せる段の上限。auto はつなぎの最大。launch は起動だけ、workspace は作業領域だけ指定",
-        Apply::Now,
+        Apply::Restart,
     ),
-    planned(
+    item(
         "windows.adopt",
         Kind::Choice(&["tabs", "none"]),
         "\"tabs\"",
         "PRELUDE を通さずに開いた窓。tabs はタブの作業領域のものを引き取る、none は引き取らない",
-        Apply::Now,
+        Apply::Restart,
     ),
-    planned("windows.workspace_prefix", Kind::Str, "\"\"", "タブの作業領域の名前の頭(環境の作業領域と分けたいとき)", Apply::Restart),
-    planned("windows.floating", Kind::List, "[]", "いつも浮かせる窓(app_id・クラス)", Apply::Now),
-    planned("windows.ignore", Kind::List, "[]", "PRELUDE が触らない窓(app_id・クラス)", Apply::Now),
+    item("windows.workspace_prefix", Kind::Str, "\"\"", "タブの作業領域の名前の頭(環境の作業領域と分けたいとき)", Apply::Restart),
+    item("windows.floating", Kind::List, "[]", "いつも浮かせる窓(app_id・クラス)", Apply::Restart),
+    item("windows.ignore", Kind::List, "[]", "PRELUDE が触らない窓(app_id・クラス)", Apply::Restart),
     planned("sidebar.side", Kind::Choice(&["left", "right"]), "\"left\"", "サイドバーを出す辺", Apply::Now),
     planned(
         "sidebar.surface",

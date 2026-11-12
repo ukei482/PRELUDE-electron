@@ -18,6 +18,11 @@
   - まだ効かない項目(窓のつなぎ・サイドバー・端末など)は `prelude config list` で「not used by PRELUDE yet」と出る
   - 直した不具合: ダウンロードの保存先が、paths にも設定にも無いときにホームの直下になっていた(paths がホームまで必ず返すため、設定の `download_dir` も使われていなかった)。今は paths → 設定 → Chromium の既定の順
   - `prelude` コマンドの出力を `head` などで途中で切っても、落ちずに静かに終わる
+- 設定の `[windows]`(作る順番の 3)。コアの起動のときに当てはめる
+  - 窓のつなぎの段を 0 起動だけ・1 作業領域だけ・2 並べる・3 読む・4 追う に振り直した(状態の `windows.level` の数も変わる。分割で開けるのは 2 から)
+  - `windows.backend`(auto・sway・kwin・hyprland・none)でつなぎを選び、`windows.level` で任せる段を止める。sway のつなぎは `workspace` なら窓をタブの作業領域へ移すだけで、並べ方・大きさは環境に任せる。`read` から使用者の並び・選んだ窓を読み、`follow` で PRELUDE を通さずに開いた窓を引き取る(`windows.adopt = "none"` なら引き取らない)
+  - `windows.floating`(いつも浮かせる)・`windows.ignore`(触らない)の窓は、ペインに取り込まない
+  - `windows.workspace_prefix`: タブの作業領域の名前の番号の後ろに付ける(`3:work`。番号は先頭のままなので `$mod+数字` が効く)
 - Rust 版のコアを、設計の見直し(ファイラを外す・OS の役割を持たない)に合わせた。ふだんの PRELUDE(Electron 版)は変わらない
   - 既定のファイラは端末の中の yazi(`files` のレシピ)。コアは `files`・`field` を名指ししない(`field` は `files` の別名として読む)。ペイン・タブの名前は、種類によらず `path` の最後の名前
   - 起動したペインに `PRELUDE_PANE` を渡す。`prelude pane path [--pane <id>] <folder>` でペインの今の場所をコアに伝えると、タブを開き直したときにそこで開く(yazi から呼ぶ例は `docs/rice.md`)

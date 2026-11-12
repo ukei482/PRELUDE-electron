@@ -84,12 +84,94 @@ pub enum Note {
 pub enum Level {
     /// 0. アプリを起動するだけ。置き場所は環境に任せる
     Launch = 0,
-    /// 1. ブックマークを開くときに `[layout]` のとおりに並べる
-    Arrange = 1,
-    /// 2. 今の並びを読む
-    Read = 2,
-    /// 3. 窓の動き・PRELUDE を通さずに開いた窓を追いかけて、コアの状態に合わせる
-    Follow = 3,
+    /// 1. 窓をタブの作業領域へ移すだけ。並べ方・大きさは環境に任せる(「作業領域だけ指定する形」)
+    Workspace = 1,
+    /// 2. ブックマークを開くときに `[layout]` のとおりに並べる。分割で開けるのはここから
+    Arrange = 2,
+    /// 3. 今の並びを読む(使用者が動かした・選んだものをコアに合わせる)
+    Read = 3,
+    /// 4. PRELUDE を通さずに開いた窓も追いかけて、タブのペインにする
+    Follow = 4,
+}
+
+impl Level {
+    /// 設定の windows.level の言葉。auto は None(つなぎの最大)
+    pub fn parse(s: &str) -> Option<Level> {
+        match s {
+            "launch" => Some(Level::Launch),
+            "workspace" => Some(Level::Workspace),
+            "arrange" => Some(Level::Arrange),
+            "read" => Some(Level::Read),
+            "follow" => Some(Level::Follow),
+            _ => None,
+        }
+    }
+}
+
+/// 設定の [windows](docs/redesign-rust.md の「設定」)。起動のときに読む
+#[derive(Debug, Clone, PartialEq)]
+pub struct Options {
+    /// auto・sway・kwin・hyprland・none
+    pub backend: String,
+    /// 任せる段の上限(None はつなぎの最大)
+    pub cap: Option<Level>,
+    /// PRELUDE を通さずに開いた窓を引き取る
+    pub adopt: bool,
+    /// いつも浮かせる窓・触らない窓(app_id・クラス。大文字小文字は見ない)
+    pub floating: Vec<String>,
+    pub ignore: Vec<String>,
+    /// タブの作業領域の名前の頭
+    pub workspace_prefix: String,
+}
+
+impl Default for Options {
+    fn default() -> Options {
+        Options { backend: "auto".into(), cap: None, adopt: true, floating: vec![], ignore: vec![], workspace_prefix: String::new() }
+    }
+}
+
+impl Options {
+    pub fn from_config(c: &prelude_format::settings::Config) -> Options {
+        Options {
+            backend: c.str("windows.backend").to_string(),
+            cap: Level::parse(c.str("windows.level")),
+            adopt: c.str("windows.adopt") != "none",
+            floating: c.list("windows.floating"),
+            ignore: c.list("windows.ignore"),
+            workspace_prefix: c.str("windows.workspace_prefix").to_string(),
+        }
+    }
+
+    /// つなぎの最大の段と上限から、使う段
+    pub fn level(&self, max: Level) -> Level {
+        self.cap.map_or(max, |c| c.min(max))
+    }
+
+    pub fn floats(&self, app: &str) -> bool {
+        self.floating.iter().any(|a| a.eq_ignore_ascii_case(app))
+    }
+
+    pub fn ignores(&self, app: &str) -> bool {
+        self.ignore.iter().any(|a| a.eq_ignore_ascii_case(app))
+    }
+
+    /// 使うつなぎ。環境変数 PRELUDE_COMPOSITOR(試すため)→ 設定の backend → 動いているコンポジタ。
+    /// 上限が launch なら、どのつなぎでもつなぎ無し
+    pub fn choose(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<Kind> {
+        if self.cap == Some(Level::Launch) {
+            return None;
+        }
+        if get("PRELUDE_COMPOSITOR").is_some() {
+            return detect_from(get);
+        }
+        match self.backend.as_str() {
+            "none" => None,
+            "sway" => Some(Kind::Sway),
+            "kwin" => Some(Kind::Kwin),
+            "hyprland" => Some(Kind::Hyprland),
+            _ => detect_from(get),
+        }
+    }
 }
 
 /// PRELUDE の UI の窓(Wayland の app_id・X11 のクラス)。ペインではないので、窓のつなぎは引き取らない
@@ -160,12 +242,18 @@ pub fn detect_from(get: impl Fn(&str) -> Option<String>) -> Option<Kind> {
     None
 }
 
-/// 裏側を始める。tag はこのコアの印(別のソケットで動かすコアと取り合わないように)。
-/// 対応するコンポジタが無い・始められなければ、つなぎ無し(段 0。[`crate::plain`])にする: アプリは起動し、窓の置き場所は環境に任せる
-pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Box<dyn Compositor> {
-    let found: Option<Box<dyn Compositor>> = match detect() {
+/// 裏側を始める。tag はこのコアの印(別のソケットで動かすコアと取り合わないように)。opts は設定の [windows]。
+/// 対応するコンポジタが無い・始められない・上限が launch なら、つなぎ無し(段 0。[`crate::plain`])にする: アプリは起動し、窓の置き場所は環境に任せる
+pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>, opts: &Options) -> Box<dyn Compositor> {
+    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    let found: Option<Box<dyn Compositor>> = match opts.choose(&env) {
+        Some(Kind::Kwin) if opts.level(Level::Arrange) < Level::Arrange => {
+            // KWin のつなぎは窓をペインの場所に重ねる形で、作業領域だけを指定することはできない
+            eprintln!("prelude-core: the kwin backend cannot keep to windows.level = workspace; apps are only started");
+            None
+        }
         Some(Kind::Kwin) => crate::embed::start(tag, notes.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
-        Some(Kind::Sway) => crate::sway::start(tag, notes.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
+        Some(Kind::Sway) => crate::sway::start(tag, notes.clone(), opts.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
         Some(Kind::Hyprland) => {
             eprintln!("prelude-core: the hyprland backend is not written yet");
             None
@@ -173,7 +261,11 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Box<dyn Com
         None => None,
     };
     found.unwrap_or_else(|| {
-        eprintln!("prelude-core: no window backend for this desktop. Apps are started and the desktop places their windows");
+        if opts.cap == Some(Level::Launch) {
+            eprintln!("prelude-core: windows.level = launch. Apps are started and the desktop places their windows");
+        } else {
+            eprintln!("prelude-core: no window backend for this desktop. Apps are started and the desktop places their windows");
+        }
         Box::new(crate::plain::start(notes))
     })
 }
@@ -189,8 +281,31 @@ mod tests {
     }
 
     #[test]
+    fn 設定から_使うつなぎと段を決める() {
+        let o = |backend: &str, level: &str| Options { backend: backend.into(), cap: Level::parse(level), ..Options::default() };
+        let sway = env(&[("WAYLAND_DISPLAY", "w"), ("SWAYSOCK", "/s")]);
+        assert_eq!(o("auto", "auto").choose(&sway), Some(Kind::Sway));
+        assert_eq!(o("none", "auto").choose(&sway), None);
+        assert_eq!(o("auto", "launch").choose(&sway), None); // 上限が launch ならつなぎ無し
+        assert_eq!(o("kwin", "auto").choose(&env(&[])), Some(Kind::Kwin));
+        // 環境変数は設定より先(試すため)
+        assert_eq!(o("none", "auto").choose(&env(&[("PRELUDE_COMPOSITOR", "sway")])), Some(Kind::Sway));
+        // 段は上限とつなぎの最大の小さいほう
+        assert_eq!(o("auto", "workspace").level(Level::Follow), Level::Workspace);
+        assert_eq!(o("auto", "follow").level(Level::Arrange), Level::Arrange);
+        assert_eq!(o("auto", "auto").level(Level::Follow), Level::Follow);
+        let f = Options { floating: vec!["Gimp".into()], ignore: vec!["steam".into()], ..Options::default() };
+        assert!(f.floats("gimp") && !f.floats("kate") && f.ignores("Steam"));
+    }
+
+    #[test]
     fn 段と_ui_の窓() {
-        assert!(Level::Follow > Level::Arrange && Level::Arrange > Level::Launch);
+        assert!(
+            Level::Follow > Level::Read
+                && Level::Read > Level::Arrange
+                && Level::Arrange > Level::Workspace
+                && Level::Workspace > Level::Launch
+        );
         assert!(is_prelude_ui("prelude-sidebar") && is_prelude_ui("Prelude-Launcher"));
         assert!(!is_prelude_ui("org.kde.konsole") && !is_prelude_ui("prelude-settings"));
     }

@@ -381,7 +381,7 @@ pub struct State {
 pub struct Windows {
     /// `sway`・`kwin`・`none`(つなぎ無し。アプリは起動し、窓の置き場所は環境)。空ならアプリを起動しない(`--no-embed`)
     pub backend: String,
-    /// 段: 0 起動だけ、1 並べる、2 読む、3 追う
+    /// 段: 0 起動だけ、1 作業領域だけ、2 並べる(分割で開けるのはここから)、3 読む、4 追う
     pub level: u8,
 }
 
