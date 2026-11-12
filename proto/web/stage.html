@@ -23,14 +23,24 @@
   .wall.paper { background: linear-gradient(160deg, #eef1f6, #d9dfe9); }
   .wall .blob { position: absolute; border-radius: 50%; filter: blur(2px); opacity: 0.9; }
 
-  .side { position: fixed; left: 0; top: 0; height: 100vh; width: 272px; border: 0; transition: width 0.2s, backdrop-filter 0.3s; }
-  .side.compact { width: 60px; }
+  /* 間の決まり(設定の windows.gaps_inner・gaps_outer)。サイドバーも窓と同じ決まりで並べる:
+     画面の端からは --go、隣の窓とは --gi。角丸(--wr)と影も窓と同じ */
+  :root { --gi: 8px; --go: 8px; --wr: 10px; --sw: 272px; --win-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); }
+  .side {
+    position: fixed; left: var(--go); top: var(--go); height: calc(100vh - 2 * var(--go)); width: var(--sw); border: 0;
+    border-radius: var(--wr); box-shadow: var(--win-shadow);
+    transition: width 0.2s, backdrop-filter 0.3s, left 0.2s, top 0.2s, height 0.2s, border-radius 0.2s;
+  }
+  .side.compact { --sw: 60px; }
   .side.blur { backdrop-filter: blur(22px) saturate(1.5); -webkit-backdrop-filter: blur(22px) saturate(1.5); }
 
   /* 偽の窓(sway のタイル) */
-  .tiles { position: fixed; top: 8px; right: 8px; bottom: 8px; left: 280px; display: grid; grid-template-columns: 58fr 42fr; grid-template-rows: 60fr 40fr; gap: 8px; transition: left 0.2s; }
-  .tiles.compact { left: 68px; }
-  .win { border-radius: 10px; overflow: hidden; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; font: 12px/1.6 "DejaVu Sans Mono", monospace; }
+  .tiles {
+    position: fixed; top: var(--go); right: var(--go); bottom: var(--go); left: calc(var(--go) + var(--sw) + var(--gi));
+    display: grid; grid-template-columns: 58fr 42fr; grid-template-rows: 60fr 40fr; gap: var(--gi); transition: all 0.2s;
+  }
+  .tiles.compact { --sw: 60px; }
+  .win { border-radius: var(--wr); overflow: hidden; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; font: 12px/1.6 "DejaVu Sans Mono", monospace; }
   .win .bar { height: 26px; display: flex; align-items: center; padding: 0 10px; font: 12px var(--stage-font); }
   .win.editor { grid-row: 1 / 3; background: #fbfbfd; color: #222; }
   .win.editor.focus { outline: 2px solid #1a3cc8; }
@@ -118,7 +128,10 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
   <div class="r"><span>後ろのぼかし</span><div class="seg" id="blur"><button class="on" data-v="1">コンポジタがぼかす</button><button data-v="0">無し</button></div></div>
   <div class="r"><span>壁紙</span><div class="seg" id="walls"><button data-w="aurora" class="on">オーロラ</button><button data-w="dusk">夕暮れ</button><button data-w="paper">白</button></div></div>
   <div class="r"><span>強調の色</span><input type="color" id="accent" value="#1a3cc8"><button id="accentReset">テーマのまま</button></div>
-  <div class="r"><span>角丸</span><input type="range" id="radius" min="0" max="16" value="8"></div>
+  <div class="r"><span>窓と窓の間</span><input type="checkbox" id="giOn" checked><input type="range" id="gi" min="1" max="24" value="8"></div>
+  <div class="r"><span>画面の端との間</span><input type="checkbox" id="goOn" checked><input type="range" id="go" min="1" max="24" value="8"></div>
+  <div class="r"><span>窓の角丸</span><input type="range" id="wr" min="0" max="16" value="10"></div>
+  <div class="r"><span>行の角丸</span><input type="range" id="radius" min="0" max="16" value="8"></div>
   <div class="r"><span>行の高さ</span><input type="range" id="row" min="24" max="40" value="30"></div>
   <div class="r"><span>字の大きさ</span><input type="range" id="font" min="11" max="16" value="13"></div>
   <div class="r"><span>窓のつなぎ</span><select id="level">
@@ -147,6 +160,22 @@ test result: <span class="g">ok</span>. 48 passed; 0 failed
   seg('walls', (b) => { document.getElementById('wall').className = `wall ${b.dataset.w}`; });
   const v = (id, name, unit) => document.getElementById(id).addEventListener('input', (e) => { look.vars[name] = e.target.value + unit; push(); });
   v('radius', 'radius', 'px');
+  // 間と窓の角丸: 台(窓とサイドバーの置き場所)に掛け、サイドバーには「窓として浮いているか」を伝える(縁の線の引き方が変わる)
+  const gaps = () => {
+    const $ = (id) => document.getElementById(id);
+    const gi = $('giOn').checked ? +$('gi').value : 0;
+    const go = $('goOn').checked ? +$('go').value : 0;
+    const wr = gi || go ? +$('wr').value : 0; // 間が無ければ角も丸めない(画面の端と窓の縁が揃う)
+    const r = document.documentElement.style;
+    r.setProperty('--gi', `${gi}px`);
+    r.setProperty('--go', `${go}px`);
+    r.setProperty('--wr', `${wr}px`);
+    r.setProperty('--win-shadow', gi || go ? '0 6px 24px rgba(0, 0, 0, 0.35)' : 'none');
+    look.vars['sb-edge'] = gi || go ? 'inset 0 0 0 1px var(--line)' : 'inset -1px 0 0 var(--line)';
+    push();
+  };
+  ['giOn', 'gi', 'goOn', 'go', 'wr'].forEach((id) => document.getElementById(id).addEventListener('input', gaps));
+  gaps();
   v('row', 'row', 'px');
   v('font', 'font-size', 'px');
   document.getElementById('accent').addEventListener('input', (e) => {

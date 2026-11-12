@@ -313,6 +313,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 **サイドバーは画面の左端に layer-shell で貼り付き、場所を予約する**(ほかの窓はその右に並ぶ)。layer-shell の無い環境(GNOME・ほかの OS)では普通のウィンドウで出す。サイドバーはつなぎの 1 つで、無くても PRELUDE は使える。
 
 - Wayland の app_id・X11 のクラス・layer-shell の名前空間は `prelude-sidebar`。**ペインではない**: `[layout]` に書かず、タブにも入らない。窓のつなぎは、普通のウィンドウで出たときも引き取らない
+- **窓と同じ決まりで並べる**(見た目の統一)。設定の `windows.gaps_outer`(窓と画面の端の間)だけ画面の上・下・端から離し、隣の窓との間は `windows.gaps_inner`(窓と窓の間)にする。上下の端は窓と揃う。間があれば角丸・影・縁の線も窓と同じにして 1 枚の窓のように見せ、間が無ければ端に付けて隣の窓の側だけに線を引く。置き方(layer-shell の面の余白・予約する幅)はホストが設定から決め、部品の決まりには入れない。`auto` のときは環境の間を読んで合わせる(これから。sway は窓の位置から求める)
 - 1 つだけ動く。`prelude sidebar show` は、動いていなければ起動し、動いていれば出す。`prelude sidebar hide` は止める
 - サイドバーも同じソケットの約束を使い、サイドバーにだけ許された操作は作らない。ほかの人が別のサイドバーを作ることもできる
 - Slint で作る。Slint の標準の窓(winit)は layer-shell を持たないので、layer-shell の面は Slint の「自前のプラットフォーム」で作る(Wayland のつなぎに smithay-client-toolkit を使う見込み)。日本語入力を含めて、試作で確かめてから作る
@@ -437,6 +438,8 @@ adopt    = "tabs"           # PRELUDE を通さずに開いた窓: tabs(タブ�
 workspace_prefix = ""       # タブの作業領域の名前の頭(環境の作業領域と分けたいとき)
 floating = []               # いつも浮かせる窓(app_id・クラス)
 ignore   = []               # PRELUDE が触らない窓
+gaps_inner = "auto"         # 窓と窓の間(px)。サイドバーと窓の間も同じ。auto は環境のまま
+gaps_outer = "auto"         # 窓と画面の端の間(px)。サイドバーも同じだけ離す。auto は環境のまま
 
 [sidebar]
 side = "left"               # left・right
@@ -464,7 +467,7 @@ prelude config path              # settings.toml の場所
 ### 作る順番(案)
 1. 台帳・層・`prelude config`・反映(コアとコマンド。画面なしでテストできる)。**済**(2026-11-11): 台帳は `prelude-format` の `settings.rs`、組み合わせは `crates/prelude-format/profiles/`。コアは settings.toml を見張り、すぐ効く項目(`tabs.closed_max`・`download_dir`)を当てはめて状態の `config_rev` を上げる。まるごと読めなければ前の設定を使い続ける。`agent` は `prelude agent` が使う。まだ効かない項目は `prelude config list` で「not used by PRELUDE yet」と出る。MCP に `config_get`・`config_set`
 2. `prelude term`(端末の表)と、既定のレシピ・選ぶ画面をそれに替える。**済**(2026-11-12): 表は `prelude-format` の `term.rs`(foot・kitty・ghostty・alacritty・wezterm・konsole。新しいプロセスで開く引数をいつも付ける)。既定のレシピの窓の名前は `@terminal` で、コアが設定の端末の窓の名前にする
-3. `[windows]`(任せる段の上限・引き取り・浮かせる・触らない)。**済**(2026-11-12): 段を 0 起動だけ・1 作業領域だけ・2 並べる・3 読む・4 追う に振り直した。コアは起動のときに `windows.*` を当てはめる(台帳の効き方は「起動し直すと効く」)。`backend` でつなぎを選び、`level` で段を止める(KWin は段 2 より下なら つなぎ無し)。sway のつなぎは段 1 で作業領域へ移すだけ、段 3 から読む、段 4 で `adopt` のとき引き取る。`workspace_prefix` は作業領域の名前の番号の後ろに付く(`3:work`。`$mod+数字` はそのまま効く)。浮かせる・触らない窓はペインにしない。sway の上での動きは画面のある PC で確かめる
+3. `[windows]`(任せる段の上限・引き取り・浮かせる・触らない)。**済**(2026-11-12): 段を 0 起動だけ・1 作業領域だけ・2 並べる・3 読む・4 追う に振り直した。コアは起動のときに `windows.*` を当てはめる(台帳の効き方は「起動し直すと効く」)。`backend` でつなぎを選び、`level` で段を止める(KWin は段 2 より下なら つなぎ無し)。sway のつなぎは段 1 で作業領域へ移すだけ、段 3 から読む、段 4 で `adopt` のとき引き取る。`workspace_prefix` は作業領域の名前の番号の後ろに付く(`3:work`。`$mod+数字` はそのまま効く)。浮かせる・触らない窓はペインにしない。`gaps_inner`・`gaps_outer` は sway の `gaps` にする(sway は端にも inner を足すので、sway の outer は outer − inner)。sway の上での動きは画面のある PC で確かめる
 4. おすすめの組み合わせ(まず sway と Omarchy)
 5. 設定の画面(Slint の `prelude-settings`。台帳から作る)
 

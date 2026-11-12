@@ -122,11 +122,23 @@ pub struct Options {
     pub ignore: Vec<String>,
     /// タブの作業領域の名前の頭
     pub workspace_prefix: String,
+    /// 窓と窓の間・窓と画面の端の間(px。None は環境のまま)。サイドバーも同じ決まりで並べる
+    pub gaps_inner: Option<u32>,
+    pub gaps_outer: Option<u32>,
 }
 
 impl Default for Options {
     fn default() -> Options {
-        Options { backend: "auto".into(), cap: None, adopt: true, floating: vec![], ignore: vec![], workspace_prefix: String::new() }
+        Options {
+            backend: "auto".into(),
+            cap: None,
+            adopt: true,
+            floating: vec![],
+            ignore: vec![],
+            workspace_prefix: String::new(),
+            gaps_inner: None,
+            gaps_outer: None,
+        }
     }
 }
 
@@ -139,6 +151,8 @@ impl Options {
             floating: c.list("windows.floating"),
             ignore: c.list("windows.ignore"),
             workspace_prefix: c.str("windows.workspace_prefix").to_string(),
+            gaps_inner: c.get("windows.gaps_inner").as_integer().map(|n| n as u32),
+            gaps_outer: c.get("windows.gaps_outer").as_integer().map(|n| n as u32),
         }
     }
 

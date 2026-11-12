@@ -82,7 +82,8 @@ input { font: inherit; color: inherit; }
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-right: 1px solid var(--line);
+  /* 縁の線。窓と同じ間で浮いているなら四方(ホストが --sb-edge を入れる)、端に付いているなら隣の窓の側だけ */
+  box-shadow: var(--sb-edge, inset -1px 0 0 var(--line));
   transition: background 0.25s;
 }
 

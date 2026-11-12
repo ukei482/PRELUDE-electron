@@ -20,6 +20,11 @@ pub enum Kind {
         min: i64,
         max: i64,
     },
+    /// "auto" か、min〜max の整数
+    AutoInt {
+        min: i64,
+        max: i64,
+    },
     /// 決まった言葉のどれか
     Choice(&'static [&'static str]),
     /// 文字の並び
@@ -111,6 +116,20 @@ pub const ITEMS: &[Item] = &[
     item("windows.workspace_prefix", Kind::Str, "\"\"", "タブの作業領域の名前の頭(環境の作業領域と分けたいとき)", Apply::Restart),
     item("windows.floating", Kind::List, "[]", "いつも浮かせる窓(app_id・クラス)", Apply::Restart),
     item("windows.ignore", Kind::List, "[]", "PRELUDE が触らない窓(app_id・クラス)", Apply::Restart),
+    item(
+        "windows.gaps_inner",
+        Kind::AutoInt { min: 0, max: 64 },
+        "\"auto\"",
+        "窓と窓の間(px)。サイドバーと窓の間も同じにする。auto は環境の設定のまま",
+        Apply::Restart,
+    ),
+    item(
+        "windows.gaps_outer",
+        Kind::AutoInt { min: 0, max: 64 },
+        "\"auto\"",
+        "窓と画面の端の間(px)。サイドバーも同じだけ端から離す。auto は環境の設定のまま",
+        Apply::Restart,
+    ),
     planned("sidebar.side", Kind::Choice(&["left", "right"]), "\"left\"", "サイドバーを出す辺", Apply::Now),
     planned(
         "sidebar.surface",
@@ -157,6 +176,9 @@ impl Item {
             (Kind::Bool, Value::Boolean(_)) => Ok(v.clone()),
             (Kind::Int { min, max }, Value::Integer(n)) if (min..=max).contains(n) => Ok(v.clone()),
             (Kind::Int { min, max }, _) => bad(&format!("an integer from {min} to {max}")),
+            (Kind::AutoInt { .. }, Value::String(s)) if s == "auto" => Ok(v.clone()),
+            (Kind::AutoInt { min, max }, Value::Integer(n)) if (min..=max).contains(n) => Ok(v.clone()),
+            (Kind::AutoInt { min, max }, _) => bad(&format!("auto or an integer from {min} to {max}")),
             (Kind::Choice(c), Value::String(s)) if c.contains(&s.as_str()) => Ok(v.clone()),
             (Kind::Choice(c), _) => bad(&format!("one of {}", c.join(", "))),
             (Kind::List, Value::Array(a)) if a.iter().all(Value::is_str) => Ok(v.clone()),
@@ -421,6 +443,12 @@ mod tests {
         let c = Config::from_text("これは [ TOML ではない", &none);
         assert_eq!((c.profile.as_str(), c.warnings.len(), c.unreadable), ("none", 1, true));
         assert!(!Config::from_text("show_hidden = 3\n", &none).unreadable); // 項目が読めないだけなら、ほかは使う
+                                                                            // auto か整数
+        let c = Config::from_text("[windows]\ngaps_inner = 8\ngaps_outer = \"auto\"\n", &none);
+        assert_eq!((c.int("windows.gaps_inner"), c.str("windows.gaps_outer")), (8, "auto"));
+        let gi = ITEMS.iter().find(|i| i.key == "windows.gaps_inner").unwrap();
+        assert!(gi.check(&Value::Integer(65)).is_err() && gi.check(&Value::String("big".into())).is_err());
+        assert_eq!(gi.parse_input("auto"), Ok(Value::String("auto".into())));
     }
 
     #[test]

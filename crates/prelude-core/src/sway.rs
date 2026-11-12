@@ -254,6 +254,23 @@ pub fn looks_same(x: &Tree, y: &Tree) -> bool {
 
 // ------------------------------------------------------------------ 木を組むコマンド(計算だけ。テストする)
 
+/// 設定の windows.gaps_inner・gaps_outer → sway のコマンド。PRELUDE の outer は「窓と画面の端の間」だが、
+/// sway は端にも inner を足すので、sway の outer は outer − inner にする(負でもよい)。
+/// 既定(これから作る作業領域)と、今ある作業領域(all set)の両方に掛ける
+pub fn gaps_cmds(inner: Option<u32>, outer: Option<u32>) -> Vec<String> {
+    let mut out = vec![];
+    if let Some(i) = inner {
+        out.push(format!("gaps inner {i}"));
+        out.push(format!("gaps inner all set {i}"));
+    }
+    if let Some(o) = outer {
+        let o = o as i64 - inner.unwrap_or(0) as i64;
+        out.push(format!("gaps outer {o}"));
+        out.push(format!("gaps outer all set {o}"));
+    }
+    out
+}
+
 /// タブの作業領域の名前の、番号の後ろ。設定の windows.workspace_prefix と、別のソケットのコアの印から作る
 pub fn ws_suffix(prefix: &str, tag: &str) -> String {
     match (prefix.is_empty(), tag.is_empty()) {
@@ -495,6 +512,10 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>, opts: Options)
         quiet_until: Instant::now(),
     };
     let level = s.level;
+    let gaps = gaps_cmds(s.opts.gaps_inner, s.opts.gaps_outer);
+    if !gaps.is_empty() {
+        s.ipc.run(&gaps).await;
+    }
     s.recover().await;
     tokio::spawn(s.run(rx));
     Some(Handle { tx, level })
@@ -1304,6 +1325,16 @@ mod tests {
         // 設定の windows.workspace_prefix。番号は先頭のまま($mod+数字 のキーが効く)
         assert_eq!(ws_name(3, &ws_suffix("work", "")), "3:work");
         assert_eq!(ws_name(3, &ws_suffix("work", ".d1")), "3:work-prelude.d1");
+    }
+
+    #[test]
+    fn 間のコマンド() {
+        assert!(gaps_cmds(None, None).is_empty());
+        assert_eq!(gaps_cmds(Some(8), None), vec!["gaps inner 8", "gaps inner all set 8"]);
+        // 端までの間 12 = sway の outer 4 + inner 8
+        assert_eq!(gaps_cmds(Some(8), Some(12))[2..], ["gaps outer 4", "gaps outer all set 4"]);
+        // 窓どうしは 8、端は 0: sway の outer は負
+        assert_eq!(gaps_cmds(Some(8), Some(0))[2], "gaps outer -8");
     }
 
     #[test]

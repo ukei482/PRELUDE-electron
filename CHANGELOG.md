@@ -23,6 +23,7 @@
   - 窓のつなぎの段を 0 起動だけ・1 作業領域だけ・2 並べる・3 読む・4 追う に振り直した(状態の `windows.level` の数も変わる。分割で開けるのは 2 から)
   - `windows.backend`(auto・sway・kwin・hyprland・none)でつなぎを選び、`windows.level` で任せる段を止める。sway のつなぎは `workspace` なら窓をタブの作業領域へ移すだけで、並べ方・大きさは環境に任せる。`read` から使用者の並び・選んだ窓を読み、`follow` で PRELUDE を通さずに開いた窓を引き取る(`windows.adopt = "none"` なら引き取らない)
   - `windows.floating`(いつも浮かせる)・`windows.ignore`(触らない)の窓は、ペインに取り込まない
+  - `windows.gaps_inner`(窓と窓の間)・`windows.gaps_outer`(窓と画面の端の間)。px か auto(環境のまま)。sway のつなぎは sway の `gaps` にする。サイドバーも同じ決まりで並べる(端から outer、隣の窓とは inner。上下の端・角丸を窓と揃える)。設定の型に「auto か整数」を足した
   - `windows.workspace_prefix`: タブの作業領域の名前の番号の後ろに付ける(`3:work`。番号は先頭のままなので `$mod+数字` が効く)
 - Rust 版のコアを、設計の見直し(ファイラを外す・OS の役割を持たない)に合わせた。ふだんの PRELUDE(Electron 版)は変わらない
   - 既定のファイラは端末の中の yazi(`files` のレシピ)。コアは `files`・`field` を名指ししない(`field` は `files` の別名として読む)。ペイン・タブの名前は、種類によらず `path` の最後の名前
