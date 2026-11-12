@@ -40,7 +40,15 @@ jobs:
         working-directory: proto/slint
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      # fontconfig の開発用のファイル(Slint のビルドが使う)。実行環境に入っていれば取らない。
+      # パッケージの置き場に一時的に届かないことがあるので、何度かやり直す
+      - run: |
+          pkg-config --exists fontconfig && exit 0
+          for i in 1 2 3 4; do
+            sudo apt-get update && sudo apt-get install -y libfontconfig1-dev && exit 0
+            sleep $((i * 15))
+          done
+          exit 1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
