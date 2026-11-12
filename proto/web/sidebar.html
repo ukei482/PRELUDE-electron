@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRELUDE サイドバー</title>
+<link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+<div id="sidebar" style="height:100%"></div>
+<div id="toast" style="position:fixed;left:8px;right:8px;bottom:44px;display:none;padding:8px 10px;border-radius:8px;background:rgba(20,22,30,.88);color:#fff;font-size:12px;line-height:1.4;z-index:20"></div>
+<script src="parts.js"></script>
+<script src="glue.js"></script>
+<script src="sidebar.js"></script>
+<script src="fake.js"></script>
+<script src="host.js"></script>
+<script>
+  // ?fake で、橋があっても偽のコアを使う
+  const t = document.getElementById('toast');
+  let timer = 0;
+  window.preludeHost = PreludeHost.start(document.getElementById('sidebar'), {
+    fake: new URLSearchParams(location.search).has('fake'),
+    toast(m) {
+      if (parent !== window) return parent.postMessage({ toast: m }, '*'); // 台(stage)の中なら台が出す
+      t.textContent = m;
+      t.style.display = 'block';
+      clearTimeout(timer);
+      timer = setTimeout(() => (t.style.display = 'none'), 2600);
+    },
+  });
+</script>
+</body>
+</html>

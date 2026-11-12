@@ -1,0 +1,259 @@
+/* サイドバーの見た目。色・大きさ・角丸・透け具合は :root の変数だけで決め、テーマ(theme.toml)はその値を差し替える。
+   背景のぼかしはコンポジタの仕事(SwayFX の layer_effects・Hyprland の layerrule)。ここは半透明の色を出すだけ。 */
+:root {
+  --font: "Inter", "Noto Sans CJK JP", "Noto Sans JP", "IPAPGothic", system-ui, sans-serif;
+  --font-size: 13px;
+  --radius: 8px;
+  --row: 30px;
+  --gap: 6px;
+  --pad: 10px;
+
+  --bg: #ffffff;
+  --surface: #f3f4f8;
+  --text: #15161a;
+  --dim: #6b6f7b;
+  --line: #e3e5ec;
+  --accent: #1a3cc8;
+  --accent-text: #ffffff;
+  --hover: rgba(26, 60, 200, 0.08);
+  --active-bg: var(--accent);
+  --active-text: var(--accent-text);
+  --open-dot: #2fb36b;
+  --danger: #d23a3a;
+  --shadow: 0 8px 24px rgba(10, 15, 40, 0.18);
+  --blur-hint: none; /* 窓の中のぼかし(メニューなど)。透けるテーマだけ */
+}
+
+:root[data-theme="dark"] {
+  --bg: #17181c;
+  --surface: #222329;
+  --text: #e9eaee;
+  --dim: #8d919c;
+  --line: #2c2e36;
+  --accent: #7b93ff;
+  --accent-text: #0d1020;
+  --hover: rgba(123, 147, 255, 0.12);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* クリア: 背景を透かす。後ろをぼかすのはコンポジタ */
+:root[data-theme="clear"] {
+  --bg: rgba(255, 255, 255, 0.42);
+  --surface: rgba(255, 255, 255, 0.45);
+  --text: #101218;
+  --dim: rgba(16, 18, 24, 0.62);
+  --line: rgba(255, 255, 255, 0.55);
+  --accent: rgba(26, 60, 200, 0.88);
+  --hover: rgba(255, 255, 255, 0.5);
+  --shadow: 0 10px 30px rgba(10, 15, 40, 0.25);
+  --blur-hint: blur(18px) saturate(1.6);
+}
+
+:root[data-theme="clear-dark"] {
+  --bg: rgba(16, 18, 26, 0.45);
+  --surface: rgba(255, 255, 255, 0.08);
+  --text: #f1f2f6;
+  --dim: rgba(241, 242, 246, 0.62);
+  --line: rgba(255, 255, 255, 0.12);
+  --accent: rgba(140, 160, 255, 0.9);
+  --accent-text: #0b0e1c;
+  --hover: rgba(255, 255, 255, 0.1);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --blur-hint: blur(18px) saturate(1.4);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent; /* 窓そのものは透明。色は .sb が出す */
+  font-family: var(--font);
+  font-size: var(--font-size);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input { font: inherit; color: inherit; }
+
+.sb {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  transition: background 0.25s;
+}
+
+/* 見出し: スペース・つながり・幅 */
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: var(--pad) var(--pad) 6px;
+}
+.space {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.space:hover { background: var(--hover); }
+.space .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--open-dot); flex: none; }
+.dot.off { background: var(--danger); }
+.iconbtn {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  color: var(--dim);
+}
+.iconbtn:hover { background: var(--hover); color: var(--text); }
+.iconbtn:disabled { opacity: 0.35; cursor: default; background: none; }
+.iconbtn.on { color: var(--accent); }
+svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 今のペイン(分割ボタン)とブックマークボタン */
+.panebar {
+  margin: 4px var(--pad) 8px;
+  padding: 8px;
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--surface);
+}
+.panebar .what { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 6px; }
+.panebar .what .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.panebar .url {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--dim);
+  font-size: 0.92em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: var(--hover);
+}
+.panebar .tools { display: flex; gap: 2px; }
+.panebar .tools .sp { flex: 1; }
+
+/* 区切りの見出し */
+.sec {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px var(--pad) 4px calc(var(--pad) + 4px);
+  color: var(--dim);
+  font-size: 0.82em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.sec .lbl { flex: 1; }
+.sec .iconbtn { width: 24px; height: 24px; }
+
+.scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: var(--pad); scrollbar-width: thin; }
+
+/* 行(タブ・ペイン・ブックマーク・フォルダ) */
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row);
+  margin: 1px var(--pad);
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius);
+  cursor: default;
+}
+.row:hover { background: var(--hover); }
+.row.active { background: var(--active-bg); color: var(--active-text); }
+.row.active .num, .row.active .sub { color: inherit; opacity: 0.75; }
+.row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .num { width: 18px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; font-size: 0.9em; flex: none; }
+.row .sub { color: var(--dim); font-size: 0.85em; flex: none; }
+.row .x { opacity: 0; width: 22px; height: 22px; }
+.row:hover .x { opacity: 1; }
+.row.active .x { color: inherit; }
+.row.pane { height: calc(var(--row) - 4px); margin-left: calc(var(--pad) + 22px); font-size: 0.94em; }
+.row.pane.active { background: var(--hover); color: var(--text); font-weight: 600; }
+.row.inner { margin-left: calc(var(--pad) + 14px); }
+.row .opendot { width: 6px; height: 6px; border-radius: 50%; background: var(--open-dot); flex: none; }
+.row.folder .chev { transition: transform 0.15s; color: var(--dim); }
+.row.folder.expanded .chev { transform: rotate(90deg); }
+.row.drop-before::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: -2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.row.drop-into { outline: 2px solid var(--accent); outline-offset: -2px; }
+.row.dragging { opacity: 0.4; }
+
+/* アイコン: 画像があれば画像、無ければ種類の記号 */
+.ico { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px; }
+.ico img { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; }
+.ico svg.i { width: 15px; height: 15px; }
+
+/* 編集の欄 */
+.edit {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg);
+  outline: none;
+}
+
+/* メニュー */
+.menu {
+  position: fixed;
+  z-index: 10;
+  min-width: 180px;
+  padding: 5px;
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: var(--blur-hint);
+  animation: pop 0.12s ease-out;
+}
+:root[data-theme^="clear"] .menu { background: var(--surface); }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 10px; border-radius: 6px; text-align: left; }
+.menu button:hover { background: var(--hover); }
+.menu button.danger { color: var(--danger); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.menu .ttl { padding: 4px 10px 2px; color: var(--dim); font-size: 0.82em; }
+@keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+
+.foot { padding: 6px var(--pad) var(--pad); color: var(--dim); font-size: 0.82em; display: flex; gap: 6px; align-items: center; }
+.foot .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 細い列 */
+.sb.compact .space .name, .sb.compact .sec .lbl, .sb.compact .row .t, .sb.compact .row .sub, .sb.compact .row .x,
+.sb.compact .panebar .what .t, .sb.compact .panebar .url, .sb.compact .foot .t, .sb.compact .row .num { display: none; }
+.sb.compact .head { flex-direction: column; }
+.sb.compact .space { padding: 0; justify-content: center; width: 34px; flex: none; }
+.sb.compact .panebar .tools { flex-direction: column; align-items: center; }
+.sb.compact .panebar .what { justify-content: center; }
+.sb.compact .row { justify-content: center; padding: 0; }
+.sb.compact .row.pane, .sb.compact .row.inner { margin-left: var(--pad); }
+.sb.compact .sec { justify-content: center; padding-left: 0; padding-right: 0; }

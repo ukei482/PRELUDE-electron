@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRELUDE UI の試作</title>
+<style>
+  /* 見た目を確かめる台: 偽の壁紙と、sway で並んだ偽の窓の上にサイドバーを置く。
+     サイドバーは iframe(本番の layer-shell の面にあたる)。後ろのぼかしは、コンポジタの代わりにこの台が iframe に掛ける */
+  :root { --stage-font: "Noto Sans CJK JP", "IPAPGothic", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: var(--stage-font); background: #0d1020; }
+  .wall { position: fixed; inset: 0; transition: background 0.4s; }
+  .wall.aurora {
+    background:
+      radial-gradient(60% 50% at 15% 20%, #ff7eb3 0%, transparent 60%),
+      radial-gradient(50% 60% at 30% 85%, #ffd36e 0%, transparent 60%),
+      radial-gradient(55% 55% at 85% 25%, #6ea8ff 0%, transparent 60%),
+      radial-gradient(60% 60% at 75% 90%, #7cffc4 0%, transparent 55%),
+      linear-gradient(135deg, #3b1d6e, #0f2a5c);
+  }
+  .wall.dusk { background: radial-gradient(80% 60% at 20% 30%, #f6a04d, transparent 60%), radial-gradient(70% 80% at 80% 70%, #5a3d9a, transparent 60%), linear-gradient(#2b1838, #121a33); }
+  .wall.paper { background: linear-gradient(160deg, #eef1f6, #d9dfe9); }
+  .wall .blob { position: absolute; border-radius: 50%; filter: blur(2px); opacity: 0.9; }
+
+  .side { position: fixed; left: 0; top: 0; height: 100vh; width: 272px; border: 0; transition: width 0.2s, backdrop-filter 0.3s; }
+  .side.compact { width: 60px; }
+  .side.blur { backdrop-filter: blur(22px) saturate(1.5); -webkit-backdrop-filter: blur(22px) saturate(1.5); }
+
+  /* 偽の窓(sway のタイル) */
+  .tiles { position: fixed; top: 8px; right: 8px; bottom: 8px; left: 280px; display: grid; grid-template-columns: 58fr 42fr; grid-template-rows: 60fr 40fr; gap: 8px; transition: left 0.2s; }
+  .tiles.compact { left: 68px; }
+  .win { border-radius: 10px; overflow: hidden; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; font: 12px/1.6 "DejaVu Sans Mono", monospace; }
+  .win .bar { height: 26px; display: flex; align-items: center; padding: 0 10px; font: 12px var(--stage-font); }
+  .win.editor { grid-row: 1 / 3; background: #fbfbfd; color: #222; }
+  .win.editor.focus { outline: 2px solid #1a3cc8; }
+  .win.editor .bar { background: #eceef3; }
+  .win.term { background: #1b1d24; color: #cfd3dc; }
+  .win.term .bar { background: #262933; color: #aab; }
+  .win.files { background: #15171d; color: #cfd3dc; }
+  .win.files .bar { background: #20232b; color: #aab; }
+  .win pre { margin: 0; padding: 10px 12px; white-space: pre; overflow: hidden; }
+  .k { color: #a626a4; } .s { color: #50a14f; } .c { color: #a0a1a7; } .n { color: #c18401; }
+  .g { color: #7cd992; } .y { color: #f5c211; } .b { color: #7aa2ff; }
+
+  /* 操作盤 */
+  .panel {
+    position: fixed; right: 18px; bottom: 18px; width: 300px; padding: 14px 14px 10px; border-radius: 14px;
+    background: rgba(255, 255, 255, 0.86); backdrop-filter: blur(16px); color: #15161a; font-size: 12.5px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); z-index: 5;
+  }
+  .panel h1 { font-size: 13px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  .panel h1 button { font-size: 11px; }
+  .panel.min > :not(h1) { display: none; }
+  .panel .r { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+  .panel .r > span:first-child { width: 86px; color: #555; flex: none; }
+  .panel .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .panel button { font: inherit; border: 1px solid #ccd; background: #fff; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  .panel button.on { background: #1a3cc8; color: #fff; border-color: #1a3cc8; }
+  .panel input[type=range] { flex: 1; }
+  .panel .note { color: #666; font-size: 11px; line-height: 1.5; margin-top: 8px; }
+  .toast { position: fixed; left: 300px; bottom: 18px; padding: 8px 12px; border-radius: 8px; background: rgba(15, 17, 25, 0.9); color: #fff; font-size: 12px; display: none; z-index: 6; }
+</style>
+</head>
+<body>
+<div class="wall aurora" id="wall">
+  <div class="blob" style="left:6%;top:48%;width:160px;height:160px;background:#fff3"></div>
+  <div class="blob" style="left:12%;top:12%;width:90px;height:90px;background:#ffffff55"></div>
+</div>
+
+<div class="tiles" id="tiles">
+  <div class="win editor focus">
+    <div class="bar">sidebar.css — Kate</div>
+<pre><span class="c">/* 色・大きさ・角丸・透け具合は :root の変数だけで決める */</span>
+<span class="k">:root</span> {
+  --radius: <span class="n">8px</span>;
+  --accent: <span class="n">#1a3cc8</span>;
+  --bg: <span class="n">#ffffff</span>;
+}
+<span class="k">:root[data-theme="clear"]</span> {
+  --bg: <span class="n">rgba(255, 255, 255, .42)</span>;
+  <span class="c">/* 後ろをぼかすのはコンポジタ */</span>
+}
+<span class="k">.row.active</span> {
+  background: var(--active-bg);
+  color: var(--active-text);
+}</pre>
+  </div>
+  <div class="win term">
+    <div class="bar">cargo test — foot</div>
+<pre><span class="g">$</span> cargo test -q
+running 48 tests
+................................................
+test result: <span class="g">ok</span>. 48 passed; 0 failed
+<span class="g">$</span> prelude status
+仕事  タブ 4  窓: sway(段 4)
+<span class="g">$</span> █</pre>
+  </div>
+  <div class="win files">
+    <div class="bar">web — yazi</div>
+<pre><span class="b">  proto/web</span>
+  <span class="y">▸</span> README.md
+    bridge.js
+    fake.js
+    glue.js
+    parts.js
+    sidebar.css</pre>
+  </div>
+</div>
+
+<iframe class="side blur" id="side" src="sidebar.html?fake" title="サイドバー"></iframe>
+
+<div class="panel" id="panel">
+  <h1>見た目を試す <button id="min">たたむ</button></h1>
+  <div class="r"><span>テーマ</span><div class="seg" id="themes">
+    <button data-theme="light">白</button><button data-theme="dark">黒</button><button data-theme="clear" class="on">クリア</button><button data-theme="clear-dark">クリア黒</button>
+  </div></div>
+  <div class="r"><span>後ろのぼかし</span><div class="seg" id="blur"><button class="on" data-v="1">コンポジタがぼかす</button><button data-v="0">無し</button></div></div>
+  <div class="r"><span>壁紙</span><div class="seg" id="walls"><button data-w="aurora" class="on">オーロラ</button><button data-w="dusk">夕暮れ</button><button data-w="paper">白</button></div></div>
+  <div class="r"><span>強調の色</span><input type="color" id="accent" value="#1a3cc8"><button id="accentReset">テーマのまま</button></div>
+  <div class="r"><span>角丸</span><input type="range" id="radius" min="0" max="16" value="8"></div>
+  <div class="r"><span>行の高さ</span><input type="range" id="row" min="24" max="40" value="30"></div>
+  <div class="r"><span>字の大きさ</span><input type="range" id="font" min="11" max="16" value="13"></div>
+  <div class="r"><span>窓のつなぎ</span><select id="level">
+    <option value="4">4 追う(sway)</option><option value="3">3 読む</option><option value="2">2 並べる</option><option value="1">1 作業領域だけ</option><option value="0">0 起動だけ</option>
+  </select></div>
+  <div class="note">サイドバーは触れます: タブ・ブックマークを押す、右クリックのメニュー、ドラッグで並べ替え・フォルダへ移す、★でブックマークにする、細い列(左上の右のボタン)。中身は偽のコアです。</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const side = document.getElementById('side');
+  // 橋(bridge.js)から開いたら本物のコアにつなぐ(?fake なら偽のコアのまま)
+  if (location.protocol.startsWith('http') && !new URLSearchParams(location.search).has('fake')) side.src = 'sidebar.html';
+  const look = { theme: 'clear', vars: {} };
+  const send = (m) => side.contentWindow && side.contentWindow.postMessage(m, '*');
+  const push = () => send({ look });
+  side.addEventListener('load', push);
+  const seg = (id, f) => document.getElementById(id).addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    document.querySelectorAll(`#${id} button`).forEach((x) => x.classList.toggle('on', x === b));
+    f(b);
+  });
+  seg('themes', (b) => { look.theme = b.dataset.theme; push(); });
+  seg('blur', (b) => side.classList.toggle('blur', b.dataset.v === '1'));
+  seg('walls', (b) => { document.getElementById('wall').className = `wall ${b.dataset.w}`; });
+  const v = (id, name, unit) => document.getElementById(id).addEventListener('input', (e) => { look.vars[name] = e.target.value + unit; push(); });
+  v('radius', 'radius', 'px');
+  v('row', 'row', 'px');
+  v('font', 'font-size', 'px');
+  document.getElementById('accent').addEventListener('input', (e) => {
+    look.vars.accent = e.target.value;
+    look.vars['active-bg'] = e.target.value;
+    look.vars.hover = e.target.value + '1f';
+    push();
+  });
+  document.getElementById('accentReset').addEventListener('click', () => {
+    for (const k of ['accent', 'active-bg', 'hover']) look.vars[k] = '';
+    push();
+  });
+  document.getElementById('level').addEventListener('change', (e) => send({ level: Number(e.target.value) }));
+  document.getElementById('min').addEventListener('click', () => document.getElementById('panel').classList.toggle('min'));
+  // 細い列: サイドバーの中の状態を見て、台の幅を合わせる(本番では layer-shell の面の幅を変える)
+  setInterval(() => {
+    try {
+      const c = !!side.contentDocument.querySelector('.sb.compact');
+      side.classList.toggle('compact', c);
+      document.getElementById('tiles').classList.toggle('compact', c);
+    } catch {}
+  }, 200);
+  const toast = document.getElementById('toast');
+  let tm = 0;
+  window.addEventListener('message', (e) => {
+    if (!e.data || !e.data.toast) return;
+    toast.textContent = e.data.toast;
+    toast.style.display = 'block';
+    clearTimeout(tm);
+    tm = setTimeout(() => (toast.style.display = 'none'), 2600);
+  });
+</script>
+</body>
+</html>
