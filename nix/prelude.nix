@@ -5,7 +5,8 @@ rustPlatform.buildRustPackage {
   version = (lib.importTOML ../crates/prelude-core/Cargo.toml).package.version;
   src = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [ ../Cargo.toml ../Cargo.lock ../crates ../portal ];
+    # skills/ は prelude コマンドに埋め込む(prelude skill)
+    fileset = lib.fileset.unions [ ../Cargo.toml ../Cargo.lock ../crates ../portal ../skills ];
   };
   cargoLock.lockFile = ../Cargo.lock;
   # テストは CI と手元の cargo test で流す(ビルドの砂場では、子のプロセスの終わりを確かめるテストが通らない)

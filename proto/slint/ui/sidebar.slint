@@ -1,0 +1,157 @@
+// 試作のサイドバー。上半分が本物のサイドバーの形(ui/prelude.slint の決まりだけを使う)、
+// 下半分が試作で確かめること(日本語の字・日本語入力・1 万件の一覧)
+import { LineEdit, ListView, ScrollView } from "std-widgets.slint";
+import { Prelude, Tab, Bookmark } from "prelude.slint";
+
+export { Prelude, Tab, Bookmark }
+
+// Electron 版と同じ色
+global Theme {
+    out property <color> bg: #ffffff;
+    out property <color> text: #000000;
+    out property <color> dim: #555555;
+    out property <color> accent: #1a3cc8;
+    out property <color> hover: #e8ecfb;
+    out property <length> row: 26px;
+}
+
+component Row inherits Rectangle {
+    in property <string> label;
+    in property <string> badge;
+    in property <bool> active;
+    callback clicked();
+    height: Theme.row;
+    background: active ? Theme.accent : (area.has-hover ? Theme.hover : transparent);
+    area := TouchArea { clicked => { root.clicked(); } }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        if badge != "": Text {
+            text: badge;
+            color: active ? Theme.bg : Theme.dim;
+            vertical-alignment: center;
+        }
+        Text {
+            text: label;
+            color: active ? Theme.bg : Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        @children
+    }
+}
+
+component Section inherits Text {
+    color: Theme.dim;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+export component Sidebar inherits Window {
+    title: "PRELUDE Slint proto";
+    preferred-width: Prelude.compact ? 44px : 300px;
+    preferred-height: 760px;
+    min-width: 44px;
+    background: Theme.bg;
+    default-font-size: 14px;
+
+    // 試作で確かめること(Rust の側が入れる。決まりには入れない)
+    in property <[string]> rows;
+    in property <string> rows-info;
+    in property <string> sample: "日本語: 漢字・ひらがな・カタカナ・ｶﾀｶﾅ・①②・〜・「」 / English 0123 / 😀";
+
+    VerticalLayout {
+        // つまみ(押すと広い ⇄ 細い列)
+        Rectangle {
+            height: 34px;
+            background: Theme.accent;
+            TouchArea { clicked => { Prelude.toggle-compact(); } }
+            Text {
+                x: 10px;
+                text: Prelude.compact ? "P" : "PRELUDE  " + Prelude.space;
+                color: Theme.bg;
+                font-weight: 700;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+        }
+
+        if !Prelude.online: Text {
+            text: Prelude.status;
+            color: Theme.dim;
+            wrap: word-wrap;
+        }
+
+        if !Prelude.compact: VerticalLayout {
+            padding: 6px;
+            spacing: 2px;
+            vertical-stretch: 1;
+
+            Section { text: "SPACES"; }
+            for s in Prelude.spaces: Row {
+                label: s;
+                active: s == Prelude.space;
+                clicked => { Prelude.switch-space(s); }
+            }
+
+            Section { text: "BOOKMARKS"; }
+            for b in Prelude.bookmarks: Row {
+                label: b.title;
+                badge: b.folder;
+                clicked => { Prelude.open-bookmark(b.path); }
+            }
+
+            HorizontalLayout {
+                Section { text: "TABS"; horizontal-stretch: 1; }
+                Text {
+                    text: "+";
+                    color: Theme.accent;
+                    TouchArea { clicked => { Prelude.open-launcher(); } }
+                }
+            }
+            for t in Prelude.tabs: Row {
+                label: t.title;
+                badge: t.num;
+                active: t.active;
+                clicked => { Prelude.activate-tab(t.id); }
+                Text {
+                    text: "×";
+                    color: t.active ? Theme.bg : Theme.dim;
+                    vertical-alignment: center;
+                    TouchArea { clicked => { Prelude.close-tab(t.id); } }
+                }
+            }
+
+            // --- ここから下は試作で確かめること ---
+            Rectangle { height: 1px; background: Theme.accent; }
+            Section { text: "PROTO"; }
+            Text { text: root.sample; wrap: word-wrap; }
+            Text { text: "入力(日本語入力を試す):"; color: Theme.dim; }
+            input := LineEdit { placeholder-text: "ここに入力"; }
+            Text { text: "入力した文字: " + input.text; color: Theme.dim; wrap: word-wrap; }
+            Text { text: root.rows-info; color: Theme.dim; }
+            ListView {
+                vertical-stretch: 1;
+                min-height: 120px;
+                for r in root.rows: Text {
+                    text: r;
+                    height: 22px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        if Prelude.compact: VerticalLayout {
+            padding-top: 6px;
+            spacing: 2px;
+            for t in Prelude.tabs: Row {
+                label: t.num;
+                active: t.active;
+                clicked => { Prelude.activate-tab(t.id); }
+            }
+            Rectangle { vertical-stretch: 1; }
+        }
+    }
+}

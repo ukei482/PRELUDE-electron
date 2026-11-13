@@ -1,4 +1,4 @@
-# この PC の rice(docs/redesign-rust.md の判断 10)。PRELUDE の外にある、好みで決める部分。
+# この PC の rice(docs/rice.md)。PRELUDE の外にある、好みで決める部分。
 # PRELUDE に要るものは nix/module.nix に置き、見た目・バー・通知・キー配列などはここに置く。
 # sway は /etc/sway/config.d の断片を名前の順に読むので、prelude.conf の後に rice.conf が効く。
 { config, lib, pkgs, ... }:

@@ -1,7 +1,7 @@
-//! PRELUDE のファイラ(docs/redesign-rust.md の判断 10・11、移行の段階 5)。
+//! PRELUDE のファイラ(docs/redesign-rust.md の「ファイラ」、移行の段階 5。外のファイラに任せるので消す予定)。
 //!
 //! - フォルダの中身は [`DirState`](読み方・並べ方はここ。GPUI に依らないのでテストできる)
-//! - 見せ方は [`FilerView`] のトレイトを満たす部品。一覧([`views::ListView`])のほか、フィールド表示・写真を大きく並べるものなどを足せる(判断 7 の段階 2)
+//! - 見せ方は [`FilerView`] のトレイトを満たす部品。一覧([`views::ListView`])のほか、フィールド表示・写真を大きく並べるものなどを足せる
 //! - 枠([`Filer`]、main.rs)はキー・移動・開く・コアへの知らせを受け持ち、見せ方を差し替えても同じに動く
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -326,8 +326,8 @@ pub fn local_time(t: SystemTime) -> String {
 /// 見せ方から枠へ頼みごとを渡す口(行を押したときなどに呼ぶ)
 pub type Emit = std::rc::Rc<dyn Fn(FilerCommand, &mut gpui::Window, &mut gpui::App)>;
 
-/// 見せ方の部品(判断 11 の `FilerView`)。枠が持つ [`DirState`] を描くだけで、操作は [`FilerCommand`] にして枠に渡す。
-/// キー・移動・開く・コアへの知らせは枠が受け持つので、部品を差し替えても同じに動く。部品は枠と一緒にビルドするので、版は付けない(判断 12)
+/// 見せ方の部品(`FilerView`)。枠が持つ [`DirState`] を描くだけで、操作は [`FilerCommand`] にして枠に渡す。
+/// キー・移動・開く・コアへの知らせは枠が受け持つので、部品を差し替えても同じに動く。部品は枠と一緒にビルドするので、版は付けない(「トレイトの版」)
 pub trait FilerView: 'static {
     /// 名前(`--view` で選ぶ)
     fn name(&self) -> &'static str;

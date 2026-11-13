@@ -1,7 +1,7 @@
 'use strict';
 // ブックマークのファイル(.prelude)とスペースの設定(space.toml)の、文字列 ⇔ 中身(オブジェクト)。メインプロセスで使う。
 // 中身の形は画面側(src/bmfile.js)が決める。Rust 版(crates/prelude-format)も同じ形を読み書きする。
-// 書くのは TOML(docs/redesign-rust.md の判断 5)。0.11 までの JSON の .prelude も読める(書き直すと TOML になる)。
+// 書くのは TOML(docs/redesign-rust.md の「スペースとブックマーク」)。0.11 までの JSON の .prelude も読める(書き直すと TOML になる)。
 const TOML = require('smol-toml');
 
 // 文字列 → 中身。読めなければ Error。TOML の表は普通のオブジェクトにする(smol-toml は prototype の無いオブジェクトを返す。日時は文字列になる)

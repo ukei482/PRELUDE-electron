@@ -150,22 +150,24 @@ impl Settings {
         dir().join("settings.toml")
     }
     pub fn load() -> Settings {
-        Settings::from_table(&read(&Settings::path()))
+        Settings::from_config(&crate::settings::Config::load())
     }
     pub fn parse(text: &str) -> Settings {
         Settings::from_table(&text.parse().unwrap_or_default())
     }
     fn from_table(t: &Table) -> Settings {
-        let mut out = Settings::default();
-        let mut engine = String::new();
-        string(t, "search_engine", &mut engine);
-        if engine.contains("%s") {
-            out.search_engine = engine;
+        // 台帳(settings.rs)で確かめて読む。組み合わせ(profile)は環境を見ずに決める(ここで読む 4 つの項目は組み合わせで変えない)
+        Settings::from_config(&crate::settings::Config::from_text(&t.to_string(), &|_| None))
+    }
+
+    /// 層を重ねた設定から(コアは環境も見た Config を持つ)
+    pub fn from_config(c: &crate::settings::Config) -> Settings {
+        Settings {
+            search_engine: c.str("search_engine").to_string(),
+            show_hidden: c.bool("show_hidden"),
+            space_dir: c.str("space_dir").to_string(),
+            download_dir: c.str("download_dir").to_string(),
         }
-        out.show_hidden = t.get("show_hidden").and_then(Value::as_bool).unwrap_or(false);
-        string(t, "space_dir", &mut out.space_dir);
-        string(t, "download_dir", &mut out.download_dir);
-        out
     }
     pub fn to_toml(&self) -> String {
         format!(

@@ -7,3 +7,5 @@ edition.workspace = true
 [dependencies]
 serde_json = "1"
 toml = { version = "0.9", features = ["preserve_order"] }
+# 使用者の設定のファイルを、コメントと知らない項目を残して書き換える(prelude config set)
+toml_edit = "0.25"

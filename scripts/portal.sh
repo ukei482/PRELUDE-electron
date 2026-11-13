@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# アプリの「開く」「保存」のダイアログを PRELUDE のファイラにする/KDE に戻す(docs/redesign-rust.md の判断 5-a)。
+# アプリの「開く」「保存」のダイアログを PRELUDE のファイラにする/KDE に戻す(docs/redesign-rust.md の「アプリのダイアログ」)。
 # on: ポータルの宣言を置き(sudo)、portals.conf で FileChooser を prelude にする。off: portals.conf を消して戻す
 # ダイアログを受けるのは prelude-core なので、on の間はコアを動かしておく
 set -eu

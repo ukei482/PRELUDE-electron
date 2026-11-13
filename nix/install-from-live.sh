@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kubuntu のライブ USB から、NixOS を今の Kubuntu の横に入れる(docs/redesign-rust.md の判断 9)。
+# Kubuntu のライブ USB から、NixOS を今の Kubuntu の横に入れる(docs/rice.md の「この PC の OS: NixOS」)。
 # 動いている Kubuntu のディスクは縮められないので、ライブ USB で起動して実行する。
 #   sudo bash install-from-live.sh shrink    Kubuntu の区画を縮めて、NixOS の区画を作る
 #   sudo bash install-from-live.sh install   NixOS を入れる

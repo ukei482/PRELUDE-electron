@@ -8,7 +8,9 @@ use crate::compositor::{Scene, TabScene, Tree, Want};
 use crate::recipes::{self, Recipe};
 use crate::web::WebWant;
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, SplitAt, State, TabInfo, TabRef};
+use prelude_proto::{
+    BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, SplitAt, State, TabInfo, TabRef, Windows,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as Json};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -20,6 +22,8 @@ pub const SPACE_DEFAULT: &str = "Main";
 const BM_MAX: u64 = 256 * 1024;
 /// スペースの中で読むブックマークの数の上限
 const BM_LIST_MAX: usize = 1000;
+/// タブの番号の上限
+const TAB_NUM_MAX: u32 = 99;
 const PATH_KEYS: [&str; 5] = ["files", "open", "save", "download", "terminal"];
 
 pub type Fail = (ErrorCode, String);
@@ -204,9 +208,9 @@ fn leaf_title(l: &Leaf) -> String {
             let u = l.str("url");
             u.split("://").nth(1).unwrap_or(u).split('/').next().unwrap_or("").to_string()
         }
-        "files" | "field" => base(l.str("path")),
         "app" => l.str("name").to_string(),
-        _ => String::new(),
+        // ほかの種類は、場所(path)があればその最後の名前。種類は名指ししない
+        _ => base(l.str("path")),
     };
     if s.is_empty() {
         l.kind.clone()
@@ -249,6 +253,10 @@ fn replace_pane(t: &Tree, from: u64, to: u64) -> Tree {
 
 // ------------------------------------------------------------------ タブ
 
+// ブックマークのファイルを書く命令(bookmark.save など)
+#[path = "bmwrite.rs"]
+mod bmwrite;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tab {
     pub id: u64,
@@ -268,6 +276,15 @@ impl Tab {
     }
 }
 
+/// 閉じたタブ(開き直すため)
+#[derive(Debug, Clone, PartialEq)]
+struct Closed {
+    layout: Layout,
+    bookmark: Option<(String, String)>,
+    /// 閉じたときの位置
+    index: usize,
+}
+
 /// スペース 1 つのタブ
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Tabs {
@@ -277,7 +294,7 @@ pub struct Tabs {
 
 // ------------------------------------------------------------------ 書き出す形
 
-/// 残す状態(`~/.local/state/prelude/core.json`)。使用者が決めたものではないので、スペースのフォルダには書かない(判断 5)
+/// 残す状態(`~/.local/state/prelude/core.json`)。使用者が決めたものではないので、スペースのフォルダには書かない(「スペースとブックマーク」の決めごと)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Saved {
     pub space: String,
@@ -335,6 +352,32 @@ pub struct Core {
     places: HashMap<u64, PaneRect>,
     /// ペインのレシピ(窓を取り込むペインの種類)
     recipes: Vec<Recipe>,
+    /// 窓のつなぎ(状態に出すだけ)
+    backend: Windows,
+    /// 閉じたタブ(スペースの名前 → 新しいものが後ろ)。開き直すため。残さない
+    closed: BTreeMap<String, Vec<Closed>>,
+    /// ブックマークのファイルを書いた回数(状態の bookmarks_rev)
+    bookmarks_rev: u64,
+    /// 覚えておく閉じたタブの数(設定の tabs.closed_max)
+    closed_max: usize,
+    /// 設定の端末の窓の名前(レシピの窓の名前 @terminal を置き換える)
+    terminal_class: String,
+    /// 設定を当てはめた回数(状態の config_rev)
+    config_rev: u64,
+    /// スペースのフォルダの中身の印(名前・更新時刻・大きさ)。外から変わったかを見る([`Core::poll_bookmarks`])。0 はまだ取っていない
+    bookmarks_sig: u64,
+    /// ブックマークの種類(パス → 更新時刻と種類)。一覧のたびに全部を読まないため
+    kinds: std::cell::RefCell<HashMap<String, (std::time::SystemTime, String)>>,
+    /// ゴミ箱(テストで差し替える)
+    trash_dir: PathBuf,
+    /// 音を消した Web のペイン。残さない
+    muted: HashSet<u64>,
+    /// Web のペインのファビコンのファイル。残さない
+    favicons: HashMap<u64, String>,
+    /// アプリのアイコン((起動コマンド, 窓の名前) → ファイル)。状態を作るたびにアプリの一覧を引かないため
+    app_icons: std::cell::RefCell<HashMap<(String, String), Option<String>>>,
+    /// 画面に出すだけの変化(消音・アイコン)の回数。書き出さないが、UI には知らせる
+    live_rev: u64,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
@@ -343,12 +386,10 @@ pub struct Core {
     download_dir: String,
     /// PRELUDE を通さずに開いた窓のペインと、その窓。残さない
     windows: HashMap<u64, i64>,
-    /// 起動コマンドがインストール済みのアプリのものか(テストで差し替える)
-    installed: fn(&str) -> bool,
     /// このコアの印(Web のペインの窓の題名の印に入れる)
     tag: String,
     /// インストール済みのアプリの一覧(ランチャーの候補。テストで差し替える)
-    apps: fn() -> Vec<crate::apps::App>,
+    apps: std::sync::Arc<dyn crate::apps::AppSource>,
     /// 今の時刻(ミリ秒。テストで差し替える)
     now: fn() -> u64,
     /// ランチャーの候補の点数(最近 + よく使う)
@@ -373,13 +414,25 @@ impl Core {
             last_id: 0,
             places: HashMap::new(),
             recipes: vec![],
+            backend: Windows::default(),
+            closed: BTreeMap::new(),
+            bookmarks_rev: 0,
+            closed_max: 20,
+            terminal_class: String::new(),
+            config_rev: 0,
+            kinds: Default::default(),
+            bookmarks_sig: 0,
+            trash_dir: crate::trash::dir(),
+            muted: HashSet::new(),
+            favicons: HashMap::new(),
+            app_icons: Default::default(),
+            live_rev: 0,
             stopped: HashSet::new(),
             titles: HashMap::new(),
             download_dir: String::new(),
             windows: HashMap::new(),
-            installed: crate::apps::is_installed,
             tag: String::new(),
-            apps: crate::apps::cached,
+            apps: std::sync::Arc::new(crate::apps::Xdg),
             now: now_ms,
             history: BTreeMap::new(),
         };
@@ -424,7 +477,7 @@ impl Core {
     }
 
     fn save_tabs(&self, t: &Tabs) -> SavedTabs {
-        // 開き直せない窓は書かない(判断 12)。それだけのタブも残さない
+        // 開き直せない窓は書かない(「PRELUDE を通さずに開いた窓」)。それだけのタブも残さない
         let keep = |id: u64, l: &Leaf| !(self.windows.contains_key(&id) && l.str("cmd").is_empty());
         let kept: Vec<(&Tab, Layout)> = t.tabs.iter().filter_map(|tab| Some((tab, tab.layout.filtered(&keep)?))).collect();
         let active = t.active.and_then(|a| kept.iter().position(|(x, _)| x.id == a)).unwrap_or(0);
@@ -478,10 +531,96 @@ impl Core {
                     layout: self.live(t.layout.to_json()),
                 })
                 .collect(),
+            windows: self.backend.clone(),
+            closed: self.closed.get(&self.space).map_or(0, Vec::len),
+            bookmarks_rev: self.bookmarks_rev,
+            config_rev: self.config_rev,
         }
     }
 
-    /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか)を付ける
+    /// スペースのフォルダが外から変わったか(ファイラで .prelude を足した・消した・書き換えたなど)。
+    /// 変わっていれば bookmarks_rev を増やして true(状態の知らせを配る)。最初の 1 回は印を取るだけ
+    pub fn poll_bookmarks(&mut self) -> bool {
+        let sig = self.bookmarks_signature();
+        if sig == self.bookmarks_sig {
+            return false;
+        }
+        let first = self.bookmarks_sig == 0;
+        self.bookmarks_sig = sig;
+        if !first {
+            self.bookmarks_rev += 1;
+        }
+        !first
+    }
+
+    /// スペースのフォルダの中身の印: 直下と 1 段下のフォルダの、隠しでない名前と、.prelude・space.toml の更新時刻と大きさ
+    fn bookmarks_signature(&self) -> u64 {
+        fn walk(dir: &Path, depth: u32, out: &mut Vec<String>) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') {
+                    continue;
+                }
+                let Ok(m) = e.metadata() else { continue };
+                if m.is_dir() {
+                    out.push(format!("{}/{name}/", dir.display()));
+                    if depth == 0 {
+                        walk(&e.path(), 1, out);
+                    }
+                } else if name.ends_with(".prelude") || (depth == 0 && name == Space::FILE) {
+                    let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
+                    out.push(format!("{}/{name}\0{t}\0{}", dir.display(), m.len()));
+                }
+            }
+        }
+        let mut v = vec![self.space.clone()];
+        walk(&self.space_dir(), 0, &mut v);
+        v.sort();
+        // FNV-1a(64 ビット)。0 は「まだ取っていない」に使うので避ける
+        let h =
+            v.iter().flat_map(|s| s.bytes().chain([0xff])).fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+        h.max(1)
+    }
+
+    /// Web のペインのファビコンを保存した → 変わったか
+    pub fn note_icon(&mut self, pane: u64, path: String) -> bool {
+        if self.find_pane(pane).is_err() || self.favicons.get(&pane) == Some(&path) {
+            return false;
+        }
+        self.favicons.insert(pane, path);
+        self.live_rev += 1;
+        true
+    }
+
+    /// ペインのアイコンのファイル。Web はファビコン、アプリ・レシピは .desktop のアイコン(起動コマンドか窓の名前で照らす)
+    fn pane_icon(&self, id: u64, l: &Leaf) -> Option<String> {
+        if Self::web_url(l).is_some() {
+            return self.favicons.get(&id).cloned();
+        }
+        let (cmd, cls) = match l.kind.as_str() {
+            "app" => (l.str("cmd").trim().to_string(), l.str("cls").to_lowercase()),
+            k => (String::new(), recipes::find(&self.recipes, k).map(|r| r.class.to_lowercase()).unwrap_or_default()),
+        };
+        if cmd.is_empty() && cls.is_empty() {
+            return None;
+        }
+        let key = (cmd, cls);
+        if let Some(v) = self.app_icons.borrow().get(&key) {
+            return v.clone();
+        }
+        let (cmd, cls) = &key;
+        let apps = self.apps.list();
+        let app = apps
+            .iter()
+            .find(|a| !cmd.is_empty() && a.exec == *cmd)
+            .or_else(|| apps.iter().find(|a| !cls.is_empty() && (a.cls == *cls || a.id.to_lowercase() == *cls)));
+        let icon = app.and_then(|a| self.apps.icon(a)).map(|p| p.to_string_lossy().into_owned());
+        self.app_icons.borrow_mut().insert(key, icon.clone());
+        icon
+    }
+
+    /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか・アイコン・消音)を付ける
     fn live(&self, mut v: Json) -> Json {
         if let Some(o) = v.as_object_mut() {
             if o.get("k").and_then(Json::as_str) == Some("split") {
@@ -497,26 +636,56 @@ impl Core {
                 if self.stopped.contains(&id) {
                     o.insert("stopped".into(), json!(true));
                 }
+                if self.muted.contains(&id) {
+                    o.insert("muted".into(), json!(true));
+                }
+                if let Some(icon) = self.find_pane(id).ok().and_then(|(_, l)| self.pane_icon(id, l)) {
+                    o.insert("icon".into(), json!(icon));
+                }
             }
         }
         v
+    }
+
+    /// 窓のつなぎの名前と段(状態の `windows` に出す)
+    pub fn set_windows(&mut self, backend: &str, level: u8) {
+        self.backend = Windows { backend: backend.to_string(), level };
+    }
+
+    /// 設定を当てはめる(起動のときと、settings.toml が変わったとき)。すぐ効く項目だけを使う。状態の知らせのために config_rev を上げる
+    pub fn apply_config(&mut self, c: &prelude_format::settings::Config) {
+        self.closed_max = c.int("tabs.closed_max").max(0) as usize;
+        for list in self.closed.values_mut() {
+            while list.len() > self.closed_max {
+                list.remove(0);
+            }
+        }
+        // 端末を開くレシピ(@terminal)の窓の名前。端末は prelude term と同じ決め方
+        self.terminal_class = prelude_format::term::choose(c.str("terminal"), &std::env::var("PATH").unwrap_or_default())
+            .map(|t| t.class())
+            .unwrap_or_default();
+        let dl = c.str("download_dir");
+        self.download_dir = if dl.is_empty() { String::new() } else { prelude_format::abs_path(dl, &self.home, &self.home) };
+        self.config_rev += 1;
+    }
+
+    /// ゴミ箱のフォルダ(テスト用)
+    pub fn set_trash_dir(&mut self, d: PathBuf) {
+        self.trash_dir = d;
     }
 
     pub fn set_recipes(&mut self, r: Vec<Recipe>) {
         self.recipes = r;
     }
 
-    /// 起動コマンドを確かめる関数を差し替える(テスト用)
-    pub fn set_apps(&mut self, f: fn() -> Vec<crate::apps::App>) {
-        self.apps = f;
+    /// インストール済みのアプリの出どころを差し替える(ほかの OS・テスト用。既定は XDG の .desktop)
+    pub fn set_apps(&mut self, source: std::sync::Arc<dyn crate::apps::AppSource>) {
+        self.apps = source;
+        self.app_icons.borrow_mut().clear();
     }
 
     pub fn set_clock(&mut self, f: fn() -> u64) {
         self.now = f;
-    }
-
-    pub fn set_installed(&mut self, f: fn(&str) -> bool) {
-        self.installed = f;
     }
 
     pub fn set_download_dir(&mut self, dir: String) {
@@ -542,13 +711,14 @@ impl Core {
         for t in &self.tabs.tabs {
             for (id, l) in t.layout.panes() {
                 if let Some(url) = Self::web_url(l).filter(|_| !self.stopped.contains(&id)) {
-                    out.push(WebWant { pane: id, url: url.to_string() });
+                    out.push(WebWant { pane: id, url: url.to_string(), muted: self.muted.contains(&id) });
                 }
             }
         }
+        // ブックマーク・スペースの paths に書いてあればそこ、無ければ設定の download_dir(空なら Chromium の既定)。
+        // paths はホームまで必ず何かを返すので、書いてあるときだけを見る
         let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
-        let dl = self.paths(active).get("download").and_then(Json::as_str).unwrap_or("").to_string();
-        let dl = if dl.is_empty() { self.download_dir.clone() } else { dl };
+        let dl = self.resolver_get(active, "download").unwrap_or_else(|| self.download_dir.clone());
         (out, dl)
     }
 
@@ -592,7 +762,7 @@ impl Core {
                 }
                 let (cmd, cls) = if l.kind == "app" {
                     (l.str("cmd").to_string(), l.str("cls").to_string())
-                } else if let Some(r) = self.recipes.iter().find(|r| r.kind == l.kind) {
+                } else if let Some(r) = recipes::find(&self.recipes, &l.kind) {
                     let p = paths.get_or_insert_with(|| self.paths(Some(t)));
                     let get = |k: &str| p.get(k).and_then(Json::as_str).unwrap_or(&self.home).to_string();
                     // {path} はペインのフォルダ(ファイラの枠)。無ければ paths の files。
@@ -604,7 +774,8 @@ impl Core {
                         "paths.terminal" if cwd.is_some() => cwd.clone(),
                         _ => n.strip_prefix("paths.").filter(|k| !k.is_empty()).map(get),
                     };
-                    (recipes::expand(&r.run, &vars), r.class.clone())
+                    let cls = if r.class == recipes::TERMINAL_CLASS { self.terminal_class.clone() } else { r.class.clone() };
+                    (recipes::expand(&r.run, &vars), cls)
                 } else {
                     continue;
                 };
@@ -666,11 +837,11 @@ impl Core {
         true
     }
 
-    /// PRELUDE を通さずに開いた窓を、タブのペインにする(判断 12)。tree はコンポジタの今の並びで、この窓はペイン 0。
+    /// PRELUDE を通さずに開いた窓を、タブのペインにする(「PRELUDE を通さずに開いた窓」)。tree はコンポジタの今の並びで、この窓はペイン 0。
     /// インストール済みのアプリなら開き直せるように起動コマンドを持つ。変われば true
     pub fn note_foreign(&mut self, tab: u64, con: i64, app: &str, title: &str, focused: bool, tree: &Tree) -> bool {
         let Some(num) = self.tabs.tabs.iter().find(|t| t.id == tab).map(|t| t.num) else { return false };
-        let found = (self.apps)().into_iter().find(|a| a.id.to_lowercase() == app || a.cls == app);
+        let found = self.apps.list().iter().find(|a| a.id.to_lowercase() == app || a.cls == app).cloned();
         let mut fields = Table::new();
         let name = found.as_ref().map(|a| a.name.as_str()).unwrap_or(if title.is_empty() { app } else { title });
         fields.insert("name".into(), Value::String(name.to_string()));
@@ -760,9 +931,14 @@ impl Core {
 
     /// コマンドを 1 つ処理する(`hello` はソケットの側で受ける)
     pub fn handle(&mut self, cmd: Command) -> Outcome {
-        let before = self.saved();
+        let (before, rev, live) = (self.saved(), self.bookmarks_rev, self.live_rev);
         let reply = self.run(cmd);
-        let changed = reply.is_ok() && self.saved() != before;
+        // ブックマークのファイルを書いただけ・消音しただけでも、UI に知らせる
+        let changed = reply.is_ok() && (self.saved() != before || self.bookmarks_rev != rev || self.live_rev != live);
+        if self.bookmarks_rev != rev {
+            // 自分で書いた分は、外からの変化として二度知らせない
+            self.bookmarks_sig = self.bookmarks_signature();
+        }
         Outcome { reply, changed }
     }
 
@@ -777,6 +953,16 @@ impl Core {
             Command::BookmarkOpen { path, allow } => self.bookmark_open(&path, &allow),
             Command::ItemList {} => Ok(json!(self.items())),
             Command::ItemOpen { key, allow, split } => self.item_open(&key, &allow, split),
+            Command::BookmarkSave { tab, title, folder } => self.bookmark_save(tab, &title, &folder),
+            Command::BookmarkOverwrite { tab } => self.bookmark_overwrite(tab),
+            Command::BookmarkRename { path, title } => self.bookmark_rename(&path, &title),
+            Command::BookmarkMove { path, folder } => self.bookmark_move(&path, &folder),
+            Command::BookmarkTrash { path } => self.bookmark_trash(&path),
+            Command::BookmarkReorder { path, before } => self.bookmark_reorder(&path, &before),
+            Command::FolderList {} => Ok(json!(self.folders())),
+            Command::FolderCreate { name } => self.folder_create(&name),
+            Command::FolderRename { path, name } => self.folder_rename(&path, &name),
+            Command::FolderRemove { path } => self.folder_remove(&path),
             Command::RecipeList {} => {
                 Ok(json!(self.recipes.iter().map(|r| RecipeInfo { kind: r.kind.clone(), name: r.name.clone() }).collect::<Vec<_>>()))
             }
@@ -798,6 +984,38 @@ impl Core {
                     self.stopped.remove(&id);
                 }
                 Ok(Json::Null)
+            }
+            Command::TabDuplicate { tab } => {
+                let i = self.tab_index(tab)?;
+                let layout = self
+                    .reopenable(&self.tabs.tabs[i].layout)
+                    .ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
+                Ok(json!(self.insert_tab(layout, None, Some(i + 1))))
+            }
+            Command::TabRenumber { tab, num } => {
+                let i = self.tab_index(tab)?;
+                if !(1..=TAB_NUM_MAX).contains(&num) {
+                    return Err(fail(ErrorCode::BadRequest, format!("Tab numbers are 1 to {TAB_NUM_MAX}")));
+                }
+                let old = self.tabs.tabs[i].num;
+                if let Some(other) = self.tabs.tabs.iter_mut().find(|t| t.num == num) {
+                    other.num = old;
+                }
+                self.tabs.tabs[i].num = num;
+                Ok(Json::Null)
+            }
+            Command::TabReopen {} => {
+                let c = self.closed.get_mut(&self.space).and_then(Vec::pop).ok_or_else(|| not_found("closed tab"))?;
+                self.live_rev += 1; // 開き直せる数(状態の closed)が変わった
+                                    // そのブックマークを開いたタブがもうあれば、そのタブにする(1 ブックマーク = 最大 1 タブ)
+                if let Some(t) =
+                    c.bookmark.as_ref().and_then(|(p, _)| self.tabs.tabs.iter().find(|t| t.bookmark.as_ref().is_some_and(|(q, _)| q == p)))
+                {
+                    let id = t.id;
+                    self.tabs.active = Some(id);
+                    return Ok(json!(id));
+                }
+                Ok(json!(self.insert_tab(c.layout, c.bookmark, Some(c.index))))
             }
             Command::TabMove { tab, index } => {
                 let i = self.tab_index(tab)?;
@@ -850,6 +1068,17 @@ impl Core {
                 }
                 Ok(Json::Null)
             }
+            Command::DialogFolder { save } => Ok(json!(self.dialog_folder(save))),
+            Command::WebMute { pane, on } => {
+                let (_, l) = self.find_pane(pane)?;
+                if Self::web_url(l).is_none() {
+                    return Err(fail(ErrorCode::BadRequest, "Not a web pane"));
+                }
+                if if on { self.muted.insert(pane) } else { self.muted.remove(&pane) } {
+                    self.live_rev += 1;
+                }
+                Ok(Json::Null)
+            }
             Command::PathsGet { tab } => {
                 let i = self.tab_index(tab).ok();
                 Ok(json!(self.paths(i.map(|i| &self.tabs.tabs[i]))))
@@ -880,14 +1109,28 @@ impl Core {
         id
     }
 
-    /// i のタブを閉じる。今のタブなら、同じ位置(無ければ 1 つ上)のタブを今のタブにする
+    /// 開き直せるペインだけの配置(PRELUDE を通さずに開いた、開き直せない窓のペインを除く)。何も残らなければ None
+    fn reopenable(&self, layout: &Layout) -> Option<Layout> {
+        layout.filtered(&|id, l: &Leaf| !(self.windows.contains_key(&id) && l.str("cmd").is_empty()))
+    }
+
+    /// i のタブを閉じる。今のタブなら、同じ位置(無ければ 1 つ上)のタブを今のタブにする。開き直せるように覚えておく
     fn close_tab(&mut self, i: usize) {
         let t = self.tabs.tabs.remove(i);
+        if let Some(layout) = self.reopenable(&t.layout) {
+            let list = self.closed.entry(self.space.clone()).or_default();
+            list.push(Closed { layout, bookmark: t.bookmark.clone(), index: i });
+            while list.len() > self.closed_max {
+                list.remove(0);
+            }
+        }
         for (id, _) in t.layout.panes() {
             self.places.remove(&id);
             self.stopped.remove(&id);
             self.titles.remove(&id);
             self.windows.remove(&id);
+            self.muted.remove(&id);
+            self.favicons.remove(&id);
         }
         if self.tabs.active == Some(t.id) {
             let n = self.tabs.tabs.len();
@@ -927,13 +1170,14 @@ impl Core {
 
     fn pane_close(&mut self, pane: u64) -> Reply {
         let (i, _) = self.find_pane(pane)?;
-        self.places.remove(&pane);
-        self.windows.remove(&pane);
-        let tab = &mut self.tabs.tabs[i];
-        if matches!(tab.layout, Layout::Pane { .. }) {
+        if matches!(self.tabs.tabs[i].layout, Layout::Pane { .. }) {
+            // close_tab が開き直せるペインかを見るので、窓の印はその後で消す(close_tab が消す)
             self.close_tab(i);
             return Ok(Json::Null);
         }
+        self.places.remove(&pane);
+        self.windows.remove(&pane);
+        let tab = &mut self.tabs.tabs[i];
         let rest = tab.layout.remove(pane).ok_or_else(|| not_found("pane"))?;
         if tab.active_pane == pane {
             tab.active_pane = rest;
@@ -1021,6 +1265,8 @@ impl Core {
                             path: e.path().to_string_lossy().into_owned(),
                             title: title.into(),
                             folder: folder.into(),
+                            num: 0,
+                            kind: String::new(),
                         });
                     }
                 }
@@ -1030,7 +1276,15 @@ impl Core {
         for sub in read(&dir, "", &mut out) {
             read(&dir.join(&sub), &sub, &mut out);
         }
-        out.sort_by(|a, b| (&a.folder, &a.title).cmp(&(&b.folder, &b.title)));
+        // スペースの直下 → フォルダの名前の順。その中は並べ替えた順(space.toml の order)→ 題名の順
+        let order = self.bookmark_order();
+        let pos: HashMap<&str, usize> = order.iter().enumerate().map(|(i, o)| (o.as_str(), i)).collect();
+        let rel = |b: &BookmarkInfo| Path::new(&b.path).strip_prefix(&dir).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        out.sort_by_cached_key(|b| (b.folder.clone(), pos.get(rel(b).as_str()).copied().unwrap_or(usize::MAX), b.title.clone()));
+        for (i, b) in out.iter_mut().enumerate() {
+            b.num = i as u32 + 1;
+            b.kind = self.bookmark_kind(&b.path);
+        }
         out
     }
 
@@ -1070,7 +1324,8 @@ impl Core {
         let mut layout = Layout::from_node(bm.layout, &mut 0);
         if let Some(files) = files {
             for (id, l) in layout.panes().into_iter().map(|(id, l)| (id, l.clone())).collect::<Vec<_>>() {
-                if matches!(l.kind.as_str(), "files" | "field") && l.str("path").is_empty() {
+                // 場所(`{path}`)を使うレシピのペインで、ブックマークに path が無ければ、paths の files から始める
+                if recipes::find(&self.recipes, &l.kind).is_some_and(recipes::uses_path) && l.str("path").is_empty() {
                     if let Some(l) = layout.leaf_mut(id) {
                         l.fields.insert("path".into(), files.clone().into());
                     }
@@ -1083,7 +1338,7 @@ impl Core {
             if l.kind == "app"
                 && l.str("webUrl").is_empty()
                 && !cmd.is_empty()
-                && !(self.installed)(&cmd)
+                && !self.apps.is_installed(&cmd)
                 && !allow.iter().any(|a| a.trim() == cmd)
             {
                 if let Some(l) = layout.leaf_mut(id) {
@@ -1136,7 +1391,7 @@ impl Core {
             rest.push(Item { score: self.score(&key, now), key, kind: "bookmark".into(), label: b.title, detail: b.folder });
         }
         let mut seen = HashSet::new();
-        for a in (self.apps)() {
+        for a in self.apps.list().iter().cloned() {
             if a.name.is_empty() || !seen.insert(a.id.clone()) {
                 continue;
             }
@@ -1166,7 +1421,7 @@ impl Core {
             "bookmark" => self.bookmark_open(rest, allow),
             "space" => self.space_switch(rest),
             "app" => {
-                let a = (self.apps)().into_iter().find(|a| a.id == rest).ok_or_else(|| not_found("app"))?;
+                let a = self.apps.list().iter().find(|a| a.id == rest).cloned().ok_or_else(|| not_found("app"))?;
                 let mut leaf = Leaf { kind: "app".into(), fields: Table::new() };
                 leaf.fields.insert("cmd".into(), a.exec.into());
                 leaf.fields.insert("name".into(), a.name.into());
@@ -1184,10 +1439,19 @@ impl Core {
         }
     }
 
-    /// アプリのダイアログの最初のフォルダ。今のタブの paths の `open`(save なら `save`)
-    pub fn dialog_folder(&self, save: bool) -> String {
+    /// アプリのダイアログの最初のフォルダ。今のタブの paths の `open`(save なら `save`)。
+    /// ブックマークにもスペースにも書いていなければ(`files` も無ければ)None で、アプリが頼んだフォルダが使われる
+    pub fn dialog_folder(&self, save: bool) -> Option<String> {
         let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
-        self.paths(active).get(if save { "save" } else { "open" }).and_then(Json::as_str).unwrap_or(&self.home).to_string()
+        self.resolver_get(active, if save { "save" } else { "open" })
+    }
+
+    /// paths の 1 項目。どこにも無ければ None(`paths` と違ってホームにしない)
+    fn resolver_get(&self, tab: Option<&Tab>, key: &str) -> Option<String> {
+        let space = self.space_conf();
+        let sdir = self.space_dir().to_string_lossy().into_owned();
+        let bm = tab.and_then(|t| t.bookmark.as_ref()).and_then(|(p, _)| Some((self.read_bookmark(p).ok()?.paths, parent(p))));
+        Resolver { home: &self.home, bookmark: bm.as_ref().map(|(p, d)| (p, d.as_str())), space: Some((&space.paths, &sdir)) }.get(key)
     }
 
     /// タブで使うフォルダ。スペースの既定(`space.toml`)の上に、タブが開いたブックマークの paths を重ねる。

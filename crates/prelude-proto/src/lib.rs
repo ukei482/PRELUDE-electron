@@ -1,4 +1,4 @@
-//! コアと UI・`prelude` コマンド・プラグインの間の約束(docs/redesign-rust.md の判断 1-b・4-a)。
+//! コアと UI・`prelude` コマンド・プラグインの間の約束(docs/redesign-rust.md の「コアと UI の境目」「ソケットの約束」)。
 //!
 //! - Unix ソケット([`socket_path`])の上に、1 行 1 つの JSON を流す
 //! - 送る側: [`Request`] `{"id": 1, "cmd": "tab.open", "args": {...}}`。返事は同じ `id` の [`Response`]
@@ -99,6 +99,54 @@ pub enum Command {
         allow: Vec<String>,
     },
     /// ペインのレシピ(窓を取り込むペインの種類) → `[`[`RecipeInfo`]`]`
+    /// タブをブックマークにする(配置を `.prelude` に書く)。folder はスペースの中のフォルダのパス(空ならスペースの直下)。
+    /// 同じ名前があれば「題名 (2)」にする。タブはそのブックマークを開いたものになる → 書いたファイルのパス
+    #[serde(rename = "bookmark.save")]
+    BookmarkSave {
+        #[serde(default)]
+        tab: Option<TabRef>,
+        title: String,
+        #[serde(default)]
+        folder: String,
+    },
+    /// タブの今の配置で、そのタブを開いたブックマークを上書きする(題名・paths・知らない項目は残す)
+    #[serde(rename = "bookmark.overwrite")]
+    BookmarkOverwrite {
+        #[serde(default)]
+        tab: Option<TabRef>,
+    },
+    /// ブックマークの題名(とファイル名)を変える → 新しいパス
+    #[serde(rename = "bookmark.rename")]
+    BookmarkRename { path: String, title: String },
+    /// ブックマークを別のフォルダへ移す(folder が空ならスペースの直下) → 新しいパス
+    #[serde(rename = "bookmark.move")]
+    BookmarkMove {
+        path: String,
+        #[serde(default)]
+        folder: String,
+    },
+    /// ブックマークをゴミ箱へ移す。開いていたタブはそのまま残り、ブックマークとの結び付きだけが外れる
+    #[serde(rename = "bookmark.trash")]
+    BookmarkTrash { path: String },
+    /// ブックマークの並びを変える。before の前に置く(同じフォルダのもの。空なら最後)。並びは `space.toml` の `order` に書く
+    #[serde(rename = "bookmark.reorder")]
+    BookmarkReorder {
+        path: String,
+        #[serde(default)]
+        before: String,
+    },
+    /// ブックマークのフォルダの一覧(空のフォルダも) → `[FolderInfo]`(名前順)
+    #[serde(rename = "folder.list")]
+    FolderList {},
+    /// スペースの直下にブックマークのフォルダを作る → パス
+    #[serde(rename = "folder.create")]
+    FolderCreate { name: String },
+    /// ブックマークのフォルダの名前を変える → 新しいパス
+    #[serde(rename = "folder.rename")]
+    FolderRename { path: String, name: String },
+    /// ブックマークのフォルダを消す。中身はスペースの直下へ出す(同じ名前があれば「名前 (2)」)
+    #[serde(rename = "folder.remove")]
+    FolderRemove { path: String },
     #[serde(rename = "recipe.list")]
     RecipeList {},
 
@@ -130,6 +178,22 @@ pub enum Command {
     },
     #[serde(rename = "tab.activate")]
     TabActivate { tab: TabRef },
+    /// タブを複製してすぐ下に置く(ブックマークには結び付けない。1 ブックマーク = 最大 1 タブ) → 新しいタブの id
+    #[serde(rename = "tab.duplicate")]
+    TabDuplicate {
+        #[serde(default)]
+        tab: Option<TabRef>,
+    },
+    /// タブの番号を変える。ほかのタブが使っていれば、番号を入れ替える
+    #[serde(rename = "tab.renumber")]
+    TabRenumber {
+        #[serde(default)]
+        tab: Option<TabRef>,
+        num: u32,
+    },
+    /// 閉じたタブを開き直す(新しく閉じたものから。スペースごと) → 開いたタブの id
+    #[serde(rename = "tab.reopen")]
+    TabReopen {},
     #[serde(rename = "tab.move")]
     TabMove {
         #[serde(default)]
@@ -151,13 +215,22 @@ pub enum Command {
     /// ペインを含む一番近い分割の比率(0〜1。a の側の割合)
     #[serde(rename = "split.ratio")]
     SplitRatio { pane: u64, ratio: f64 },
-    /// UI が決めたペインの場所を知らせる(判断 1-b ②)。見えているペインを全部送る。送られなかったペインは隠れている
+    /// UI が決めたペインの場所を知らせる(KWin のつなぎで使う。「窓のつなぎ」)。見えているペインを全部送る。送られなかったペインは隠れている
     #[serde(rename = "pane.place")]
     PanePlace { rects: Vec<PaneRect> },
 
     /// Web のペインで戻る・進む・読み直す。URL を開くのは `pane.update` で `url` を変える
     #[serde(rename = "web.go")]
     WebGo { pane: u64, action: WebAction },
+
+    /// アプリのダイアログの最初のフォルダ(今のタブの paths の `save`、save でなければ `open`)。
+    /// ブックマークにもスペースにも書いていなければ null(ダイアログのポータルは、アプリが頼んだフォルダを使う)
+    #[serde(rename = "dialog.folder")]
+    DialogFolder { save: bool },
+
+    /// Web のペインの音を消す・戻す。書き出さない(Chromium を起動し直しても、コアが動いている間は消したまま)
+    #[serde(rename = "web.mute")]
+    WebMute { pane: u64, on: bool },
 
     /// タブで使うフォルダ(`.prelude`・`space.toml` の paths) → `{ files, open, save, download, terminal }`
     #[serde(rename = "paths.get")]
@@ -289,6 +362,27 @@ pub struct State {
     pub active: Option<u64>,
     /// 上から順
     pub tabs: Vec<TabInfo>,
+    /// 窓のつなぎ(項目を足しただけなので、古いコアの状態にも無くてよい)
+    #[serde(default)]
+    pub windows: Windows,
+    /// 開き直せる閉じたタブの数(今のスペース)
+    #[serde(default)]
+    pub closed: usize,
+    /// ブックマークのファイルをコアが書くたびに増える数。変わったら `bookmark.list` を読み直す
+    #[serde(default)]
+    pub bookmarks_rev: u64,
+    /// 設定(`settings.toml`)を読み直すたびに増える数。変わったら UI も設定を読み直す
+    #[serde(default)]
+    pub config_rev: u64,
+}
+
+/// 窓のつなぎ(docs/redesign-rust.md の「窓のつなぎ」)。UI は level を見て、分割で開くなどを出すか決める
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Windows {
+    /// `sway`・`kwin`・`none`(つなぎ無し。アプリは起動し、窓の置き場所は環境)。空ならアプリを起動しない(`--no-embed`)
+    pub backend: String,
+    /// 段: 0 起動だけ、1 作業領域だけ、2 並べる(分割で開けるのはここから)、3 読む、4 追う
+    pub level: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -350,9 +444,9 @@ pub fn panes(layout: &serde_json::Value) -> Vec<PaneView> {
                 let u = s("url");
                 u.split("://").nth(1).unwrap_or(&u).split('/').next().unwrap_or("").to_string()
             }
-            "files" | "field" => base(&s("path")),
             "app" => s("name"),
-            _ => String::new(),
+            // ほかの種類は、場所(path)があればその最後の名前
+            _ => base(&s("path")),
         };
         let title = [s("window_title"), s("title"), place].into_iter().find(|t| !t.is_empty()).unwrap_or_else(|| kind.clone());
         out.push(PaneView { id, kind, title, stopped: l["stopped"] == true });
@@ -398,6 +492,19 @@ pub struct BookmarkInfo {
     pub title: String,
     /// ブックマークのフォルダ(スペースの直下なら空)
     pub folder: String,
+    /// 並びの番号(1 から。ランチャーの b3 と同じ)。並びはスペースの直下 → フォルダの名前の順で、その中は並べ替えた順 → 題名の順
+    #[serde(default)]
+    pub num: u32,
+    /// 1 つのペインならその種類(web・app・files など)、分割していれば layout。読めなければ空
+    #[serde(default)]
+    pub kind: String,
+}
+
+/// ブックマークのフォルダ(`folder.list`)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FolderInfo {
+    pub path: String,
+    pub title: String,
 }
 
 #[cfg(test)]

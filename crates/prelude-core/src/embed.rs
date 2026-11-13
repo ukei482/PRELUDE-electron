@@ -1,5 +1,5 @@
 //! アプリの窓の取り込み(KDE Plasma 6 の Wayland。Electron 版の appembed.js の移植)。[`Compositor`] の KWin の裏側。
-//! KWin には木構造の並べ方が無いので、配置の木は使わず、UI が知らせた場所に窓を重ねる。移行が終わったら外す(判断 12)
+//! KWin には木構造の並べ方が無いので、配置の木は使わず、UI が知らせた場所に窓を重ねる。KDE で使う人のために残す(「窓のつなぎ」)
 //!
 //! - コアの状態から「取り込むペイン」([`Want`]: 起動コマンドと場所)を受け取り、今の取り込みとの差を埋める(起動する・閉じる・置き直す)
 //! - KWin スクリプト(embed.js)を、状態を埋め込んで読み直す。スクリプトからの報告(どの窓をどのペインのものにしたか・窓の数・題名)は
@@ -48,6 +48,9 @@ impl Handle {
 impl Compositor for Handle {
     fn name(&self) -> &'static str {
         "kwin"
+    }
+    fn level(&self) -> crate::compositor::Level {
+        crate::compositor::Level::Arrange
     }
     fn arrange(&self, scene: Scene) {
         self.want(scene.panes);
@@ -294,7 +297,7 @@ impl Embedder {
                 let _ = self.tx.send(m);
             }
         }
-        let mut child = match launch::spawn(&w.cmd, &w.cwd) {
+        let mut child = match launch::spawn(&w.cmd, &w.cwd, w.pane) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("prelude-core: cannot launch {} ({e})", w.cmd);

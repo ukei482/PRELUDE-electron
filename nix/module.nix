@@ -1,4 +1,4 @@
-# PRELUDE の NixOS モジュール(docs/redesign-rust.md の判断 6 の段階 6・判断 9)。
+# PRELUDE の NixOS モジュール(docs/redesign-rust.md の移行の段階 6。作者の環境の設定は docs/rice.md)。
 # PRELUDE は自分の層(コア・コマンド・ダイアログ)だけを持ち、バー・通知などは rice に任せる。ここで出すのは、つなぐための断片:
 #   - コアの systemd の user サービス(prelude-core.service)
 #   - GPUI の UI(サイドバー・ランチャー・ファイラ・設定)
@@ -37,7 +37,7 @@ let
 
     # PRELUDE のタブ = 作業領域(名前はタブの番号)。$mod+数字(sway の既定のキー)でタブを切り替える
 
-    # 親のある窓(ダイアログ・ログインのポップアップ・確認の窓)は浮かせる。タブのペインにはしない(判断 12)
+    # 親のある窓(ダイアログ・ログインのポップアップ・確認の窓)は浮かせる。タブのペインにはしない(「PRELUDE を通さずに開いた窓」)
     for_window [window_type="dialog"] floating enable
     for_window [window_role="dialog"] floating enable
     for_window [window_role="pop-up"] floating enable
@@ -89,6 +89,12 @@ in
       };
     };
 
+    skill.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "ログインのたびに、AI(Claude Code・Codex など)のための PRELUDE のスキルを ~/.agents/skills と ~/.claude/skills に書き出す(prelude skill install)。PRELUDE の版とスキルの中身がそろう";
+    };
+
     portal.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -97,8 +103,19 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Web のペインは Chromium そのもの(判断 3-b。無いときの扱いは作らない)
-    environment.systemPackages = [ cfg.package pkgs.chromium ] ++ lib.optional cfg.ui.enable cfg.ui.package;
+    # Web のペインは Chromium そのもの(「Web のペイン」。無いときの扱いは作らない)
+    # 既定のファイラ(files のペイン)とアプリのダイアログの選ぶ画面(prelude choose)は、端末の中の yazi
+    environment.systemPackages = [ cfg.package pkgs.chromium pkgs.yazi ] ++ lib.optional cfg.ui.enable cfg.ui.package;
+
+    # AI のための PRELUDE のスキル(ほかのスキルは上書きしない)
+    systemd.user.services.prelude-skill = lib.mkIf cfg.skill.enable {
+      description = "PRELUDE のスキルを AI のスキルのフォルダに書き出す";
+      wantedBy = [ "default.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${cfg.package}/bin/prelude skill install";
+      };
+    };
 
     systemd.user.services.prelude-core = {
       description = "PRELUDE のコア";

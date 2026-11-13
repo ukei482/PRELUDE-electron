@@ -3,12 +3,12 @@
 //! 使い方: `prelude-core [--socket <パス>] [--state <パス>] [--spaces <フォルダ>] [--recipes <フォルダ>] [--no-embed]`
 //! - ソケット: 既定は `$XDG_RUNTIME_DIR/prelude/core.sock`(環境変数 `PRELUDE_CORE_SOCK` でも変えられる)
 //! - 残す状態: 既定は `$XDG_STATE_HOME/prelude/core.json`(`PRELUDE_CORE_STATE`)
-//! - スペースのフォルダ: `PRELUDE_SPACES`、`settings.toml` の `space_dir`、`~/スペース` の順。Electron 版と同じフォルダを使う(判断 8)
+//! - スペースのフォルダ: `PRELUDE_SPACES`、`settings.toml` の `space_dir`、`~/スペース` の順。Electron 版と同じフォルダを使う(移行の「引き継ぎ」)
 //! - 最初の起動で Electron 版の設定を引き継ぐ(`migrate.rs`)。別のソケットで試しているコアでは動かさない
 //! - ペインのレシピ: 既定は `$XDG_CONFIG_HOME/prelude/panes`
 //! - `--no-embed`: アプリを起動せず、窓も取り込まない(状態だけを試す)
-use prelude_core::{migrate, recipes};
 use prelude_core::server::{run, Options, VERSION};
+use prelude_core::{migrate, recipes};
 use std::path::PathBuf;
 
 const USAGE: &str = "usage: prelude-core [--socket PATH] [--state PATH] [--spaces DIR] [--recipes DIR] [--no-embed]";
@@ -25,6 +25,11 @@ fn main() {
             std::process::exit(1);
         }
         return;
+    }
+    // アプリのダイアログのポータル(portal.rs)。コアが子のプロセスとして起動する
+    if std::env::args().nth(1).as_deref() == Some("--portal") {
+        let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio runtime");
+        std::process::exit(rt.block_on(prelude_core::portal::serve()));
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     if env_path("PRELUDE_CORE_SOCK").is_none() {

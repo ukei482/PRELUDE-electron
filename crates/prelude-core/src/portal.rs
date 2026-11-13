@@ -1,7 +1,11 @@
-//! xdg-desktop-portal の FileChooser のバックエンド(docs/redesign-rust.md の判断 5-a・12、移行の段階 7)。
+//! xdg-desktop-portal の FileChooser のバックエンド(docs/redesign-rust.md の「アプリのダイアログ」、移行の段階 7)。
+//!
+//! - コアとは別のプロセス(`prelude-core --portal`。コアが起動のときに子として起動する)。最初のフォルダはコアのソケットの
+//!   `dialog.folder` で聞くだけ。コアが動いていなければ、アプリが頼んだフォルダ(無ければホーム)を使う。
+//!   ポータルが落ちてもコアは巻き込まれず、コアが起動し直しても、残ったポータルはそのまま使える
 //!
 //! - アプリの「開く」「保存」のダイアログを受ける。コアが決めるのは最初のフォルダ(今のタブの paths の `open` / `save`)だけ
-//! - 選ぶ画面は別のプログラム。`~/.config/prelude/chooser.toml` の `run` で替えられる(既定は `prelude-filer --choose …`)。
+//! - 選ぶ画面は別のプログラム。`~/.config/prelude/chooser.toml` の `run` で替えられる(既定は `prelude choose …`。端末の中の yazi)。
 //!   置き換えられるのは `{mode}`(`open`・`open-multiple`・`directory`・`save`)、`{path}`(最初のフォルダ)、`{name}`(保存の名前)、
 //!   `{title}`、`{output}`(選んだパスを 1 行ずつ書くファイル。yazi の `--chooser-file` と同じ形)。何も書かずに終わると、取り消し
 //! - 「名前を付けて保存」で今のファイル(`current_file`)を渡されたときは、そのフォルダを優先する
@@ -21,15 +25,21 @@ const OK: u32 = 0;
 const CANCELLED: u32 = 1;
 const OTHER: u32 = 2;
 
-/// 今のタブの paths の open(save が true なら save)を返す
-pub type FolderOf = Arc<dyn Fn(bool) -> String + Send + Sync>;
+/// 今のタブの paths の open(save が true なら save)を返す。ブックマークにもスペースにも書いていなければ None
+pub type FolderOf = Arc<dyn Fn(bool) -> Option<String> + Send + Sync>;
+
+/// 最初のフォルダ。保存し直すファイルのフォルダ → 今のブックマークの paths → アプリが頼んだフォルダ → ホーム の順。
+/// アプリが前回のフォルダを渡してきても、ブックマークの保存先が効くように、paths をアプリのフォルダより先にする
+pub fn first_folder(a: &Ask, paths: Option<String>, home: &str) -> String {
+    a.file_folder.clone().or(paths).or_else(|| a.app_folder.clone()).unwrap_or_else(|| home.to_string())
+}
 
 /// 既定の選ぶ画面
 fn builtin() -> Recipe {
     Recipe {
         kind: "chooser".into(),
         name: "Chooser".into(),
-        run: "prelude-filer --choose {mode} --output {output} --name {name} --title {title} --filter {filter} {path}".into(),
+        run: "prelude choose {mode} --output {output} --name {name} {path}".into(),
         class: String::new(),
     }
 }
@@ -53,8 +63,10 @@ pub struct Ask {
     pub multiple: bool,
     pub directory: bool,
     pub name: String,
-    /// 今のファイル(保存し直すとき)のフォルダか、アプリが頼んだ最初のフォルダ
-    pub folder: Option<String>,
+    /// 今のファイル(保存し直すとき。`current_file`)のフォルダ
+    pub file_folder: Option<String>,
+    /// アプリが頼んだ最初のフォルダ(`current_folder`。前回使ったフォルダのことが多い)
+    pub app_folder: Option<String>,
     /// ファイルの種類。`名前:*.png;*.jpg|名前:*.pdf` の形(選ぶ画面の `{filter}`)。MIME の型だけの種類は入れない
     pub filter: String,
     /// `SaveFiles`: 保存する名前(選ぶのはフォルダ)
@@ -112,11 +124,9 @@ impl Ask {
             if a.name.is_empty() {
                 a.name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             }
-            a.folder = p.parent().map(|d| d.to_string_lossy().into_owned());
+            a.file_folder = p.parent().map(|d| d.to_string_lossy().into_owned());
         }
-        if a.folder.is_none() {
-            a.folder = o.get("current_folder").and_then(bytes_path);
-        }
+        a.app_folder = o.get("current_folder").and_then(bytes_path);
         if let Some(f) = o.get("filters") {
             a.filter = filter_text(f);
         }
@@ -240,7 +250,7 @@ struct FileChooser {
 
 impl FileChooser {
     async fn ask(&self, server: &ObjectServer, handle: ObjectPath<'_>, title: &str, a: Ask) -> (u32, HashMap<String, OwnedValue>) {
-        let folder = a.folder.clone().unwrap_or_else(|| (self.folder_of)(a.save));
+        let folder = first_folder(&a, (self.folder_of)(a.save), &std::env::var("HOME").unwrap_or_else(|_| "/".into()));
         let n = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let output = self.runtime.join(format!("chooser-{}-{n}", std::process::id()));
         let cmd = command(&self.recipe, &a, &folder, title, &output);
@@ -316,6 +326,24 @@ impl FileChooser {
     }
 }
 
+/// 今のタブの paths の最初のフォルダを、コアのソケット(`dialog.folder`)で聞く。コアが動いていなければ None
+fn ask_core(save: bool) -> Option<String> {
+    let mut c = prelude_proto::Client::connect("prelude-portal", false).ok()?;
+    c.call("dialog.folder", serde_json::json!({ "save": save })).ok()?.as_str().map(str::to_string)
+}
+
+/// `prelude-core --portal`: ポータルのプロセス。D-Bus の名前の印は、つなぐソケット(`PRELUDE_CORE_SOCK`)から作る。
+/// 名前が取れなければ(ほかのポータルが動いている)1 で終わる → 終わりの番号
+pub async fn serve() -> i32 {
+    let tag = crate::server::instance_tag(&prelude_proto::socket_path());
+    let file = crate::recipes::dir().parent().map(|d| d.join("chooser.toml")).unwrap_or_default();
+    let folder_of: FolderOf = Arc::new(ask_core);
+    match start(&tag, load(&file), folder_of).await {
+        Some(_conn) => std::future::pending::<i32>().await,
+        None => 1,
+    }
+}
+
 /// ポータルのバックエンドを始める。D-Bus に繋がらない・名前が取れなければ None(動かない理由は出す)
 pub async fn start(tag: &str, recipe: Recipe, folder_of: FolderOf) -> Option<zbus::Connection> {
     let runtime = std::env::var("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir()).join("prelude");
@@ -326,7 +354,7 @@ pub async fn start(tag: &str, recipe: Recipe, folder_of: FolderOf) -> Option<zbu
     match conn {
         Ok(c) => Some(c),
         Err(e) => {
-            eprintln!("prelude-core: file chooser portal unavailable ({e})");
+            eprintln!("prelude-core --portal: file chooser portal unavailable ({e})");
             None
         }
     }
@@ -353,11 +381,11 @@ mod tests {
         let mut o = HashMap::new();
         o.insert("current_name".to_string(), val(Value::from("新規.txt")));
         assert_eq!(Ask::parse(true, &o).name, "新規.txt");
-        assert_eq!(Ask::parse(true, &o).folder, None);
+        assert_eq!(Ask::parse(true, &o).file_folder, None);
         o.clear();
         o.insert("current_file".to_string(), val(Value::from(b"/home/u/doc/a b.txt\0".to_vec())));
         let a = Ask::parse(true, &o);
-        assert_eq!((a.name.as_str(), a.folder.as_deref()), ("a b.txt", Some("/home/u/doc")));
+        assert_eq!((a.name.as_str(), a.file_folder.as_deref()), ("a b.txt", Some("/home/u/doc")));
         // パスでないものは無視する
         o.insert("current_file".to_string(), val(Value::from(vec![240u8, 194, 0, 0, 32, 103, 0])));
         assert_eq!(Ask::parse(true, &o), Ask { save: true, ..Ask::default() });
@@ -376,7 +404,24 @@ mod tests {
         o.insert("current_folder".to_string(), val(Value::from(b"/w/x\0".to_vec())));
         let a = Ask::parse(false, &o);
         assert_eq!(a.filter, "画像:*.png;*.JPG|a b c:*");
-        assert_eq!(a.folder.as_deref(), Some("/w/x"));
+        assert_eq!(a.app_folder.as_deref(), Some("/w/x"));
+    }
+
+    #[test]
+    fn 最初のフォルダの順() {
+        let ask = |file: Option<&str>, app: Option<&str>| Ask {
+            file_folder: file.map(str::to_string),
+            app_folder: app.map(str::to_string),
+            ..Ask::default()
+        };
+        let paths = || Some("/研究/原稿".to_string());
+        // 保存し直すファイルのフォルダが一番先
+        assert_eq!(first_folder(&ask(Some("/doc"), Some("/前回")), paths(), "/h"), "/doc");
+        // アプリが前回のフォルダを渡しても、ブックマークの paths が先
+        assert_eq!(first_folder(&ask(None, Some("/前回")), paths(), "/h"), "/研究/原稿");
+        // paths が無ければアプリのフォルダ、それも無ければホーム
+        assert_eq!(first_folder(&ask(None, Some("/前回")), None, "/h"), "/前回");
+        assert_eq!(first_folder(&ask(None, None), None, "/h"), "/h");
     }
 
     #[test]
@@ -395,7 +440,7 @@ mod tests {
     fn コマンドと結果() {
         let a = Ask { save: true, name: "it's.txt".into(), ..Ask::default() };
         let c = command(&builtin(), &a, "/w/保存", "Save", Path::new("/run/o"));
-        assert_eq!(c, r"prelude-filer --choose 'save' --output '/run/o' --name 'it'\''s.txt' --title 'Save' --filter '' '/w/保存'");
+        assert_eq!(c, r"prelude choose 'save' --output '/run/o' --name 'it'\''s.txt' '/w/保存'");
         assert_eq!(to_uri("/a b/議.txt"), "file:///a%20b/%E8%AD%B0.txt");
         assert_eq!(read_output("/a\n\nnot a path\n/b c\n"), ["/a", "/b c"]);
     }
