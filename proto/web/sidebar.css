@@ -51,9 +51,8 @@ input { font: inherit; color: inherit; }
   overflow: hidden;
 }
 
-/* 一番上: 開閉。広げているときは、その横に今のペインの 戻る・進む、右端に閉じる */
+/* 一番上: 開閉。広げているときは、右端に今のペインを閉じる */
 .top { display: flex; align-items: center; gap: 2px; padding: var(--pad) var(--pad) 2px; }
-.top .navs { display: flex; }
 .top .closepane { margin-left: auto; }
 
 /* その下: スペース(サイドバーの題名) */

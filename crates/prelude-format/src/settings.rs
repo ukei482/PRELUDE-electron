@@ -77,12 +77,25 @@ pub const ITEMS: &[Item] = &[
     item("search_engine", Kind::Str, "\"https://www.google.com/search?q=%s\"", "検索の URL。%s が検索の言葉になる", Apply::Now),
     item("show_hidden", Kind::Bool, "false", "ファイラで隠しファイルを最初から出す", Apply::Now),
     item("space_dir", Kind::Str, "\"\"", "スペースのフォルダ。空なら ~/スペース", Apply::Restart),
-    item("download_dir", Kind::Str, "\"\"", "ダウンロードの保存先の既定(paths の download が無いとき)。空なら Chromium の既定", Apply::Now),
+    item(
+        "download_dir",
+        Kind::Str,
+        "\"\"",
+        "見張るダウンロードのフォルダ(ブラウザの保存先にしておく)。現れたファイルを、始めたタブのブックマークの paths の download へ移す。空なら XDG のダウンロードのフォルダ",
+        Apply::Now,
+    ),
     item(
         "terminal",
         Kind::Str,
         "\"auto\"",
         "端末(名前かパス)。auto は PATH から foot・kitty・ghostty・alacritty・wezterm・konsole の順に探す。知らない端末は -e でコマンドを渡す",
+        Apply::Now,
+    ),
+    item(
+        "browser",
+        Kind::Str,
+        "\"auto\"",
+        "Web のペインのブラウザ(名前かパス)。auto は PATH から Chromium 系・Firefox 系の順に探す。知らないブラウザには URL だけを渡す",
         Apply::Now,
     ),
     item(
@@ -144,13 +157,6 @@ pub const ITEMS: &[Item] = &[
         "\"auto\"",
         "サイドバーの出し方。auto は layer-shell があればそれ、無ければ普通のウィンドウ",
         Apply::Restart,
-    ),
-    planned(
-        "tabs.links",
-        Kind::Choice(&["tab", "split"]),
-        "\"tab\"",
-        "Web のペインから新しく開くリンク。tab は新しいタブ、split は右に分割",
-        Apply::Now,
     ),
     item("tabs.closed_max", Kind::Int { min: 0, max: 200 }, "20", "覚えておく閉じたタブの数(スペースごと)", Apply::Now),
 ];

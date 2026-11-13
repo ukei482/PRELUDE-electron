@@ -8,7 +8,7 @@
 ### 追加
 - Rust 版のサイドバー: 分割したペインごとに × で閉じられる(分けた行の中と、今のタブの下のペインの行。乗せると出る)。最後のペインならタブごと閉じる
 - AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする
-- MCP のサーバー `prelude mcp`(標準入出力)。PRELUDE の命令を AI のツールにする(状態・一覧・開く・タブ・ペイン・Web・スペース・ブックマーク・フォルダ。31 個)。消す・閉じるツールには印を付け、人からもらったブックマークの起動コマンドは AI からは実行させない。例: `claude mcp add prelude -- prelude mcp`。`prelude` のコマンドでも、ブックマークを番号(b3)で指せる
+- MCP のサーバー `prelude mcp`(標準入出力)。PRELUDE の命令を AI のツールにする(状態・一覧・開く・タブ・ペイン・スペース・ブックマーク・フォルダ。30 個)。消す・閉じるツールには印を付け、人からもらったブックマークの起動コマンドは AI からは実行させない。例: `claude mcp add prelude -- prelude mcp`。`prelude` のコマンドでも、ブックマークを番号(b3)で指せる
 - AI のペイン: 既定のレシピ `agent`(「AI」)。端末を今のブックマークの作業フォルダで開き、既定の AI を起動する。`prelude agent [頼みごと]` は今のフォルダで起動する(AI は `PRELUDE_AGENT`、無ければ claude・codex・gemini・opencode の順に探す)
 - `prelude term [--cwd <フォルダ>] [-- <コマンド>]`: 設定の端末(`terminal`。auto は foot・kitty・ghostty・alacritty・wezterm・konsole の順)を、端末ごとの作業フォルダとコマンドの渡し方の表のとおりに開く。新しいプロセスで開く引数をいつも付ける(選ぶ画面が待てるように、窓を起動したプロセスで見分けられるように)。既定のレシピ(ファイラ・コンソール・CLI・AI)とダイアログの選ぶ画面はこれを使い、konsole の決め打ちをやめた。レシピの窓の名前 `@terminal` は設定の端末の窓の名前になる
 - 設定の台帳と `prelude config`(`docs/redesign-rust.md` の「設定」の作る順番の 1)
@@ -132,6 +132,12 @@
 - sway を抜けてもコアが動き続け、`SWAYSOCK` が Plasma のアプリにも渡っていた
 
 ### 変更
+- **[互換性]** Rust 版: Web をブラウザに任せた(`docs/redesign-rust.md` の「Web のペイン」)
+  - Web のペインは既定のレシピ `web`(`prelude browser --mark {mark} {url}`)で、設定のブラウザ(`browser`。auto は PATH から Chromium 系 → Firefox 系)の新しい窓に開く。ブラウザごとの開き方は `prelude-format` の `browser.rs` の表だけが知る。`~/.config/prelude/panes/web.toml` で替えられる
+  - 窓は、題名に印を出すだけのページで開いてから本当の URL へ移ることで見分ける(拡張機能は使わない)。ブラウザのプロセスは追わず、ペインを閉じても窓を閉じるだけ
+  - ダウンロード: ブラウザの保存先(設定の `download_dir`。空なら XDG のダウンロードのフォルダ)を 1 秒ごとに見て、ファイルが現れたときの今のペイン(Web)のブックマーク・スペースの paths の `download` へ、書き終わってから移す。`download` のイベントは `{from, to}`
+  - やめたもの: Chromium の拡張機能・native messaging(`prelude-core --web-host`)・専用のプロファイル、今の URL を覚えること、新しい窓を PRELUDE のタブにすること(設定の `tabs.links`)、消音・ファビコン、`web.go`・`web.mute`(約束の版を 2 に。版 1 の相手にも話す)、`prelude url`・`prelude go`・`prelude mute`、MCP の `web_open_url`・`web_go`・`web_mute`
+  - サイドバーの試作(`proto/web`・`proto/slint` の部品の決まり)から、URL・消音・戻る/進むを外した
 - Rust 版の設計: Web をブラウザに任せ、PRELUDE は URL を渡して開くだけにすることにした(`docs/redesign-rust.md` の「Web のペイン」)。`web` は既定のレシピの 1 つにし、どのブラウザでも使えるようにする。ダウンロードはブラウザの保存先のフォルダをコアが見張り、始めたタブのブックマークの `paths` へ移す。今の URL を覚える・新しい窓をタブにする・消音・ファビコン・`web.go`・`web.mute` はやめる。コードはまだ前のまま(次の PR で切り離す)
 - CI(GitHub Actions)で Rust 版のテストも回す: `crates/` の整形の確認(`cargo fmt --check`)・clippy(警告は失敗)・`cargo test`、Slint の試作(`proto/slint`)の整形の確認と `cargo test`。合わせて、元からあった整形のずれを `cargo fmt` でそろえた
 - CI で `npm ci --ignore-scripts` を実行するようにした(0.12.0 の前から `smol-toml` が無くて失敗していた)

@@ -15,10 +15,10 @@ pub mod client;
 pub mod sidebar;
 pub use client::Client;
 
-/// 今の約束の版
-pub const PROTOCOL: u32 = 1;
-/// コアが話せる版
-pub const SUPPORTED: &[u32] = &[1];
+/// 今の約束の版。2 で Web のペインの `web.go`・`web.mute`・ペインの `muted` を消した(docs/redesign-rust.md の「Web のペイン」)
+pub const PROTOCOL: u32 = 2;
+/// コアが話せる版。1 の相手にも話す(消した命令には `unknown_command` を返す)
+pub const SUPPORTED: &[u32] = &[1, 2];
 /// 1 行の長さの上限(これより長い行は読まずに切る)
 pub const MAX_LINE: usize = 1 << 20;
 
@@ -219,18 +219,10 @@ pub enum Command {
     #[serde(rename = "pane.place")]
     PanePlace { rects: Vec<PaneRect> },
 
-    /// Web のペインで戻る・進む・読み直す。URL を開くのは `pane.update` で `url` を変える
-    #[serde(rename = "web.go")]
-    WebGo { pane: u64, action: WebAction },
-
     /// アプリのダイアログの最初のフォルダ(今のタブの paths の `save`、save でなければ `open`)。
     /// ブックマークにもスペースにも書いていなければ null(ダイアログのポータルは、アプリが頼んだフォルダを使う)
     #[serde(rename = "dialog.folder")]
     DialogFolder { save: bool },
-
-    /// Web のペインの音を消す・戻す。書き出さない(Chromium を起動し直しても、コアが動いている間は消したまま)
-    #[serde(rename = "web.mute")]
-    WebMute { pane: u64, on: bool },
 
     /// タブで使うフォルダ(`.prelude`・`space.toml` の paths) → `{ files, open, save, download, terminal }`
     #[serde(rename = "paths.get")]
@@ -238,14 +230,6 @@ pub enum Command {
         #[serde(default)]
         tab: Option<TabRef>,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WebAction {
-    Back,
-    Forward,
-    Reload,
 }
 
 /// タブの指し方。`{"id": 7}` か、画面に出ている番号 `{"num": 3}`
@@ -329,7 +313,7 @@ pub enum ErrorCode {
 
 /// コアから来るイベント。知らないイベントは無視する。
 /// - `state`: data は [`State`]。状態が変わるたび
-/// - `download`: data は CDP の `Browser.downloadWillBegin`(`guid`・`url`・`suggestedFilename`)か `Browser.downloadProgress`(`guid`・`state`・`receivedBytes`・`totalBytes`)の params
+/// - `download`: ダウンロードしたファイルを、始めたタブのブックマークの paths へ移した。data は `{ "from": 元のパス, "to": 移した先のパス }`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {
     pub event: String,

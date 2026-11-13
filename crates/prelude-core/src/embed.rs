@@ -256,8 +256,13 @@ impl Embedder {
         }
     }
 
-    /// 起動はせず、印の題名の窓が現れるのを待つ(Web のペイン)
+    /// 起動して、印の題名の窓が現れるのを待つ(Web のペイン)。ブラウザは窓が増えても同じプロセスなので、プロセスは追わない
     fn watch(&mut self, w: Want) {
+        if let Err(e) = launch::spawn_detached(&w.cmd, &w.cwd, w.pane) {
+            eprintln!("prelude-core: cannot launch {} ({e})", w.cmd);
+            let _ = self.notes.send(Note::Exited { pane: w.pane, had_window: false });
+            return;
+        }
         let p = Pane {
             keys: vec![],
             want: w,
@@ -560,6 +565,9 @@ fn reload_after(tx: &mpsc::UnboundedSender<Msg>, ms: u64) {
 
 /// ペインのプロセス: 起動した sh の子孫と、取り込んだ窓の持ち主。窓がまだ無い間は「起動の後に始まった同じ名前のプロセス」も(ほかのペインのものは除く)
 fn pids_of(p: &Pane, others: &HashSet<u32>) -> Vec<u32> {
+    if !p.want.marker.is_empty() {
+        return vec![]; // 題名の印で見分けるペイン(Web)は、プロセスで見分けない
+    }
     let mut out: Vec<u32> = p.sh.map(procs::descendants).unwrap_or_default();
     out.extend(p.owned.iter().copied());
     if p.wids.is_empty() {

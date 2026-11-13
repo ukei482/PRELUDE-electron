@@ -116,7 +116,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Web のペインは Chromium そのもの(「Web のペイン」。無いときの扱いは作らない)
+    # Web のペインは設定のブラウザ(browser。auto は Chromium 系 → Firefox 系。「Web のペイン」)。ここでは Chromium を入れておく
     # 既定のファイラ(files のペイン)とアプリのダイアログの選ぶ画面(prelude choose)は、端末の中の yazi
     environment.systemPackages =
       [ cfg.package pkgs.chromium pkgs.yazi ]
@@ -145,7 +145,7 @@ in
       # ふだんは sway の断片が起動する。Plasma では Electron 版が動くので、ここでは起動しない
       partOf = [ "graphical-session.target" ];
       # NixOS が既定で付ける PATH(coreutils など)を外し、セッションの PATH を受け継ぐ。
-      # コアが起動するアプリ・Chromium は PATH から探す
+      # コアが起動するアプリ・ブラウザは PATH から探す
       path = lib.mkForce [ ];
       # 反映でコアを再起動しない。コアは止まるときに起動したアプリを閉じるので、sway の中の nixos-rebuild で作業が消えてしまう。
       # 新しいコアは次の sway のセッションから動く

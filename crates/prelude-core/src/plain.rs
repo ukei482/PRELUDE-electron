@@ -2,7 +2,7 @@
 //! 対応するコンポジタが無いときに使う。ペインのアプリを起動するだけで、窓の置き場所は環境に任せる。窓を探さず、並べず、読み戻さない。
 //!
 //! - アプリ・レシピのペインは、ペインごとに 1 回だけ起動する(環境変数 `PRELUDE_PANE` も渡す)。窓が閉じても知らない(止まったことにしない)
-//! - Web のペインは、窓を探せないので、すぐに「見つけた」と知らせる。Chromium は本当の URL へ移り、窓は環境が置く
+//! - Web のペインもレシピの 1 つなので同じ(ブラウザの窓は環境が置く)
 //! - 終わるとき、起動したアプリはそのまま残す(窓の持ち主は環境)
 use crate::compositor::{Compositor, Level, Note, Scene};
 use crate::launch;
@@ -13,13 +13,13 @@ use std::sync::Mutex;
 use tokio::sync::mpsc;
 
 pub struct Plain {
-    notes: mpsc::UnboundedSender<Note>,
     /// 起動した・見つけたと知らせたペイン
     done: Mutex<HashSet<u64>>,
 }
 
-pub fn start(notes: mpsc::UnboundedSender<Note>) -> Plain {
-    Plain { notes, done: Mutex::new(HashSet::new()) }
+/// 窓を探さないので、コアへの知らせ(notes)は使わない
+pub fn start(_notes: mpsc::UnboundedSender<Note>) -> Plain {
+    Plain { done: Mutex::new(HashSet::new()) }
 }
 
 impl Compositor for Plain {
@@ -37,24 +37,12 @@ impl Compositor for Plain {
             if done.contains(&w.pane) || w.window.is_some() {
                 continue;
             }
-            if !w.marker.is_empty() {
-                let _ = self.notes.send(Note::Claimed { pane: w.pane });
-                done.insert(w.pane);
-                continue;
-            }
             if w.cmd.trim().is_empty() {
                 continue;
             }
-            match launch::spawn(&w.cmd, &w.cwd, w.pane) {
-                Ok(mut child) => {
-                    // 終わったら片付ける(ゾンビを残さない)。止まったことはコアに知らせない
-                    if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                        rt.spawn(async move {
-                            let _ = child.wait().await;
-                        });
-                    }
-                }
-                Err(e) => eprintln!("prelude-core: cannot launch {} ({e})", w.cmd),
+            // 終わったら片付ける(ゾンビを残さない)。止まったことはコアに知らせない
+            if let Err(e) = launch::spawn_detached(&w.cmd, &w.cwd, w.pane) {
+                eprintln!("prelude-core: cannot launch {} ({e})", w.cmd);
             }
             done.insert(w.pane);
         }
@@ -69,12 +57,18 @@ mod tests {
     use super::*;
     use crate::compositor::Want;
 
+    fn sorted(p: &std::path::Path) -> String {
+        let mut l: Vec<String> = std::fs::read_to_string(p).unwrap().lines().map(String::from).collect();
+        l.sort();
+        l.iter().map(|x| format!("{x}\n")).collect()
+    }
+
     fn want(pane: u64, cmd: &str, marker: &str) -> Want {
         Want { pane, cmd: cmd.into(), cls: String::new(), cwd: "/".into(), rect: None, marker: marker.into(), window: None }
     }
 
     #[tokio::test]
-    async fn 起動は一度だけ_web_はすぐ見つけたことにする() {
+    async fn 起動は一度だけ() {
         let d = std::env::temp_dir().join(format!("prelude-plain-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let log = d.join("log");
@@ -82,18 +76,18 @@ mod tests {
         let p = start(tx);
         assert_eq!((p.name(), p.level()), ("none", Level::Launch));
         let cmd = format!("echo \"$PRELUDE_PANE\" >> '{}'", log.display());
-        let scene = || Scene { panes: vec![want(3, &cmd, ""), want(4, "", "印:4"), want(5, " ", "")], tabs: vec![], active: None };
+        // 題名の印のあるペイン(Web)も同じく起動するだけ
+        let scene = || Scene { panes: vec![want(3, &cmd, ""), want(4, &cmd, "印:4"), want(5, " ", "")], tabs: vec![], active: None };
         p.arrange(scene());
         p.arrange(scene()); // 2 回目は起動しない
-        assert_eq!(rx.try_recv().ok(), Some(Note::Claimed { pane: 4 }));
         assert!(rx.try_recv().is_err());
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        assert_eq!(std::fs::read_to_string(&log).unwrap(), "3\n");
+        assert_eq!(sorted(&log), "3\n4\n");
         // ほかのスペースへ移って(ペインが見えなくなって)戻っても、起動し直さない
         p.arrange(Scene::default());
         p.arrange(scene());
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        assert_eq!(std::fs::read_to_string(&log).unwrap(), "3\n");
+        assert_eq!(sorted(&log), "3\n4\n");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

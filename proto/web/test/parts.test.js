@@ -164,21 +164,17 @@ test('分割のボタン: 自動の向きはペインの形から、向きはラ
   assert.strictEqual(Glue.values(core, { splitMode: 'what' }).PaneBar.splitMode, 'auto');
 });
 
-test('戻る・進むは Web のペインだけ web.go になる', () => {
+test('今のペインは閉じる・分割だけ(Web の戻る・進む・消音は持たない)', () => {
   const core = snap();
   const pb = Glue.values(core, {}).PaneBar;
-  const st = Glue.steps('PaneBar', 'back', [], core);
-  if (pb.canGoBack) assert.deepStrictEqual(st, [{ cmd: 'web.go', args: { pane: pb.pane, action: 'back' } }]);
-  else assert.deepStrictEqual(st, []);
-  // Web でないペインでは何もしない
-  const tab = core.state.tabs.find((t) => t.id === core.state.active);
-  const other = { ...core, state: { ...core.state, tabs: core.state.tabs.map((t) => (t === tab ? { ...t, layout: { id: 99, type: 'files' }, active_pane: 99 } : t)) } };
-  assert.deepStrictEqual(Glue.steps('PaneBar', 'forward', [], other), []);
-  // サイドバーは上に 戻る・進む・閉じる、下に分割のボタンを描く(細い列では 戻る・進む・閉じる を出さない)
+  assert.deepStrictEqual(Glue.steps('PaneBar', 'close', [], core), [{ cmd: 'pane.close', args: { pane: pb.pane } }]);
+  assert.ok(!('canGoBack' in pb) && !('muted' in pb) && !('url' in pb));
+  assert.throws(() => Glue.steps('PaneBar', 'back', [], core), /つなぎが無い/);
+  // サイドバーは上に 閉じる、下に分割のボタンを描く(細い列では 閉じる を出さない)
   const html = Sidebar.render(partsOf(core));
-  assert.ok(html.includes('data-call="PaneBar.back"') && html.includes('data-call="PaneBar.close"') && html.includes('class="splitbtn"'));
+  assert.ok(!html.includes('PaneBar.back') && html.includes('data-call="PaneBar.close"') && html.includes('class="splitbtn"'));
   const thin = Sidebar.render(partsOf(core, { compact: true }));
-  assert.ok(!thin.includes('PaneBar.back') && thin.includes('class="splitbtn"'));
+  assert.ok(!thin.includes('PaneBar.close') && thin.includes('class="splitbtn"'));
   // 向きを選ぶ動きなら、押すと十字が出る
   assert.ok(Sidebar.render(partsOf(core, { splitMode: 'pick' })).includes('data-menu="split"'));
   assert.ok(Sidebar.render(partsOf(core, { splitMode: 'pick' }), { menu: { kind: 'split', x: 0, y: 0 } }).includes('class="splitpad"'));

@@ -65,6 +65,18 @@ pub fn spawn(cmd: &str, cwd: &str, pane: u64) -> std::io::Result<tokio::process:
     c.spawn()
 }
 
+/// 起動して、プロセスは追わない(終わったら片付けるだけ)。窓を題名の印で見分けるペイン(Web のペイン)に使う:
+/// ブラウザは窓が増えても同じプロセスのままなので、プロセスでは見分けられず、ペインを閉じてもプロセスを終わらせてはいけない
+pub fn spawn_detached(cmd: &str, cwd: &str, pane: u64) -> std::io::Result<()> {
+    let mut child = spawn(cmd, cwd, pane)?;
+    if let Ok(rt) = tokio::runtime::Handle::try_current() {
+        rt.spawn(async move {
+            let _ = child.wait().await;
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

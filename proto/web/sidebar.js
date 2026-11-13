@@ -29,7 +29,6 @@
     plus: '<path d="M12 5v14M5 12h14"/>',
     star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z"/>',
     vol: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6"/>',
-    mute: '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
     chev: '<path d="M9 6l6 6-6 6"/>',
     reopen: '<path d="M4 12a8 8 0 1 0 2.4-5.7M4 4.5V9h4.5"/>',
     side: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
@@ -42,7 +41,6 @@
     open: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
     folderPlus: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10.5v5M9.5 13h5"/>',
     below: '<path d="M5 6h14M5 11h14M12 14v6M9 17l3 3 3-3"/>',
-    back: '<path d="M15 6l-6 6 6 6"/>',
     split: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M3 12h18"/>',
     save: '<path d="M6 4h12v16l-6-4-6 4z"/>',
   };
@@ -66,14 +64,10 @@
     const f = p.SidebarFrame;
     const sp = p.Spaces;
     const pb = p.PaneBar;
-    // 広げているときだけ、開閉の横に今のペインの 戻る・進む と、右端に 閉じる
+    // 広げているときだけ、右端に今のペインを 閉じる
     const nav = f.compact
       ? ''
-      : `<span class="navs">
-        <button class="iconbtn" ${call('PaneBar.back')} ${pb.canGoBack ? '' : 'disabled'} title="戻る">${svg('back')}</button>
-        <button class="iconbtn" ${call('PaneBar.forward')} ${pb.canGoBack ? '' : 'disabled'} title="進む">${svg('chev')}</button>
-      </span>
-      <button class="iconbtn closepane" ${call('PaneBar.close')} ${pb.pane ? '' : 'disabled'} title="今のペインを閉じる${pb.title ? `(${esc(pb.title)})` : ''}">${svg('x')}</button>`;
+      : `<button class="iconbtn closepane" ${call('PaneBar.close')} ${pb.pane ? '' : 'disabled'} title="今のペインを閉じる${pb.title ? `(${esc(pb.title)})` : ''}">${svg('x')}</button>`;
     return `<div class="top">
       <button class="iconbtn" ${call('SidebarFrame.toggleCompact')} title="${f.compact ? '広げる' : '細くする'}">${svg('side')}</button>${nav}
     </div>

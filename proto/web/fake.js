@@ -71,7 +71,7 @@
       },
       { id: id(), num: 2, title: 'GitHub', bookmark: bm('GitHub'), layout: leaf({ type: 'web', url: 'https://github.com/ukei482/prelude-electron/pulls', title: 'Pull requests', icon: ICONS.github }) },
       { id: id(), num: 3, title: 'Claude と相談', bookmark: bm('Claude と相談'), layout: leaf({ type: 'agent', path: '/home/u/PRELUDE', window_title: 'claude', icon: ICONS.claude }) },
-      { id: id(), num: 4, title: 'docs.rs — slint', bookmark: null, layout: leaf({ type: 'web', url: 'https://docs.rs/slint/latest/slint/', title: 'slint - Rust', icon: ICONS.docs, muted: true }) },
+      { id: id(), num: 4, title: 'docs.rs — slint', bookmark: null, layout: leaf({ type: 'web', url: 'https://docs.rs/slint/latest/slint/', title: 'slint - Rust', icon: ICONS.docs }) },
     ];
     for (const t of w.tabs) {
       const ls = leaves(t.layout);
@@ -282,9 +282,6 @@
         if (!rest) return closeTab(t);
         t.layout = rest;
         t.active_pane = leaves(rest)[0].id;
-      },
-      'web.mute': ({ pane, on }) => {
-        for (const t of cur().tabs) for (const l of leaves(t.layout)) if (l.id === pane) l.muted = on || undefined;
       },
     };
 

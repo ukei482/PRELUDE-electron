@@ -6,7 +6,6 @@
 //! - 残すもの(スペース・タブ・分割・開いているブックマーク)は [`Saved`] にして書き出す。ペインの場所(UI から来る)は残さない
 use crate::compositor::{Scene, TabScene, Tree, Want};
 use crate::recipes::{self, Recipe};
-use crate::web::WebWant;
 use prelude_format::{Bookmark, Dir as FDir, Leaf, Node, Resolver, Space, Table, Value};
 use prelude_proto::{
     BookmarkInfo, BookmarkOpened, Command, Dir, ErrorCode, Item, PaneRect, PaneSpec, RecipeInfo, SplitAt, State, TabInfo, TabRef, Windows,
@@ -370,22 +369,18 @@ pub struct Core {
     kinds: std::cell::RefCell<HashMap<String, (std::time::SystemTime, String)>>,
     /// ゴミ箱(テストで差し替える)
     trash_dir: PathBuf,
-    /// 音を消した Web のペイン。残さない
-    muted: HashSet<u64>,
-    /// Web のペインのファビコンのファイル。残さない
-    favicons: HashMap<u64, String>,
     /// アプリのアイコン((起動コマンド, 窓の名前) → ファイル)。状態を作るたびにアプリの一覧を引かないため
     app_icons: std::cell::RefCell<HashMap<(String, String), Option<String>>>,
-    /// 画面に出すだけの変化(消音・アイコン)の回数。書き出さないが、UI には知らせる
+    /// 画面に出すだけの変化(開き直せる閉じたタブの数)の回数。書き出さないが、UI には知らせる
     live_rev: u64,
     /// 窓が閉じて止まったペイン(タブを開き直すと起動し直す)。残さない
     stopped: HashSet<u64>,
     /// 取り込んだ窓の題名。残さない
     titles: HashMap<u64, String>,
-    /// ダウンロードの保存先の既定(paths の download が無いとき)
-    download_dir: String,
     /// PRELUDE を通さずに開いた窓のペインと、その窓。残さない
     windows: HashMap<u64, i64>,
+    /// 設定のブラウザの窓の名前(レシピの窓の名前 @browser を置き換える)
+    browser_class: String,
     /// このコアの印(Web のペインの窓の題名の印に入れる)
     tag: String,
     /// インストール済みのアプリの一覧(ランチャーの候補。テストで差し替える)
@@ -423,13 +418,11 @@ impl Core {
             kinds: Default::default(),
             bookmarks_sig: 0,
             trash_dir: crate::trash::dir(),
-            muted: HashSet::new(),
-            favicons: HashMap::new(),
             app_icons: Default::default(),
             live_rev: 0,
             stopped: HashSet::new(),
             titles: HashMap::new(),
-            download_dir: String::new(),
+            browser_class: String::new(),
             windows: HashMap::new(),
             tag: String::new(),
             apps: std::sync::Arc::new(crate::apps::Xdg),
@@ -583,24 +576,12 @@ impl Core {
         h.max(1)
     }
 
-    /// Web のペインのファビコンを保存した → 変わったか
-    pub fn note_icon(&mut self, pane: u64, path: String) -> bool {
-        if self.find_pane(pane).is_err() || self.favicons.get(&pane) == Some(&path) {
-            return false;
-        }
-        self.favicons.insert(pane, path);
-        self.live_rev += 1;
-        true
-    }
-
-    /// ペインのアイコンのファイル。Web はファビコン、アプリ・レシピは .desktop のアイコン(起動コマンドか窓の名前で照らす)
-    fn pane_icon(&self, id: u64, l: &Leaf) -> Option<String> {
-        if Self::web_url(l).is_some() {
-            return self.favicons.get(&id).cloned();
-        }
-        let (cmd, cls) = match l.kind.as_str() {
-            "app" => (l.str("cmd").trim().to_string(), l.str("cls").to_lowercase()),
-            k => (String::new(), recipes::find(&self.recipes, k).map(|r| r.class.to_lowercase()).unwrap_or_default()),
+    /// ペインのアイコンのファイル。アプリ・レシピの .desktop のアイコン(起動コマンドか窓の名前で照らす)。Web はブラウザのアイコン
+    fn pane_icon(&self, l: &Leaf) -> Option<String> {
+        let (cmd, cls) = match (l.kind.as_str(), Self::web_url(l)) {
+            (_, Some(_)) => (String::new(), self.recipe_class("web").to_lowercase()),
+            ("app", None) => (l.str("cmd").trim().to_string(), l.str("cls").to_lowercase()),
+            (k, None) => (String::new(), self.recipe_class(k).to_lowercase()),
         };
         if cmd.is_empty() && cls.is_empty() {
             return None;
@@ -620,7 +601,7 @@ impl Core {
         icon
     }
 
-    /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか・アイコン・消音)を付ける
+    /// 配置の JSON に、取り込んだ窓の今の様子(題名・止まっているか・アイコン)を付ける
     fn live(&self, mut v: Json) -> Json {
         if let Some(o) = v.as_object_mut() {
             if o.get("k").and_then(Json::as_str) == Some("split") {
@@ -636,10 +617,7 @@ impl Core {
                 if self.stopped.contains(&id) {
                     o.insert("stopped".into(), json!(true));
                 }
-                if self.muted.contains(&id) {
-                    o.insert("muted".into(), json!(true));
-                }
-                if let Some(icon) = self.find_pane(id).ok().and_then(|(_, l)| self.pane_icon(id, l)) {
+                if let Some(icon) = self.find_pane(id).ok().and_then(|(_, l)| self.pane_icon(l)) {
                     o.insert("icon".into(), json!(icon));
                 }
             }
@@ -664,9 +642,17 @@ impl Core {
         self.terminal_class = prelude_format::term::choose(c.str("terminal"), &std::env::var("PATH").unwrap_or_default())
             .map(|t| t.class())
             .unwrap_or_default();
-        let dl = c.str("download_dir");
-        self.download_dir = if dl.is_empty() { String::new() } else { prelude_format::abs_path(dl, &self.home, &self.home) };
+        // Web のペインのレシピ(@browser)の窓の名前。ブラウザは prelude browser と同じ決め方
+        self.browser_class = prelude_format::browser::choose(c.str("browser"), &std::env::var("PATH").unwrap_or_default())
+            .map(|b| b.class())
+            .unwrap_or_default();
+        self.app_icons.borrow_mut().clear();
         self.config_rev += 1;
+    }
+
+    /// 設定を当てはめた回数(ダウンロードの見張りが、見るフォルダを決め直すのに使う)
+    pub fn config_rev(&self) -> u64 {
+        self.config_rev
     }
 
     /// ゴミ箱のフォルダ(テスト用)
@@ -688,10 +674,6 @@ impl Core {
         self.now = f;
     }
 
-    pub fn set_download_dir(&mut self, dir: String) {
-        self.download_dir = dir;
-    }
-
     pub fn set_tag(&mut self, tag: &str) {
         self.tag = tag.to_string();
     }
@@ -705,40 +687,27 @@ impl Core {
         }
     }
 
-    /// Web のペイン(今のスペースのもの。止まったものは除く)と、ダウンロードの保存先(今のタブの paths の download)
-    pub fn web_wants(&self) -> (Vec<WebWant>, String) {
-        let mut out = vec![];
-        for t in &self.tabs.tabs {
-            for (id, l) in t.layout.panes() {
-                if let Some(url) = Self::web_url(l).filter(|_| !self.stopped.contains(&id)) {
-                    out.push(WebWant { pane: id, url: url.to_string(), muted: self.muted.contains(&id) });
-                }
-            }
-        }
-        // ブックマーク・スペースの paths に書いてあればそこ、無ければ設定の download_dir(空なら Chromium の既定)。
-        // paths はホームまで必ず何かを返すので、書いてあるときだけを見る
-        let active = self.tab_index(None).ok().map(|i| &self.tabs.tabs[i]);
-        let dl = self.resolver_get(active, "download").unwrap_or_else(|| self.download_dir.clone());
-        (out, dl)
+    /// ダウンロードを移す先(docs/redesign-rust.md の「Web のペイン」の「ダウンロード」)。今のペインが Web で、
+    /// 今のタブのブックマークかスペースに download(か代わりの項目)が書いてあるときだけ。paths はホームまで必ず返すので、書いてあるかを見る
+    pub fn download_target(&self) -> Option<String> {
+        let t = &self.tabs.tabs[self.tab_index(None).ok()?];
+        let (_, l) = self.find_pane(t.active_pane).ok()?;
+        Self::web_url(l)?;
+        self.resolver_get(Some(t), "download")
     }
 
-    /// Web のペインの今の URL と題名(Chromium から)。URL は残す(起動し直すとその URL で開く)。変われば (状態が変わった, 残すものが変わった)
-    pub fn note_web(&mut self, pane: u64, url: String, title: String) -> (bool, bool) {
-        let Ok((i, _)) = self.find_pane(pane) else { return (false, false) };
-        let mut saved = false;
-        if let Some(l) = self.tabs.tabs[i].layout.leaf_mut(pane) {
-            let key = if l.kind == "app" { "webUrl" } else { "url" };
-            if !url.is_empty() && l.str(key) != url {
-                l.fields.insert(key.into(), url.into());
-                saved = true;
-            }
+    /// レシピの窓の名前(@terminal・@browser は設定の端末・ブラウザの窓の名前にする)
+    fn recipe_class(&self, kind: &str) -> String {
+        match recipes::find(&self.recipes, kind).map(|r| r.class.as_str()) {
+            Some(recipes::TERMINAL_CLASS) => self.terminal_class.clone(),
+            Some(recipes::BROWSER_CLASS) => self.browser_class.clone(),
+            Some(c) => c.to_string(),
+            None => String::new(),
         }
-        let titled = self.note_title(pane, title);
-        (saved || titled, saved)
     }
 
-    /// 窓を取り込むペイン(今のスペースのもの)。アプリのペインは起動コマンド、レシピのペインはレシピのコマンド、
-    /// Web のペインは窓の題名の印(窓は web.rs が作る)。止まったペイン・コマンドの無いペインは入れない
+    /// 窓を取り込むペイン(今のスペースのもの)。アプリのペインは起動コマンド、レシピのペインはレシピのコマンド。
+    /// Web のペインはレシピ `web` で、レシピが `{mark}` を使えば窓を題名の印で見分ける(「Web のペイン」)。止まったペイン・コマンドの無いペインは入れない
     pub fn wants(&self) -> Vec<Want> {
         let mut out = vec![];
         for t in &self.tabs.tabs {
@@ -747,22 +716,13 @@ impl Core {
                 if self.stopped.contains(&id) {
                     continue;
                 }
-                if Self::web_url(l).is_some() {
-                    let marker = crate::web::marker(&self.tag, id);
-                    out.push(Want {
-                        pane: id,
-                        cmd: String::new(),
-                        cls: String::new(),
-                        cwd: String::new(),
-                        rect: self.places.get(&id).copied(),
-                        marker,
-                        window: None,
-                    });
-                    continue;
-                }
-                let (cmd, cls) = if l.kind == "app" {
+                let web = Self::web_url(l);
+                let kind = if web.is_some() { "web" } else { l.kind.as_str() };
+                let mark = format!("{}:{id}", self.tag);
+                let mut marker = String::new();
+                let (cmd, cls) = if kind == "app" {
                     (l.str("cmd").to_string(), l.str("cls").to_string())
-                } else if let Some(r) = recipes::find(&self.recipes, &l.kind) {
+                } else if let Some(r) = recipes::find(&self.recipes, kind) {
                     let p = paths.get_or_insert_with(|| self.paths(Some(t)));
                     let get = |k: &str| p.get(k).and_then(Json::as_str).unwrap_or(&self.home).to_string();
                     // {path} はペインのフォルダ(ファイラの枠)。無ければ paths の files。
@@ -771,11 +731,15 @@ impl Core {
                     let vars = |n: &str| match n {
                         "path" => Some(Some(l.str("path")).filter(|s| !s.is_empty()).map(str::to_string).unwrap_or_else(|| get("files"))),
                         "pane" => Some(id.to_string()),
+                        "url" => Some(web.unwrap_or("").to_string()),
+                        "mark" => Some(mark.clone()),
                         "paths.terminal" if cwd.is_some() => cwd.clone(),
                         _ => n.strip_prefix("paths.").filter(|k| !k.is_empty()).map(get),
                     };
-                    let cls = if r.class == recipes::TERMINAL_CLASS { self.terminal_class.clone() } else { r.class.clone() };
-                    (recipes::expand(&r.run, &vars), cls)
+                    if recipes::uses_mark(r) {
+                        marker = prelude_format::browser::marker(&mark);
+                    }
+                    (recipes::expand(&r.run, &vars), self.recipe_class(kind))
                 } else {
                     continue;
                 };
@@ -788,7 +752,7 @@ impl Core {
                     .filter(|s| !s.is_empty())
                     .map(str::to_string)
                     .unwrap_or_else(|| p.get("terminal").and_then(Json::as_str).unwrap_or(&self.home).to_string());
-                out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied(), marker: String::new(), window });
+                out.push(Want { pane: id, cmd, cls, cwd, rect: self.places.get(&id).copied(), marker, window });
             }
         }
         out
@@ -830,7 +794,8 @@ impl Core {
 
     /// 取り込んだ窓の題名。変われば true
     pub fn note_title(&mut self, pane: u64, title: String) -> bool {
-        if self.find_pane(pane).is_err() || self.titles.get(&pane) == Some(&title) {
+        // Web のペインの印のページの題名は、窓を見分けるためだけのもの
+        if title.starts_with("PRELUDE-PANE") || self.find_pane(pane).is_err() || self.titles.get(&pane) == Some(&title) {
             return false;
         }
         self.titles.insert(pane, title);
@@ -1060,25 +1025,7 @@ impl Core {
                 self.places = rects.into_iter().filter(|r| live.contains(&r.pane)).map(|r| (r.pane, r)).collect();
                 Ok(Json::Null)
             }
-            Command::WebGo { pane, .. } => {
-                // 動かすのはソケットの側(web.rs)。ここでは Web のペインかだけ確かめる
-                let (_, l) = self.find_pane(pane)?;
-                if Self::web_url(l).is_none() {
-                    return Err(fail(ErrorCode::BadRequest, "Not a web pane"));
-                }
-                Ok(Json::Null)
-            }
             Command::DialogFolder { save } => Ok(json!(self.dialog_folder(save))),
-            Command::WebMute { pane, on } => {
-                let (_, l) = self.find_pane(pane)?;
-                if Self::web_url(l).is_none() {
-                    return Err(fail(ErrorCode::BadRequest, "Not a web pane"));
-                }
-                if if on { self.muted.insert(pane) } else { self.muted.remove(&pane) } {
-                    self.live_rev += 1;
-                }
-                Ok(Json::Null)
-            }
             Command::PathsGet { tab } => {
                 let i = self.tab_index(tab).ok();
                 Ok(json!(self.paths(i.map(|i| &self.tabs.tabs[i]))))
@@ -1129,8 +1076,6 @@ impl Core {
             self.stopped.remove(&id);
             self.titles.remove(&id);
             self.windows.remove(&id);
-            self.muted.remove(&id);
-            self.favicons.remove(&id);
         }
         if self.tabs.active == Some(t.id) {
             let n = self.tabs.tabs.len();

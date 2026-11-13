@@ -49,7 +49,7 @@ name = "Kate"
 ### ペインの種類(`type`)
 | 種類 | 項目 |
 |---|---|
-| `web` | `url` |
+| `web` | `url`(開き始める場所)。設定のブラウザで開く(レシピ `web`。`~/.config/prelude/panes/web.toml` で替えられる) |
 | `app` | `cmd`(起動コマンド)、`name`、`cls`(窓の名前。省ける) |
 | `files` | `path`(開き始める場所。省くと paths の `files`)。既定は端末の中の yazi |
 | `console` | 端末。`cwd`(省くと paths の `terminal`) |

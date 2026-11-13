@@ -382,9 +382,12 @@ fn ランチャーの候補_開くと点数が上がる() {
 }
 
 #[test]
-fn web_のペイン_印_url_の知らせ_戻る() {
-    let mut c = Core::new(HOME, spaces("web"), None);
+fn web_のペインはレシピで開き_窓は題名の印で見分ける() {
+    let root = spaces("web");
+    std::fs::create_dir_all(root.join(SPACE_DEFAULT)).unwrap();
+    let mut c = Core::new(HOME, &root, None);
     c.set_tag(".dtest");
+    c.set_recipes(prelude_core::recipes::load(Path::new("/nonexistent")));
     let spec = |v: Value| serde_json::from_value(v).unwrap();
     ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "web", "url": "https://a.example/" })), index: None });
     let web = pane_ids(&state(&c).tabs[0].layout)[0];
@@ -398,37 +401,51 @@ fn web_のペイン_印_url_の知らせ_戻る() {
     let w = c.wants();
     let m: Vec<(u64, &str, &str)> = w.iter().map(|w| (w.pane, w.marker.as_str(), w.cmd.as_str())).collect();
     let (mw, mo) = (format!("PRELUDE-PANE:.dtest:{web}"), format!("PRELUDE-PANE:.dtest:{old}"));
-    assert_eq!(m, vec![(old, mo.as_str(), ""), (web, mw.as_str(), "")]); // 起動コマンドは使わない
-    let (ww, dl) = c.web_wants();
-    assert_eq!(
-        ww.iter().map(|w| (w.pane, w.url.as_str())).collect::<Vec<_>>(),
-        vec![(old, "https://b.example/"), (web, "https://a.example/")]
+    let (cw, co) = (
+        format!("prelude browser --mark '.dtest:{web}' 'https://a.example/'"),
+        format!("prelude browser --mark '.dtest:{old}' 'https://b.example/'"),
     );
-    assert_eq!(dl, ""); // ダウンロードの保存先: paths の download → 設定の download_dir。どこにも無ければ空(Chromium が置いた場所のまま)
+    assert_eq!(m, vec![(old, mo.as_str(), co.as_str()), (web, mw.as_str(), cw.as_str())]);
 
-    // ページの中で移った URL は残し、題名は今の様子として出す
-    assert_eq!(c.note_web(web, "https://a.example/next".into(), "Next".into()), (true, true));
-    assert_eq!(c.note_web(web, "https://a.example/next".into(), "Next".into()), (false, false));
-    assert_eq!(c.note_web(old, "https://b.example/2".into(), String::new()), (true, true));
-    let s = state(&c);
-    assert_eq!(
-        (s.tabs[1].layout["url"].as_str(), s.tabs[1].layout["window_title"].as_str()),
-        (Some("https://a.example/next"), Some("Next"))
-    );
-    assert_eq!(s.tabs[0].layout["webUrl"], json!("https://b.example/2"));
-    assert!(c.saved().spaces[SPACE_DEFAULT].tabs.iter().any(|t| t.layout["url"] == "https://a.example/next"));
+    // 印のページの題名は出さない。本当のページの題名は出す
+    assert!(!c.note_title(web, "PRELUDE-PANE:.dtest:1".into()));
+    assert!(c.note_title(web, "Example".into()));
+    assert_eq!(state(&c).tabs[1].layout["window_title"], json!("Example"));
 
-    // 戻る・進むは Web のペインだけ
-    ok(&mut c, Command::WebGo { pane: web, action: prelude_proto::WebAction::Back });
-    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "files", "path": "/x" })), index: None });
-    let files = pane_ids(&state(&c).tabs[0].layout)[0];
-    assert_eq!(
-        c.handle(Command::WebGo { pane: files, action: prelude_proto::WebAction::Reload }).reply.unwrap_err().0,
-        ErrorCode::BadRequest
-    );
+    // レシピを替えて {mark} を使わなければ、ほかのアプリと同じ(印なし)
+    let mut list = prelude_core::recipes::load(Path::new("/nonexistent"));
+    list.retain(|r| r.kind != "web");
+    list.push(prelude_core::recipes::Recipe {
+        kind: "web".into(),
+        name: "Web".into(),
+        run: "firefox {url}".into(),
+        class: "firefox".into(),
+    });
+    c.set_recipes(list);
+    let w = c.wants();
+    let x = w.iter().find(|w| w.pane == web).unwrap();
+    assert_eq!((x.marker.as_str(), x.cmd.as_str(), x.cls.as_str()), ("", "firefox 'https://a.example/'", "firefox"));
+
     // 止まった Web のペインは開かない
     c.note_exited(web, false);
-    assert_eq!(c.web_wants().0.len(), 1);
+    assert!(c.wants().iter().all(|w| w.pane != web));
+}
+
+#[test]
+fn ダウンロードを移す先は_web_のペインで書いてあるときだけ() {
+    let root = spaces("dltarget");
+    let dir = root.join(SPACE_DEFAULT);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    let spec = |v: Value| serde_json::from_value(v).unwrap();
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "web", "url": "https://a/" })), index: None });
+    // どこにも書いていなければ移さない(paths はホームまで必ず返すが、それは使わない)
+    assert_eq!(c.download_target(), None);
+    std::fs::write(dir.join("space.toml"), "[paths]\ndownload = \"/data/dl\"\n").unwrap();
+    assert_eq!(c.download_target(), Some("/data/dl".into()));
+    // 今のペインが Web でなければ移さない
+    ok(&mut c, Command::TabOpen { pane: spec(json!({ "type": "files", "path": "/x" })), index: None });
+    assert_eq!(c.download_target(), None);
 }
 
 #[test]
@@ -436,6 +453,7 @@ fn コンポジタに渡す配置の木() {
     use prelude_core::compositor::Tree;
     use prelude_format::Dir as FDir;
     let mut c = Core::new(HOME, spaces("scene"), None);
+    c.set_recipes(prelude_core::recipes::load(Path::new("/nonexistent"))); // Web のペインもレシピ
     ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
     let first = pane_ids(&state(&c).tabs[0].layout)[0];
     let p2 = ok(&mut c, Command::PaneSplit { pane: first, dir: Dir::Row, new: web("https://b/") }).as_u64().unwrap();
@@ -704,7 +722,7 @@ fn ブックマークの並び_番号_種類_フォルダの一覧() {
 }
 
 #[test]
-fn 消音とアイコンは状態に出すが書き出さない() {
+fn アイコンは状態に出す() {
     let root = spaces("live");
     std::fs::create_dir_all(root.join(SPACE_DEFAULT)).unwrap();
     let icon = root.join("kate.svg");
@@ -728,22 +746,9 @@ fn 消音とアイコンは状態に出すが書き出さない() {
     let a = pane_ids(&state(&c).tabs[1].layout)[0];
     // アプリのペインには .desktop のアイコン
     assert_eq!(state(&c).tabs[1].layout["icon"], json!(icon.to_string_lossy()));
-    // 消音: 状態と Web のペインのつなぎに出るが、書き出す状態は変わらない。知らせは配る
-    let before = c.saved();
-    let o = c.handle(Command::WebMute { pane: w, on: true });
-    assert!(o.changed && o.reply.is_ok());
-    assert_eq!(c.saved(), before);
-    assert_eq!(state(&c).tabs[0].layout["muted"], json!(true));
-    assert!(c.web_wants().0.iter().any(|x| x.pane == w && x.muted));
-    assert!(!c.handle(Command::WebMute { pane: w, on: true }).changed); // 同じなら知らせない
-    assert_eq!(c.handle(Command::WebMute { pane: a, on: true }).reply.unwrap_err().0, ErrorCode::BadRequest);
-    ok(&mut c, Command::WebMute { pane: w, on: false });
+    // Web のペインはブラウザのアイコン(消音・ファビコンはやめた)。ここではブラウザが無いので出ない
+    let _ = (w, a);
     assert!(state(&c).tabs[0].layout.get("muted").is_none());
-    // ファビコン
-    assert!(c.note_icon(w, "/cache/a.png".into()));
-    assert!(!c.note_icon(w, "/cache/a.png".into()));
-    assert!(!c.note_icon(999, "/x.png".into()));
-    assert_eq!(state(&c).tabs[0].layout["icon"], json!("/cache/a.png"));
 }
 
 #[test]
@@ -841,10 +846,6 @@ fn 設定を当てはめる_閉じたタブの数_ダウンロード() {
     c.apply_config(&Config::from_text("[tabs]\nclosed_max = 0\n", &|_| None));
     ok(&mut c, Command::TabClose { tab: None });
     assert_eq!(state(&c).closed, 0);
-    // ダウンロードの保存先(設定の download_dir。~ はホーム)
-    c.apply_config(&Config::from_text("download_dir = \"~/DL\"\n", &|_| None));
-    ok(&mut c, Command::TabOpen { pane: web("https://x/"), index: None });
-    assert_eq!(c.web_wants().1, format!("{HOME}/DL"));
 }
 
 #[test]

@@ -451,6 +451,9 @@ enum Msg {
     Shutdown(oneshot::Sender<()>),
 }
 
+/// Web のペインの印の窓を待つ時間。過ぎても出なければ止まったことにする
+const WEB_WAIT: Duration = Duration::from_secs(30);
+
 /// sway の裏側に頼む口
 #[derive(Clone)]
 pub struct Handle {
@@ -695,7 +698,7 @@ impl Sway {
                 self.take_window(w.clone(), c, &mut adopted).await;
                 continue;
             }
-            if w.marker.is_empty() && w.cmd.trim().is_empty() {
+            if w.cmd.trim().is_empty() {
                 continue;
             }
             if known.is_none() {
@@ -772,9 +775,9 @@ impl Sway {
         if crate::compositor::is_prelude_ui(&v.app) || self.opts.ignores(&v.app) {
             return;
         }
-        // Web のペインの窓は、題名の印が付くまで見分けられない
-        let web_pending = self.panes.values().any(|p| !p.want.marker.is_empty() && p.con.is_none());
-        if web_pending && v.app.contains("chrom") && tries < 10 {
+        // Web のペインの窓は、題名の印が付くまで見分けられない(どのブラウザかは問わない)
+        let web_pending = self.panes.values().any(|p| !p.want.marker.is_empty() && p.con.is_none() && p.t0.elapsed() < WEB_WAIT);
+        if web_pending && tries < 5 {
             self.later(Msg::Foreign(con, tries + 1), Duration::from_secs(2));
             return;
         }
@@ -857,14 +860,20 @@ impl Sway {
         }
     }
 
-    /// 起動する(Web のペインは窓を web.rs が作るので、待つだけ)
+    /// 起動する。Web のペイン(題名の印で見分ける)はプロセスを追わない(ブラウザは窓が増えても同じプロセスのまま)
     fn launch(&mut self, w: Want, old: HashSet<i64>) {
         let (mut sh, mut sh_pid) = (None, 0);
         // ランチャーが閉じるのはこの後なので、少し待ってからも決め直す
         for ms in [0, 250, 600] {
             self.later(Msg::Keyboard, Duration::from_millis(ms));
         }
-        if w.marker.is_empty() {
+        if !w.marker.is_empty() {
+            if let Err(e) = launch::spawn_detached(&w.cmd, &w.cwd, w.pane) {
+                eprintln!("prelude-core: cannot launch {} ({e})", w.cmd);
+                let _ = self.notes.send(Note::Exited { pane: w.pane, had_window: false });
+                return;
+            }
+        } else {
             match launch::spawn(&w.cmd, &w.cwd, w.pane) {
                 Ok(mut child) => {
                     let pid = child.id().unwrap_or(0);
@@ -972,8 +981,8 @@ impl Sway {
             p.had_window = true;
             if p.want.marker.is_empty() {
                 p.owned.insert(v.pid);
-                let _ = self.notes.send(Note::Title { pane: id, title: v.title.chars().take(300).collect() });
             }
+            let _ = self.notes.send(Note::Title { pane: id, title: v.title.chars().take(300).collect() });
             let _ = self.notes.send(Note::Claimed { pane: id });
         }
         self.ipc.run(&cmds).await;
@@ -1110,7 +1119,7 @@ impl Sway {
                         }
                     }
                     "title" => {
-                        if let Some(pane) = owner.filter(|p| self.panes[p].want.marker.is_empty()) {
+                        if let Some(pane) = owner {
                             let t = v["container"]["name"].as_str().unwrap_or("").chars().take(300).collect();
                             let _ = self.notes.send(Note::Title { pane, title: t });
                         }
@@ -1192,7 +1201,14 @@ impl Sway {
         for id in ids {
             let others = self.others_pids(id);
             let p = self.panes.get_mut(&id).unwrap();
-            if p.had_window || p.foreign || !p.want.marker.is_empty() || p.t0.elapsed() < Duration::from_secs(20) {
+            if !p.had_window && !p.want.marker.is_empty() {
+                // Web のペイン: プロセスは追わないので、印の窓がしばらく出なければ止まったことにする
+                if p.t0.elapsed() >= WEB_WAIT {
+                    exited.push(id);
+                }
+                continue;
+            }
+            if p.had_window || p.foreign || p.t0.elapsed() < Duration::from_secs(20) {
                 continue;
             }
             let mut pids: Vec<u32> = p.sh.map(procs::descendants).unwrap_or_default();
