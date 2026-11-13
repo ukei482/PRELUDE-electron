@@ -1,127 +1,37 @@
-/* サイドバーの見た目。色は 3 つだけ: --bg(背景)・--fg(文字)・--accent(強調)。ほかの色は、この 3 つを薄めたもの。
-   透け具合(--opacity)は色ではなく、背景をどれだけ透かすか。テーマ(theme.toml)はこの 4 つと大きさの値を差し替える。
-   背景のぼかしはコンポジタの仕事(SwayFX の layer_effects・Hyprland の layerrule)。ここは透けた色を出すだけ。
-   アプリのアイコン・ファビコンはアプリの持ち物なので、この 3 色には入れない(--icon-filter で単色にできる)。 */
+/* サイドバーの見た目。PRELUDE が出すのはこの 1 つだけで、テーマの切り替えは持たない
+   (見た目を変えたい人は、部品の決まり parts.js を満たす別のサイドバーを作る)。
+   角丸なし・黒のベース・灰色の文字とアイコン。色は使わず、今のタブは文字を明るくし、面をわずかに浮かせるだけで分ける。
+   使用者が設定で変えるのは窓の並べ方だけ(窓の角丸・窓と窓の間・画面の端との間。settings.toml の [windows])。
+   サイドバーの窓の角と置き場所はホストがその設定に合わせ、中身(ここ)は角を丸めない。
+   アプリのアイコン・ファビコンはアプリの持ち物だが、灰色にそろえる(--icon-filter) */
 :root {
-  --font: "Inter", "Noto Sans CJK JP", "Noto Sans JP", "IPAPGothic", system-ui, sans-serif;
+  --font: "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif;
   --font-size: 13px;
-  --radius: 8px;
   --row: 30px;
   --gap: 6px;
   --pad: 10px;
 
-  /* 3 つの色と透け具合 */
-  --bg: #ffffff;
-  --fg: #15161a;
-  --accent: #1a3cc8;
-  --opacity: 1;
-  --icon-filter: none;
-
-  /* ここから下は 3 つの色から作る(テーマで変えない) */
-  --text: var(--fg);
-  --dim: color-mix(in srgb, var(--fg) 58%, transparent);
-  --line: color-mix(in srgb, var(--fg) 12%, transparent);
-  --surface: color-mix(in srgb, var(--fg) 5%, transparent);
-  --hover: color-mix(in srgb, var(--fg) 8%, transparent);
-  --active-bg: var(--accent);
-  --active-text: var(--bg);
-  --open-dot: var(--accent);
-  --sheet: color-mix(in srgb, var(--bg) calc(var(--opacity) * 100%), transparent);
-  --sheet-strong: color-mix(in srgb, var(--bg) calc(min(1, var(--opacity) + 0.35) * 100%), transparent);
+  --bg: #000000; /* ベース */
+  --text: #8c8c8c; /* 文字とアイコン */
+  --dim: #5a5a5a; /* 番号・見出し・押せないボタン */
+  --bright: #e2e2e2; /* 今のタブの文字・押せる印の強調 */
+  --line: #1f1f1f;
+  --hover: #121212;
+  --active-bg: #1a1a1a;
+  --mark: #6e6e6e; /* 開いている印・つながりの点・編集の欄の枠 */
+  --menu-bg: #0c0c0c;
+  --icon-filter: grayscale(1) brightness(0.8) contrast(0.9);
+  color-scheme: dark;
 }
-
-:root[data-theme="dark"] {
-  --bg: #17181c;
-  --fg: #e9eaee;
-  --accent: #7b93ff;
-}
-
-/* ガラス(iOS の Liquid Glass に倣う)。文字は白。
-   ガラスの材質を見せるのは 2 か所だけ: サイドバーの面(ほぼ透明の膜と、上の縁の光)と、今のタブ(光を受けた雫)。
-   ほかの行・スペースの名前・見出しは面を持たず、白い文字だけ。色は使わない(強調も白)。
-   後ろのぼかしと彩度はコンポジタの仕事。明るい壁紙でも白い文字が読めるよう、膜の下に薄い暗さ(--scrim)を敷く。
-   透け具合(--opacity)は膜の白さに効く。字は Noto Sans CJK JP を palt(かなを詰める)で組む */
-:root[data-theme="glass"] {
-  --font: "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif;
-  --bg: #ffffff;
-  --fg: #ffffff;
-  --accent: #ffffff;
-  --ink-2: rgba(255, 255, 255, 0.6);
-  --film: rgba(255, 255, 255, calc(var(--opacity) * 0.16));
-  --scrim: rgba(12, 16, 28, 0.26);
-  --specular: rgba(255, 255, 255, 0.6);
-  --dim: var(--ink-2);
-  --line: rgba(255, 255, 255, 0.16);
-  --surface: transparent;
-  --hover: rgba(255, 255, 255, 0.1);
-  --active-bg: transparent;
-  --active-text: #ffffff;
-  --open-dot: #ffffff;
-  --sheet: linear-gradient(var(--film), var(--film)), linear-gradient(var(--scrim), var(--scrim));
-  --sheet-strong: rgba(28, 32, 46, 0.62);
-}
-:root[data-theme="glass"] body {
-  font-feature-settings: "palt";
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
-}
-/* 面: 上の縁だけが光を受け、ほかの縁は細い線 */
-:root[data-theme="glass"] .sb {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-/* スペースの名前はサイドバーの題名。箱にしない。つながりの点は下の行が出すので、ここでは出さない */
-:root[data-theme="glass"] .space {
-  height: 36px;
-  padding: 0 6px;
-  font-size: 1.24em;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-:root[data-theme="glass"] .space .dot { display: none; }
-:root[data-theme="glass"] .space svg.i { color: var(--ink-2); }
-:root[data-theme="glass"] .space:hover { background: var(--hover); }
-/* 見出し: 小さく、字間は空けない */
-:root[data-theme="glass"] .sec {
-  padding-top: 14px;
-  font-size: 0.8em;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-:root[data-theme="glass"] .row { border-radius: 7px; }
-:root[data-theme="glass"] .row .num { color: var(--ink-2); font-size: 0.86em; }
-/* 今のタブ = 雫。端が丸いカプセルで、左上に光の映り込み、下の縁にかすかな照り返し、下に薄い影 */
-:root[data-theme="glass"] .row.tab.active {
-  border-radius: calc(var(--row) / 2);
-  font-weight: 500;
-  background:
-    radial-gradient(120% 140% at 18% -30%, rgba(255, 255, 255, 0.34), transparent 55%),
-    rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 1px 0 var(--specular),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.3),
-    0 3px 10px rgba(0, 0, 0, 0.16);
-}
-:root[data-theme="glass"] .row.tab.active .num { color: #ffffff; opacity: 1; }
-:root[data-theme="glass"] .row.pane.active { background: var(--hover); font-weight: 500; }
-:root[data-theme="glass"] .menu {
-  border-color: rgba(255, 255, 255, 0.16);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 12px 36px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(24px) saturate(1.7);
-}
-:root[data-theme="glass"] .edit { border-color: rgba(255, 255, 255, 0.7); }
-:root[data-theme="glass"] .foot { color: var(--ink-2); }
-:root[data-theme="glass"] .splitbtn { background: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); border-radius: calc(34px / 2); }
-:root[data-theme="glass"] .splitbtn:hover { background: var(--hover); }
 
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
   height: 100%;
-  background: transparent; /* 窓そのものは透明。色は .sb が出す */
+  background: transparent; /* 窓そのものは透明。色は .sb が出す(窓の角丸はホストが切る) */
   font-family: var(--font);
   font-size: var(--font-size);
+  font-feature-settings: "palt"; /* かなを詰める */
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -134,25 +44,18 @@ input { font: inherit; color: inherit; }
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--sheet);
+  background: var(--bg);
   /* 縁の線。窓と同じ間で浮いているなら四方(ホストが --sb-edge を入れる)、端に付いているなら隣の窓の側だけ */
   box-shadow: var(--sb-edge, inset -1px 0 0 var(--line));
-  transition: background 0.25s;
 }
 
-/* 一番上: 開閉 */
-.top { display: flex; padding: var(--pad) var(--pad) 2px; }
-/* 開閉の横に 戻る・進む、右端に今のペインを閉じる(広げているときだけ) */
-.top { align-items: center; gap: 2px; }
-.top .navs { display: flex; gap: 0; }
+/* 一番上: 開閉。広げているときは、その横に今のペインの 戻る・進む、右端に閉じる */
+.top { display: flex; align-items: center; gap: 2px; padding: var(--pad) var(--pad) 2px; }
+.top .navs { display: flex; }
 .top .closepane { margin-left: auto; }
-/* その下: スペース */
-.head {
-  display: flex;
-  align-items: center;
-  gap: var(--gap);
-  padding: 4px var(--pad) 6px;
-}
+
+/* その下: スペース(サイドバーの題名) */
+.head { display: flex; align-items: center; gap: var(--gap); padding: 4px var(--pad) 6px; }
 .space {
   flex: 1;
   min-width: 0;
@@ -160,40 +63,38 @@ input { font: inherit; color: inherit; }
   align-items: center;
   gap: 8px;
   height: 34px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  background: var(--surface);
+  padding: 0 8px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  color: #b0b0b0;
 }
 .space:hover { background: var(--hover); }
 .space .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--open-dot); flex: none; }
-.dot.off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--dim); }
+.space .initial { display: none; }
+.dot { width: 6px; height: 6px; background: var(--mark); flex: none; }
+.dot.off { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
+
 .iconbtn {
   width: 30px;
   height: 30px;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: var(--radius);
   color: var(--dim);
 }
-.iconbtn:hover { background: var(--hover); color: var(--text); }
-.iconbtn:disabled { opacity: 0.35; cursor: default; background: none; }
-.iconbtn.on { color: var(--accent); }
+.iconbtn:hover { background: var(--hover); color: var(--bright); }
+.iconbtn:disabled { opacity: 0.4; cursor: default; background: none; color: var(--dim); }
 svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+svg.i .fill { fill: currentColor; stroke: none; opacity: 0.38; }
 
 /* 区切りの見出し */
 .sec {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 10px var(--pad) 4px calc(var(--pad) + 4px);
+  padding: 12px var(--pad) 4px calc(var(--pad) + 4px);
   color: var(--dim);
-  font-size: 0.82em;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 0.8em;
+  font-weight: 500;
 }
 .sec .lbl { flex: 1; }
 .sec .iconbtn { width: 24px; height: 24px; }
@@ -209,40 +110,29 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
   height: var(--row);
   margin: 1px var(--pad);
   padding: 0 6px 0 8px;
-  border-radius: var(--radius);
   cursor: default;
 }
 .row:hover { background: var(--hover); }
-.row.active { background: var(--active-bg); color: var(--active-text); }
-.row.active .num, .row.active .sub { color: inherit; opacity: 0.75; }
+.row.active { background: var(--active-bg); color: var(--bright); }
+.row.active .num, .row.active .sub { color: #9a9a9a; }
 .row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .num { width: 18px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; font-size: 0.9em; flex: none; }
 .row .sub { color: var(--dim); font-size: 0.85em; flex: none; }
 .row .x { opacity: 0; width: 22px; height: 22px; }
 .row:hover .x { opacity: 1; }
-.row.active .x { color: inherit; }
 .row.pane { height: calc(var(--row) - 4px); margin-left: calc(var(--pad) + 22px); font-size: 0.94em; }
-.row.pane.active { background: var(--hover); color: var(--text); font-weight: 600; }
+.row.pane.active { background: var(--hover); font-weight: 500; }
 .row.inner { margin-left: calc(var(--pad) + 14px); }
-.row .opendot { width: 6px; height: 6px; border-radius: 50%; background: var(--open-dot); flex: none; }
+.row .opendot { width: 5px; height: 5px; background: var(--mark); flex: none; }
 .row.folder .chev { transition: transform 0.15s; color: var(--dim); }
 .row.folder.expanded .chev { transform: rotate(90deg); }
-.row.drop-before::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  top: -2px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--accent);
-}
-.row.drop-into { outline: 2px solid var(--accent); outline-offset: -2px; }
+.row.drop-before::before { content: ""; position: absolute; left: 4px; right: 4px; top: -2px; height: 2px; background: var(--bright); }
+.row.drop-into { outline: 1px solid var(--bright); outline-offset: -1px; }
 .row.dragging { opacity: 0.4; }
 
-/* アイコン: 画像があれば画像、無ければ種類の記号 */
-.ico { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px; }
-.ico img { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; filter: var(--icon-filter); }
+/* アイコン: 画像があれば画像(灰色にする)、無ければ種類の記号 */
+.ico { width: 18px; height: 18px; flex: none; display: grid; place-items: center; }
+.ico img { width: 18px; height: 18px; object-fit: contain; filter: var(--icon-filter); }
 .ico svg.i { width: 15px; height: 15px; }
 
 /* 編集の欄 */
@@ -251,9 +141,8 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
   min-width: 0;
   height: 22px;
   padding: 0 6px;
-  border: 1px solid var(--accent);
-  border-radius: 5px;
-  background: var(--sheet-strong);
+  border: 1px solid var(--mark);
+  background: var(--menu-bg);
   outline: none;
 }
 
@@ -262,19 +151,16 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
   position: fixed;
   z-index: 10;
   min-width: 180px;
-  padding: 5px;
-  border-radius: calc(var(--radius) + 2px);
-  background: var(--sheet-strong);
+  padding: 4px;
+  background: var(--menu-bg);
   border: 1px solid var(--line);
-  backdrop-filter: blur(18px) saturate(1.4); /* 透けているときだけ効いて見える */
-  animation: pop 0.12s ease-out;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
-.menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; white-space: nowrap; padding: 0 10px; border-radius: 6px; text-align: left; }
-.menu button:hover { background: var(--hover); }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; white-space: nowrap; padding: 0 10px; text-align: left; }
+.menu button:hover { background: var(--hover); color: var(--bright); }
 .menu button.danger { font-weight: 600; } /* 赤は使わない。消すものは太字と記号で分ける */
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 .menu .ttl { padding: 4px 10px 2px; color: var(--dim); font-size: 0.82em; }
-@keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
 
 /* 下の分割のボタン */
 .dock { padding: 6px var(--pad) 0; }
@@ -285,81 +171,42 @@ svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-widt
   width: 100%;
   height: 34px;
   padding: 0 10px;
-  border-radius: var(--radius);
-  color: var(--text);
-  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
-.splitbtn:hover { background: var(--hover); }
+.splitbtn:hover { background: var(--hover); color: var(--bright); }
 .splitbtn .t { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-svg.i .fill { fill: currentColor; stroke: none; opacity: 0.38; }
 /* 十字(新しいペインを置く側を選ぶ) */
 .splitmenu { min-width: 0; outline: none; }
 .splitpad { display: grid; grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 38px); gap: 4px; padding: 4px 6px 6px; justify-content: center; }
-.splitpad button { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border-radius: 9px; }
+.splitpad button { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; }
 .splitpad button svg.i { width: 20px; height: 20px; }
 .splitpad .up { grid-area: 1 / 2; }
 .splitpad .left { grid-area: 2 / 1; }
 .splitpad .right { grid-area: 2 / 3; }
 .splitpad .down { grid-area: 3 / 2; }
 .splitpad .here { grid-area: 2 / 2; display: grid; place-items: center; color: var(--dim); }
+
 .foot { padding: 6px var(--pad) var(--pad); color: var(--dim); font-size: 0.82em; display: flex; gap: 6px; align-items: center; }
 .foot .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 細い列 */
-.sb.compact .space .name, .sb.compact .sec .lbl, .sb.compact .row .t, .sb.compact .row .sub, .sb.compact .row .x,
-.sb.compact .foot .t, .sb.compact .row .num { display: none; }
-.sb.compact .space { padding: 0; justify-content: center; width: 34px; flex: none; }
-.sb.compact .top, .sb.compact .head { justify-content: center; }
-.sb.compact .row { justify-content: center; padding: 0; }
-.sb.compact .row.pane, .sb.compact .row.inner { margin-left: var(--pad); }
-.sb.compact .sec { justify-content: center; padding-left: 0; padding-right: 0; }
-
-/* 細い列の整え方。アイコンを列の真ん中の 1 本に並べ、ほかの印は邪魔しない場所へ:
-   - 行は幅いっぱいではなく、アイコン 1 つ分の正方形。今のタブはその正方形が光る
-   - 開いている印(白い点)はアイコンの横ではなく、列の左の縁に小さく出す
+/* 細い列。アイコンを列の真ん中の 1 本に並べ、ほかの印は邪魔しない場所へ:
+   - 行は幅いっぱいではなく、アイコン 1 つ分の正方形
+   - 開いている印はアイコンの横ではなく、列の左の縁に小さく出す
    - 見出しとその操作ボタンは隠し、短い線 1 本で区切る(新しいタブ・フォルダを作るは広げてから)
-   - スペースは名前の頭の 1 字だけを出す */
+   - スペースは名前の頭の 1 字だけを出す。戻る・進む・閉じるは出さない */
+.sb.compact .space .name, .sb.compact .row .t, .sb.compact .row .sub, .sb.compact .row .x,
+.sb.compact .foot .t, .sb.compact .row .num, .sb.compact .space .dot, .sb.compact .space svg.i, .sb.compact .splitbtn .t { display: none; }
+.sb.compact .top, .sb.compact .head, .sb.compact .foot { justify-content: center; }
+.sb.compact .space { flex: none; width: 36px; height: 36px; padding: 0; justify-content: center; }
+.sb.compact .space .initial { display: block; flex: 1; text-align: center; }
 .sb.compact .row,
 .sb.compact .row.pane,
-.sb.compact .row.inner {
-  width: 36px;
-  height: 36px;
-  margin: 2px auto;
-  padding: 0;
-  justify-content: center;
-}
+.sb.compact .row.inner { width: 36px; height: 36px; margin: 2px auto; padding: 0; justify-content: center; }
 .sb.compact .ico,
 .sb.compact .ico img { width: 20px; height: 20px; }
-.sb.compact .row .opendot {
-  position: absolute;
-  left: -9px;
-  top: 50%;
-  width: 4px;
-  height: 4px;
-  transform: translateY(-50%);
-}
-.sb.compact .sec {
-  justify-content: center;
-  height: 17px;
-  padding: 8px 0;
-}
+.sb.compact .row .opendot { position: absolute; left: -9px; top: 50%; width: 4px; height: 4px; transform: translateY(-50%); }
+.sb.compact .sec { justify-content: center; height: 17px; padding: 8px 0; }
 .sb.compact .sec > * { display: none; }
-.sb.compact .sec::before {
-  content: "";
-  width: 16px;
-  height: 1px;
-  background: var(--line);
-}
-.sb.compact .space { width: 36px; height: 36px; background: none; }
-.space .initial { display: none; }
-.sb.compact .space .initial { display: block; flex: 1; text-align: center; }
-.sb.compact .space .dot,
-.sb.compact .space svg.i { display: none; }
-.sb.compact .space:hover { background: var(--hover); }
-.sb.compact .foot { justify-content: center; }
+.sb.compact .sec::before { content: ""; width: 16px; height: 1px; background: var(--line); }
 .sb.compact .dock { display: flex; justify-content: center; padding: 6px 0 0; }
 .sb.compact .splitbtn { width: 36px; height: 36px; padding: 0; justify-content: center; }
-.sb.compact .splitbtn .t { display: none; }
-/* ガラスの細い列: 今のタブは丸い雫 */
-:root[data-theme="glass"] .sb.compact .row.tab.active { border-radius: 50%; }
-:root[data-theme="glass"] .sb.compact .space .initial { font-size: 1.1em; }
