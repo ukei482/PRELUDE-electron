@@ -112,11 +112,7 @@
         pane: cur ? cur.id : 0,
         kind: cur ? cur.type || '' : '',
         title: cur ? paneTitle(cur) : '',
-        url: cur && cur.type === 'web' ? cur.url || '' : '',
         canSplit: level >= 2 && !!cur,
-        canMute: !!cur && cur.type === 'web',
-        muted: !!(cur && cur.muted),
-        canGoBack: !!cur && cur.type === 'web',
         splitMode: ui.splitMode === 'pick' ? 'pick' : 'auto',
         autoSplit: autoSplit(activeTab && cur ? paneRect(activeTab.layout, cur.id, ui.screen || undefined) : null),
       },
@@ -192,19 +188,8 @@
         const [dir, before] = SPLIT[a] || SPLIT.right;
         return v.pane ? [{ launcher: { split: dir, before, pane: v.pane } }] : [];
       }
-      case 'PaneBar.back':
-      case 'PaneBar.forward': {
-        const v = values(core, {}).PaneBar;
-        return v.pane && v.canGoBack ? [c('web.go', { pane: v.pane, action: cb })] : [];
-      }
       case 'PaneBar.close':
         return [c('pane.close', { pane: values(core, {}).PaneBar.pane })];
-      case 'PaneBar.changeUrl': {
-        const v = values(core, {}).PaneBar;
-        return [{ launcher: { pane: v.pane, url: v.url } }];
-      }
-      case 'PaneBar.setMuted':
-        return [c('web.mute', { pane: values(core, {}).PaneBar.pane, on: a })];
       case 'BookmarkButton.save':
         return [c('bookmark.save', { title: a })];
       case 'BookmarkButton.overwrite':

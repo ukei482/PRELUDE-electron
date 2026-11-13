@@ -6,6 +6,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 mod agent;
+mod browser;
 mod choose;
 mod config;
 mod mcp;
@@ -38,9 +39,6 @@ usage: prelude <command> [args]
   panes                  List panes of all tabs (id, type, place)
   place <pane> <x> <y> <w> <h>  Tell where a pane is on screen (what the UI does; for testing)
   recipes                Pane types made from recipes (~/.config/prelude/panes)
-  url <pane> <url>       Open a URL in a web pane
-  go <pane> back|forward|reload  Move in a web pane's history
-  mute <pane> [on|off]   Mute (default) or unmute a web pane
   spaces                 List spaces (* = current)
   space <name>           Switch to a space
   space new <name>       Create a space
@@ -66,6 +64,9 @@ usage: prelude <command> [args]
   choose <open|open-multiple|directory|save> --output <file> [--name <name>] [--terminal <cmd>] <folder>
                          The file chooser of app dialogs: yazi in a terminal. Writes the chosen paths to <file>
                          (what prelude-core's dialog portal runs by default)
+  browser [--mark <mark>] <url>
+                         Open <url> in a new window of the browser from the settings (browser). Web panes open with this
+                         (--mark: open a page that shows <mark> in the window title, then goes to <url>)
   term [--cwd <folder>] [-- <command>...]
                          Open the terminal from the settings (terminal) in <folder>, running <command> (default: a shell)
   agent [<prompt>...]    Start the default AI agent in the current folder ($PRELUDE_AGENT, else claude, codex,
@@ -428,6 +429,9 @@ fn run(args: &[String]) -> Result<(), String> {
     if a.first() == Some(&"term") {
         return term::run(&a[1..]);
     }
+    if a.first() == Some(&"browser") {
+        return browser::run(&a[1..], &home());
+    }
     if a.first() == Some(&"config") {
         return config::run(&a[1..]);
     }
@@ -451,10 +455,6 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         ["help" | "-h" | "--help"] => println!("{HELP}"),
         ["tabs"] => print_tabs(&Conn::open(false)?.state()?),
-        ["mute", pane] | ["mute", pane, "on"] | ["mute", pane, "off"] => {
-            let pane: u64 = pane.parse().map_err(|_| format!("Not a pane id: {pane}"))?;
-            Conn::open(false)?.call("web.mute", json!({ "pane": pane, "on": a.get(2) != Some(&"off") }))?;
-        }
         ["reopen"] => {
             Conn::open(false)?.call("tab.reopen", json!({}))?;
         }
@@ -534,15 +534,6 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             c.call("pane.place", json!({ "rects": rects }))?;
             save_places(&rects);
-        }
-        ["url", pane, url] => {
-            let pane: u64 = pane.parse().map_err(|_| format!("Not a pane id: {pane}"))?;
-            let url = if url.contains("://") { url.to_string() } else { format!("https://{url}") };
-            Conn::open(false)?.call("pane.update", json!({ "pane": pane, "fields": { "url": url } }))?;
-        }
-        ["go", pane, action @ ("back" | "forward" | "reload")] => {
-            let pane: u64 = pane.parse().map_err(|_| format!("Not a pane id: {pane}"))?;
-            Conn::open(false)?.call("web.go", json!({ "pane": pane, "action": action }))?;
         }
         ["recipes"] => {
             let list: Vec<RecipeInfo> =

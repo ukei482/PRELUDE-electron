@@ -21,7 +21,8 @@ pub struct Want {
     pub cwd: String,
     /// 見えていれば場所(UI が知らせたもの。窓を重ねる裏側が使う)
     pub rect: Option<PaneRect>,
-    /// 窓の題名の印(Web のペイン)。あれば起動はせず、この題名の窓を取り込む(窓は web.rs が作る)
+    /// 窓の題名の印(Web のペイン)。あれば、起動したプロセスでなく、この題名の窓を取り込む。プロセスは追わない
+    /// (ブラウザは窓が増えても同じプロセスのまま。docs/redesign-rust.md の「Web のペイン」)
     pub marker: String,
     /// 既にある窓(PRELUDE を通さずに開いた窓。[`Note::Foreign`] の con)。あれば起動はせず、この窓をペインにする
     pub window: Option<i64>,
@@ -53,7 +54,7 @@ pub struct Scene {
     pub active: Option<u64>,
 }
 
-/// コンポジタからコアへの知らせ(Web のペインの知らせも同じ通り道を使う)
+/// コンポジタからコアへの知らせ
 #[derive(Debug, Clone, PartialEq)]
 pub enum Note {
     /// ペインの窓が無くなった(had_window: 一度は窓があった)
@@ -69,14 +70,6 @@ pub enum Note {
     /// 使用者がコンポジタで窓を動かした。タブの番号と、そのタブの今の並び(窓のあるペインだけ)。無ければ窓が無くなった。
     /// 知らない番号はコンポジタで作った作業領域なので、新しいタブにする
     Layout(Vec<(u32, Option<Tree>)>),
-    /// Web のペインの今の URL と題名(web.rs から)
-    Web { pane: u64, url: String, title: String },
-    /// Web のペインから新しいタブで開くリンク(web.rs から)
-    OpenTab { url: String, from: u64 },
-    /// Web のペインのファビコンを保存した(web.rs から)
-    Icon { pane: u64, path: String },
-    /// ダウンロードの始まり・進み具合(CDP の Browser.downloadWillBegin / downloadProgress の params)
-    Download(serde_json::Value),
 }
 
 /// 窓のつなぎができること(docs/redesign-rust.md の「窓のつなぎ」の段)。上の段は下の段のこともできる

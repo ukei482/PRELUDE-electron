@@ -18,14 +18,6 @@ fn env_path(name: &str) -> Option<PathBuf> {
 }
 
 fn main() {
-    // Chromium が起動する橋渡し(webhost.rs)
-    if std::env::args().nth(1).as_deref() == Some("--web-host") {
-        if let Err(e) = prelude_core::webhost::run() {
-            eprintln!("prelude-core: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
     // アプリのダイアログのポータル(portal.rs)。コアが子のプロセスとして起動する
     if std::env::args().nth(1).as_deref() == Some("--portal") {
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio runtime");
@@ -48,11 +40,6 @@ fn main() {
         spaces_root: env_path("PRELUDE_SPACES")
             .or_else(|| (!settings.space_dir.is_empty()).then(|| expand(&settings.space_dir)))
             .unwrap_or_else(|| PathBuf::from(&home).join("スペース")),
-        download_dir: if settings.download_dir.is_empty() {
-            String::new()
-        } else {
-            expand(&settings.download_dir).to_string_lossy().into_owned()
-        },
         recipes_dir: recipes::dir(),
         embed: true,
         home,

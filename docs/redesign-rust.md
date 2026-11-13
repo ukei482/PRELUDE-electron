@@ -163,9 +163,10 @@ class = "org.kde.konsole"                     # 省略できる。窓を見分�
 
 ### 形
 - **`web` は既定のレシピ**。`.prelude` の `type = "web"` と `url` はそのまま読み、ペインの `path` と同じく **ブックマークの `url` は「開き始める場所」** にする。ページの中で移った先は覚えない。立ち上げ直したときはブックマークの `url` から開き直す
-- ブラウザは設定の `browser`(auto は `PATH` から探す)。ブラウザごとの開き方の違い(Chromium 系は `--app=<URL>` でアドレスバーとタブの無い窓、Firefox 系は `--new-window <URL>` など)は、端末と同じく PRELUDE の 1 か所の表だけが知る。表に無いブラウザは URL だけを渡す
+- 既定のレシピは `prelude browser --mark {mark} {url}`(`{url}` はペインの URL、`{mark}` は窓を見分ける印)。`~/.config/prelude/panes/web.toml` で替えられ、`{mark}` を使わないレシピの窓は、ほかのアプリと同じく起動したプロセスで見分ける
+- ブラウザは設定の `browser`(auto は `PATH` から Chromium 系 → Firefox 系の順に探す)。ブラウザごとの開き方の違い(Chromium 系は `--app=<URL>` でアドレスバーとタブの無い窓、Firefox 系は `--new-window <URL>` など)は、端末と同じく PRELUDE の 1 か所の表(`prelude-format` の `browser.rs`)だけが知る。表に無いブラウザは URL だけを渡す
 - ブラウザのプロファイル・ログイン・拡張機能・パスワード・権限の確認・戻る/進む・新しい窓は **ブラウザに任せる**。PRELUDE 専用のプロファイルも作らない(使用者のふだんのブラウザをそのまま使う)
-- 窓を見分けるのは、ほかのアプリと同じ窓のつなぎの仕事。ブラウザは窓が増えても同じプロセスのままなので、起動したプロセスでは見分けられない。そのときは題名に印を出すだけのページ(`prelude-pane.html#<コアの印>:<ペイン>`)で開き、ページが自分で本当の URL へ移る(拡張機能は要らない)。細かいところは画面のある PC で確かめる
+- 窓を見分けるのは、ほかのアプリと同じ窓のつなぎの仕事。ブラウザは窓が増えても同じプロセスのままなので、起動したプロセスでは見分けられない。そこで題名に印を出すだけのページ(`prelude-pane.html#<コアの印>:<ペイン>|<URL>`)で開き、ページが 1 秒後に自分で本当の URL へ移る(拡張機能は要らない。移るのは http(s) だけ)。窓のつなぎは題名の印で窓をペインにし、プロセスは追わない(ペインを閉じるときは窓だけを閉じ、ブラウザは終わらせない)。印の窓が 30 秒出なければ止まったことにする(sway)。ページは `$XDG_CACHE_HOME/prelude/`、snap 版のブラウザなら `~/snap/<名前>/common/` に置く。細かいところは画面のある PC で確かめる
 - サイドバーなどに出す題名は窓の題名、アイコンはブラウザのアイコン(`.desktop`)。今の URL・ファビコン・消音は持たない
 
 ### ダウンロード
@@ -393,7 +394,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 
 段階 3-b で足したもの: `web.go`、`download` のイベント
 
-Web を切り離して消すもの(2026-11-13。「Web のペイン」): `web.go`・`web.mute`、配置のペインの `muted`。消すので版を 2 にする。版 1 の相手にはこの 2 つの命令に `unknown_command` を返し、`muted` は送らない。`download` のイベントは残す(見張って移したときに出す)
+Web を切り離して消したもの(2026-11-13。「Web のペイン」): `web.go`・`web.mute`、配置のペインの `muted`。消したので版を 2 にした。版 1 の相手にも話し、この 2 つの命令には `unknown_command` を返す。`download` のイベントは残し、中身を `{from, to}`(見張って移したファイル)にした
 
 サイドバーの部品のために足したもの(2026-11-11): `tab.duplicate`・`tab.renumber`・`tab.reopen`、`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`、`folder.list`・`folder.create`・`folder.rename`・`folder.remove`、`web.mute`。状態に `windows`・`closed`・`bookmarks_rev`、`bookmark.list` に `num`・`kind`、配置のペインに `icon`(ファイルのパス)・`muted`。どれも足しただけなので、版は 1 のまま
 
@@ -571,7 +572,7 @@ Omarchy は OS ごと持つことで完成形を作っている。PRELUDE は同
 | 0 | Rust の開発環境、UI の試作(`proto/gpui`・`proto/slint`) | 済(上の「Slint の試作で分かったこと」) |
 | 1 | `.prelude`・`space.toml` の TOML(`prelude-format`)。Electron 版も TOML を読み書きする | 済 |
 | 2 | `prelude-core` の骨組み(状態・ソケットの約束・`prelude` コマンド) | 済 |
-| 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(`web.rs`。のちに切り離す)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`・つなぎ無しの `plain.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済 |
+| 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(のちにブラウザのレシピにした)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`・つなぎ無しの `plain.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済 |
 | 4 | UI: サイドバー・ランチャー・設定 | GPUI で作ったものを Slint で作り直す(下の「これから」) |
 | 5 | ファイラ | 自作のファイラ(`prelude-filer`)を作ったが、外のファイラ(yazi)に任せることにした。コアの側は済。`prelude-filer` は UI を Slint にするときに消す |
 | 6 | 環境とのつなぎ: `prelude watch --bar`(waybar の custom モジュールの形)、作者の環境の NixOS のモジュール(`nix/module.nix`) | 済 |
@@ -581,10 +582,11 @@ Omarchy は OS ごと持つことで完成形を作っている。PRELUDE は同
 ### これから
 済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目、ブックマークのフォルダの監視、ダイアログのポータルを別のプロセスに(`prelude-core --portal`)、CI で Rust のテスト・clippy・整形、アプリの一覧を差し替えられる形に(`AppSource`)
 
+済(2026-11-13): Web を切り離した(「Web のペイン」)。`web.rs`・`webhost.rs`・`extension/`・native messaging・`prelude-core --web-host` を消し、既定のレシピ `web`(`prelude browser`)・設定の `browser`・ブラウザの表・ダウンロードの見張り(`downloads.rs`)を足した。約束の版は 2、設定の `tabs.links` は台帳から外した
+
 - 次にすること: **設定**(「設定」の「作る順番」)。AI 連携(スキル・MCP・AI のペイン)と設定の設計は済(2026-11-11)。そのあと「Omarchy から学んだこと」の、命令の台帳・フック・段 0 の小さな直し・おすすめの組み合わせ・説明書・複数の画面
 - 画面のある PC で確かめること: `prelude choose` の保存・フォルダを選ぶ操作、yazi のプラグインの例、Web のペインの窓の見分け方(印のページ)とダウンロードの見張り
 
-0. **Web を切り離す**(「Web のペイン」): `web.rs`・`webhost.rs`・`extension/`・native messaging・`core.web` のソケット・`prelude-core --web-host` を消し、既定のレシピ `web` と設定の `browser`・ブラウザの表を足す。ダウンロードはフォルダの見張りに替える。`web.go`・`web.mute`・`muted` を消して約束の版を 2 に、設定の `tabs.links` を台帳から外し、MCP・`prelude` コマンド・スキル(`skills/prelude/`)・`nix/module.nix`・`proto/web` のサイドバー(戻る・進む)・CLAUDE.md を合わせる。GPUI の `ui/` は手を入れない
 1. **Slint で layer-shell を使えるかの試作**: `proto/slint` に、Slint の自前のプラットフォーム + smithay-client-toolkit の layer-shell の面を足す。左端に貼り付く・場所を予約する・幅を変える・日本語入力・キーボード(名前の変更のときだけ取る)を確かめる。だめなら普通のウィンドウで出し、コンポジタの決まりで端に固定する
 2. **UI を Slint で作り直す**: サイドバー(部品ごとの決まり)・ランチャー(状態の `windows.level` が 2 以上のときだけ分割で開くを出す)・設定。色・字は PRELUDE の 1 つの見た目(テーマは読まない)。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消す。日本語入力を画面のある PC で確かめる
 3. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す

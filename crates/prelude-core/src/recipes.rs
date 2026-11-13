@@ -9,6 +9,9 @@
 //! - `.prelude` には `type = "console"` のように種類の名前だけを書く。コマンドは自分の設定にしか無いので、人からもらったファイルが勝手なコマンドを実行できない
 //! - 既定で `console`・`cli`・`files`・`settings` と、AI のペイン `agent`(端末の中で `prelude agent`)を持つ。同じ名前のファイルを置くと置き換わる。ペインに `cwd` があれば `{paths.terminal}` の代わりにそれを使う(ファイラの「ここで端末を開く」)
 //! - 端末を開くレシピは `prelude term`(設定の端末を、端末の表のとおりに起動する)を使い、窓の名前を `@terminal` にする
+//! - **Web のペイン**(docs/redesign-rust.md の「Web のペイン」)もレシピ `web`。既定は `prelude browser`(設定のブラウザを、ブラウザの表のとおりに起動する)で、
+//!   窓の名前は `@browser`。`{url}` はペインの URL、`{mark}` は窓を見分ける印(使うと、窓をプロセスでなく題名の印で見分ける)。
+//!   `web.toml` を置けば替えられる(`{mark}` を使わなければ、ほかのアプリと同じく起動したプロセスで見分ける)
 //! - **ファイラ**(docs/redesign-rust.md の「ファイラ」): `files` のペインもただのレシピ。既定は端末の中の yazi で、
 //!   `files.toml` を置けば Dolphin などに替えられる。`{path}` はペインの `path`(無ければ paths の `files`)、`{pane}` はペインの id。
 //!   `field`(やめたフィールド表示)は `files` の別名として読む
@@ -35,9 +38,11 @@ pub struct Recipe {
 
 /// レシピの窓の名前に書くと、設定の端末(terminal)の窓の名前になる(端末の表 `prelude_format::term`)
 pub const TERMINAL_CLASS: &str = "@terminal";
+/// レシピの窓の名前に書くと、設定のブラウザ(browser)の窓の名前になる(ブラウザの表 `prelude_format::browser`)
+pub const BROWSER_CLASS: &str = "@browser";
 
 /// コアが特別に扱う種類(レシピの名前にできない)
-const RESERVED: [&str; 4] = ["web", "app", "home", "split"];
+const RESERVED: [&str; 3] = ["app", "home", "split"];
 
 pub fn dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
@@ -58,6 +63,7 @@ fn builtin() -> Vec<Recipe> {
         r("console", "Console", "prelude term --cwd {paths.terminal}", TERMINAL_CLASS),
         r("settings", "Settings", "prelude-settings", "prelude-settings"),
         r("files", "Files", "prelude term --cwd {path} -- yazi {path}", TERMINAL_CLASS),
+        r("web", "Web", "prelude browser --mark {mark} {url}", BROWSER_CLASS),
     ]
 }
 
@@ -79,6 +85,11 @@ pub fn find<'a>(list: &'a [Recipe], kind: &str) -> Option<&'a Recipe> {
 /// run がペインの `path` を使うか(`{path}` を含むか)。使うペインには、ブックマークを開くときに paths の `files` を入れておく
 pub fn uses_path(r: &Recipe) -> bool {
     r.run.contains("{path}")
+}
+
+/// run が窓を見分ける印 `{mark}` を使うか(Web のペイン)。使うレシピの窓は、プロセスでなく題名の印で見分ける
+pub fn uses_mark(r: &Recipe) -> bool {
+    r.run.contains("{mark}")
 }
 
 /// レシピの一覧(名前順)。読めないファイルは飛ばす
@@ -118,7 +129,7 @@ pub fn command(r: &Recipe, paths: &dyn Fn(&str) -> String) -> String {
 }
 
 /// run の `{名前}` を置き換える(引用符つき)。vars が None を返す名前・形の合わないものはそのまま残す。
-/// 名前: `paths.<項目>`(使うフォルダ)、`path`(ペインのフォルダ)、`pane`(ペインの id)
+/// 名前: `paths.<項目>`(使うフォルダ)、`path`(ペインのフォルダ)、`pane`(ペインの id)、`url`(Web のペインの URL)、`mark`(窓を見分ける印)
 pub fn expand(run: &str, vars: &dyn Fn(&str) -> Option<String>) -> String {
     let mut out = String::new();
     let mut rest = run;
@@ -176,7 +187,7 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join("console.toml"), "run = \"xterm\"\n").unwrap();
         std::fs::write(d.join("notes.toml"), "name = \"メモ\"\nrun = \"kate\"\nclass = \"kate\"\n").unwrap();
-        std::fs::write(d.join("web.toml"), "run = \"evil\"\n").unwrap(); // 決まった種類は置き換えられない
+        std::fs::write(d.join("app.toml"), "run = \"evil\"\n").unwrap(); // 決まった種類は置き換えられない
         std::fs::write(d.join("bad.toml"), "run = = 1").unwrap();
         let list = load(&d);
         let v: Vec<(&str, &str, &str)> = list.iter().map(|r| (r.kind.as_str(), r.name.as_str(), r.run.as_str())).collect();
@@ -187,6 +198,10 @@ mod tests {
         assert_eq!(v[2], ("console", "console", "xterm"));
         assert_eq!(v[4], ("notes", "メモ", "kate"));
         assert_eq!(v[5].0, "settings");
+        // Web のペイン: 既定は prelude browser で、窓を題名の印で見分ける
+        assert_eq!(v[6], ("web", "Web", "prelude browser --mark {mark} {url}"));
+        assert!(uses_mark(&list[6]) && !uses_mark(&list[3]) && list[6].class == BROWSER_CLASS);
+        assert_eq!(v.len(), 7);
         // ファイラは既定(yazi)を持ち、置き換えられる。field は files の別名
         assert_eq!(v[3].0, "files");
         assert!(v[3].2.contains("yazi {path}"));
@@ -195,5 +210,10 @@ mod tests {
         assert!(find(&list, "nope").is_none());
         std::fs::write(d.join("files.toml"), "run = \"dolphin {path}\"\n").unwrap();
         assert!(load(&d).iter().any(|r| r.kind == "files" && r.run == "dolphin {path}"));
+        // Web もただのレシピなので替えられる。{mark} を使わなければ、ほかのアプリと同じくプロセスで見分ける
+        std::fs::write(d.join("web.toml"), "run = \"firefox --new-window {url}\"\nclass = \"firefox\"\n").unwrap();
+        let list = load(&d);
+        let w = find(&list, "web").unwrap();
+        assert!(w.run.starts_with("firefox") && !uses_mark(w));
     }
 }

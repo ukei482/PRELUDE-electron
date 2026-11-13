@@ -8,6 +8,7 @@
 //! - ホームの下のパスは `~/…` で書き、読むときに今の PC のホームへ戻す
 use std::fmt;
 
+pub mod browser;
 pub mod config;
 pub mod settings;
 pub mod term;

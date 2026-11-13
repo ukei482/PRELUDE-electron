@@ -89,30 +89,6 @@ fn defs() -> Vec<Def> {
         ("pane_close", "Close a pane (closes the tab if it is the last pane)", json!({ "pane": pane() }), vec!["pane"], false, true),
         ("pane_focus", "Make a pane the current pane", json!({ "pane": pane() }), vec!["pane"], false, false),
         (
-            "web_open_url",
-            "Open a URL in a web pane",
-            json!({ "pane": pane(), "url": prop("string", "URL") }),
-            vec!["pane", "url"],
-            false,
-            false,
-        ),
-        (
-            "web_go",
-            "Go back, forward or reload in a web pane",
-            json!({ "pane": pane(), "action": { "type": "string", "enum": ["back", "forward", "reload"] } }),
-            vec!["pane", "action"],
-            false,
-            false,
-        ),
-        (
-            "web_mute",
-            "Mute or unmute a web pane",
-            json!({ "pane": pane(), "on": prop("boolean", "true to mute") }),
-            vec!["pane", "on"],
-            false,
-            false,
-        ),
-        (
             "space_switch",
             "Switch to a space (its tabs replace the current ones; the current ones are kept for later)",
             json!({ "name": prop("string", "Space name") }),
@@ -272,9 +248,6 @@ pub fn call_tool(c: &mut impl Call, name: &str, a: &Value) -> Result<Value, Stri
         "pane_split" => c.call("pane.split", json!({ "pane": n(a, "pane")?, "dir": s(a, "dir")?, "new": a["new"] })),
         "pane_close" => c.call("pane.close", json!({ "pane": n(a, "pane")? })),
         "pane_focus" => c.call("pane.focus", json!({ "pane": n(a, "pane")? })),
-        "web_open_url" => c.call("pane.update", json!({ "pane": n(a, "pane")?, "fields": { "url": s(a, "url")? } })),
-        "web_go" => c.call("web.go", json!({ "pane": n(a, "pane")?, "action": s(a, "action")? })),
-        "web_mute" => c.call("web.mute", json!({ "pane": n(a, "pane")?, "on": a["on"].as_bool().ok_or("`on` (boolean) is required")? })),
         "space_switch" => c.call("space.switch", json!({ "name": s(a, "name")? })),
         "space_create" => c.call("space.create", json!({ "name": s(a, "name")? })),
         "bookmark_save" => {
@@ -494,8 +467,6 @@ mod tests {
         assert_eq!(f.calls.last().unwrap(), &("bookmark.save".to_string(), json!({ "tab": { "num": 3 }, "title": "新", "folder": "" })));
         call(&mut f, "tab_close", json!({}));
         assert_eq!(f.calls.last().unwrap(), &("tab.close".to_string(), json!({})));
-        call(&mut f, "web_open_url", json!({ "pane": 7, "url": "https://x/" }));
-        assert_eq!(f.calls.last().unwrap(), &("pane.update".to_string(), json!({ "pane": 7, "fields": { "url": "https://x/" } })));
         // ブックマークを開く: 外したコマンドは実行せず、返事で知らせる(allow は渡さない)
         let r = call(&mut f, "open", json!({ "target": "本文" }));
         assert_eq!(f.calls.last().unwrap(), &("bookmark.open".to_string(), json!({ "path": "/s/Main/本文.prelude" })));

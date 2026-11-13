@@ -17,7 +17,6 @@ fn dir(name: &str) -> PathBuf {
 
 fn opts(d: &std::path::Path) -> Options {
     Options {
-        download_dir: String::new(),
         socket: d.join("s.sock"),
         state_file: d.join("state/core.json"),
         home: "/home/u".into(),

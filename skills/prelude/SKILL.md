@@ -16,8 +16,8 @@ PRELUDE は「何をしているか」を持つプログラム。デスクトッ
 
 - **スペース** = 1 つのプロセス(例: 論文執筆)。`~/スペース/<名前>/` のフォルダ 1 つ
 - **ブックマーク** = `.prelude` のファイル 1 つ(TOML)。開くもの(`[layout]`)と、使うフォルダ(`[paths]`)を持つ。スペースのフォルダの直下か、1 段下のフォルダに置く
-- **paths** = 作業に使うフォルダ。端末の作業フォルダ(`terminal`)、ファイラの最初のフォルダ(`files`)、アプリの「開く」「保存」のダイアログの最初のフォルダ(`open`・`save`)、ダウンロードの保存先(`download`)。今のタブのブックマーク → スペース(`space.toml`)→ ホーム の順に決まる
-- **タブ** = 開いている作業。**ペイン** = 窓 1 つ(Web・アプリ・端末・ファイラなど)
+- **paths** = 作業に使うフォルダ。端末の作業フォルダ(`terminal`)、ファイラの最初のフォルダ(`files`)、アプリの「開く」「保存」のダイアログの最初のフォルダ(`open`・`save`)、ダウンロードの保存先(`download`。ブラウザが保存先のフォルダ(設定の `download_dir`)に置いたファイルを、PRELUDE がここへ移す)。今のタブのブックマーク → スペース(`space.toml`)→ ホーム の順に決まる
+- **タブ** = 開いている作業。**ペイン** = 窓 1 つ(Web・アプリ・端末・ファイラなど)。Web のペインは設定のブラウザ(`browser`)の窓で、PRELUDE は URL を渡して開くだけ(中で移った先・戻る/進む・消音はブラウザの仕事。ブックマークの `url` は開き始める場所)
 - 常駐の `prelude-core` が状態を持ち、`prelude` コマンドは Unix ソケットでそれに頼む
 
 形の詳しいことは [`format.md`](format.md)。
@@ -73,11 +73,9 @@ prelude space 論文執筆
 # タブ・ペイン
 prelude new console                     # 端末を、今のタブの paths の terminal で開く
 prelude new files path=~/研究            # ファイラ(既定は yazi)
-prelude new web url=https://example.com/
+prelude new web url=https://example.com/   # 別の URL は新しいペインで開く
 prelude tab dup                         # 今のタブを複製
 prelude reopen                          # 閉じたタブを開き直す
-prelude url <pane> https://…            # Web のペインで URL を開く
-prelude mute <pane>                     # Web のペインの音を消す
 ```
 
 ブックマークの保存先・作業フォルダを変える: その `.prelude` の `[paths]` を書き換える(書き方は [`format.md`](format.md))。スペース全体の既定なら `space.toml` の `[paths]`。

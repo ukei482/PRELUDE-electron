@@ -5,9 +5,9 @@
 //! - ソケットは自分だけが使えるようにする(フォルダ 0700・ソケット 0600)
 use crate::compositor::{self, Compositor, Note};
 use crate::state::{Core, Saved};
-use crate::{recipes, web};
+use crate::{downloads, recipes};
 use prelude_format::settings::{self, Config};
-use prelude_proto::{Command, ErrorCode, Event, Hello, PaneSpec, Request, Response, TabRef, WebAction, MAX_LINE, PROTOCOL, SUPPORTED};
+use prelude_proto::{Command, ErrorCode, Event, Hello, Request, Response, TabRef, MAX_LINE, PROTOCOL, SUPPORTED};
 use serde_json::{json, Value};
 use std::future::Future;
 use std::io;
@@ -30,8 +30,6 @@ pub struct Options {
     pub home: String,
     /// スペースのフォルダ(この下のフォルダ 1 つがスペース 1 つ)
     pub spaces_root: PathBuf,
-    /// ダウンロードの保存先の既定(paths の download が無いとき)。空なら Chromium の既定
-    pub download_dir: String,
     /// ペインのレシピのフォルダ
     pub recipes_dir: PathBuf,
     /// アプリの窓を取り込む(KDE のとき)。テストでは false
@@ -57,18 +55,13 @@ struct Shared {
     events: broadcast::Sender<Arc<str>>,
     save: Notify,
     compositor: Option<Box<dyn Compositor>>,
-    web: Option<web::Handle>,
 }
 
 impl Shared {
-    /// 取り込みと Web のペインに、今の状態を送る
+    /// 窓のつなぎに、今の状態を送る
     fn sync_embed(&self, core: &Core) {
         if let Some(c) = &self.compositor {
             c.arrange(core.scene());
-        }
-        if let Some(w) = &self.web {
-            let (wants, dl) = core.web_wants();
-            w.sync(wants, dl);
         }
     }
 
@@ -154,7 +147,6 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     let mut core = Core::new(opt.home.clone(), opt.spaces_root.clone(), load_saved(&opt.state_file));
     core.set_recipes(recipes::load(&opt.recipes_dir));
     core.set_tag(&tag);
-    core.set_download_dir(opt.download_dir.clone());
     // 設定(settings.toml)。すぐ効く項目を当てはめる(起動し直しが要る項目は main.rs が使う)
     let config = Config::load();
     for w in &config.warnings {
@@ -173,9 +165,8 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     if compositor.as_ref().is_some_and(|c| c.name() == "sway") {
         core.show_cli();
     }
-    // Web のペインは、アプリを起動するときだけ(つなぎ無しなら Chromium の窓は環境が置く)
-    let web = if compositor.is_some() { web::start(&tag, opt.socket.with_extension("web"), notes_tx) } else { None };
-    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), compositor, web });
+    drop(notes_tx);
+    let shared = Arc::new(Shared { core: Mutex::new(core), events, save: Notify::new(), compositor });
     // 前回のタブのアプリを起動し直す
     shared.sync_embed(&shared.core.lock().unwrap());
 
@@ -196,7 +187,7 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                         }
                         if core.note_exited(pane, had_window) {
                             shared.changed(core, true); // 窓を閉じたペインは、ペインごと無くなる
-                            shared.sync_embed(core); // 止まった Web のペインを閉じる
+                            shared.sync_embed(core);
                         }
                     }
                     Note::Title { pane, title } => {
@@ -204,11 +195,7 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                             shared.changed(core, false);
                         }
                     }
-                    Note::Claimed { pane } => {
-                        if let Some(w) = &shared.web {
-                            w.claimed(pane);
-                        }
-                    }
+                    Note::Claimed { .. } => {}
                     Note::Focus { tab, pane } => {
                         // コンポジタで選んだタブ・ペインを、コアの今のタブ・ペインにする
                         let mut changed = core.handle(Command::TabActivate { tab: TabRef::Id { id: tab } }).changed;
@@ -231,28 +218,6 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                             shared.changed(core, true);
                             shared.sync_embed(core);
                         }
-                    }
-                    Note::Web { pane, url, title } => {
-                        let (changed, save) = core.note_web(pane, url, title);
-                        if changed {
-                            shared.changed(core, save);
-                        }
-                    }
-                    Note::OpenTab { url, from: _ } => {
-                        // 新しいタブで開くリンク(設定「リンクの開き方」は UI ができてから)
-                        let pane = PaneSpec { kind: "web".into(), fields: [("url".to_string(), json!(url))].into_iter().collect() };
-                        if core.handle(Command::TabOpen { pane, index: None }).changed {
-                            shared.changed(core, true);
-                            shared.sync_embed(core);
-                        }
-                    }
-                    Note::Icon { pane, path } => {
-                        if core.note_icon(pane, path) {
-                            shared.changed(core, false);
-                        }
-                    }
-                    Note::Download(data) => {
-                        let _ = shared.events.send(line(&Event { event: "download".into(), data }).into());
                     }
                 }
             }
@@ -297,6 +262,30 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
         })
     };
 
+    // ダウンロードの見張り(「Web のペイン」の「ダウンロード」)。アプリを起動するときだけ(--no-embed では動かさない)。
+    // 見るフォルダは設定の download_dir で、変わったら見張り直す
+    let downloader = opt.embed.then(|| {
+        let shared = shared.clone();
+        let home = opt.home.clone();
+        tokio::spawn(async move {
+            let mut w = downloads::Watch::new(downloads::dir_of(Config::load().str("download_dir"), &home));
+            let mut rev = 0;
+            loop {
+                tokio::time::sleep(downloads::POLL).await;
+                let core_rev = shared.core.lock().unwrap().config_rev();
+                if core_rev != rev {
+                    rev = core_rev;
+                    w.set_dir(downloads::dir_of(Config::load().str("download_dir"), &home));
+                }
+                let moved = w.tick(&|| shared.core.lock().unwrap().download_target());
+                for (from, to) in moved {
+                    let data = json!({ "from": from, "to": to });
+                    let _ = shared.events.send(line(&Event { event: "download".into(), data }).into());
+                }
+            }
+        })
+    });
+
     // 書き出し
     let saver = {
         let shared = shared.clone();
@@ -327,8 +316,8 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
 
     saver.abort();
     noter.abort();
-    if let Some(w) = &shared.web {
-        w.shutdown().await; // Chromium を閉じる
+    if let Some(d) = downloader {
+        d.abort();
     }
     if let Some(c) = &shared.compositor {
         c.shutdown().await; // 起動したアプリを閉じる
@@ -403,23 +392,9 @@ async fn serve(stream: UnixStream, shared: Arc<Shared>) {
             }
             Ok(Request { id, .. }) if !greeted => Response::err(id, ErrorCode::Protocol, format!("Send hello first (protocol {PROTOCOL})")),
             Ok(Request { id, command }) => {
-                let go = match &command {
-                    Command::WebGo { pane, action } => Some((*pane, *action)),
-                    _ => None,
-                };
                 let (o, ev) = {
                     let mut core = shared.core.lock().unwrap();
                     let o = core.handle(command);
-                    if let (Some((pane, a)), Some(w), true) = (go, &shared.web, o.reply.is_ok()) {
-                        w.go(
-                            pane,
-                            match a {
-                                WebAction::Back => web::Go::Back,
-                                WebAction::Forward => web::Go::Forward,
-                                WebAction::Reload => web::Go::Reload,
-                            },
-                        );
-                    }
                     shared.sync_embed(&core);
                     let ev = o.changed.then(|| Shared::state_line(&core));
                     (o, ev)
