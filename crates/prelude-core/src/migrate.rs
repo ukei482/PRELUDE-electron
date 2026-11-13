@@ -1,4 +1,4 @@
-//! Electron 版からの引き継ぎ(段階 8。判断 8)。最初の 1 回だけ動く。
+//! Electron 版からの引き継ぎ(docs/redesign-rust.md の移行の「引き継ぎ」。段階 8)。最初の 1 回だけ動く。
 //!
 //! - `config.json` の色・大きさを `theme.toml` に、動きを `settings.toml` に書き出す。既にあるファイルは上書きしない
 //! - `~/ブックマーク/*.prelude` を今の形で `<スペース>/Main` にコピーする。同じ名前があれば触らない
@@ -115,7 +115,8 @@ pub fn run(p: &Places) -> std::io::Result<Option<String>> {
         return Err(std::io::Error::other(format!("{} is not JSON", p.electron.display())));
     };
     std::fs::create_dir_all(&p.config_dir)?;
-    let mut log = String::from("# Electron 版からの引き継ぎ\n\n元のファイルは変えていません。Electron 版にはいつでも戻れます。\n\n## 設定\n");
+    let mut log =
+        String::from("# Electron 版からの引き継ぎ\n\n元のファイルは変えていません。Electron 版にはいつでも戻れます。\n\n## 設定\n");
     write_new(&p.config_dir.join("theme.toml"), &theme_of(&cfg).to_toml(), &mut log)?;
     write_new(&p.config_dir.join("settings.toml"), &settings_of(&cfg).to_toml(), &mut log)?;
 
@@ -211,7 +212,11 @@ mod tests {
         std::fs::write(&p.electron, config().to_string()).unwrap();
         let before = std::fs::read(&p.electron).unwrap();
         std::fs::create_dir_all(&p.bookmarks).unwrap();
-        std::fs::write(p.bookmarks.join("old.prelude"), r#"{"prelude":"bookmark","version":1,"title":"古い","root":{"k":"leaf","type":"field","path":"~"}}"#).unwrap();
+        std::fs::write(
+            p.bookmarks.join("old.prelude"),
+            r#"{"prelude":"bookmark","version":1,"title":"古い","root":{"k":"leaf","type":"field","path":"~"}}"#,
+        )
+        .unwrap();
         std::fs::write(p.bookmarks.join("bad.prelude"), "壊れている").unwrap();
         let log = run(&p).unwrap().unwrap();
         assert!(log.contains("chromiumSites"), "{log}");
@@ -236,7 +241,11 @@ mod tests {
         std::fs::write(p.config_dir.join("theme.toml"), "bg = \"#000000\"\n").unwrap();
         std::fs::create_dir_all(&p.bookmarks).unwrap();
         std::fs::create_dir_all(&p.main_space).unwrap();
-        std::fs::write(p.bookmarks.join("a.prelude"), r#"{"prelude":"bookmark","version":1,"title":"古","root":{"k":"leaf","type":"field","path":"~"}}"#).unwrap();
+        std::fs::write(
+            p.bookmarks.join("a.prelude"),
+            r#"{"prelude":"bookmark","version":1,"title":"古","root":{"k":"leaf","type":"field","path":"~"}}"#,
+        )
+        .unwrap();
         std::fs::write(p.main_space.join("a.prelude"), "自分の").unwrap();
         run(&p).unwrap().unwrap();
         assert_eq!(std::fs::read_to_string(p.config_dir.join("theme.toml")).unwrap(), "bg = \"#000000\"\n");

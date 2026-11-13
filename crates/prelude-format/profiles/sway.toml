@@ -1,0 +1,3 @@
+# おすすめの組み合わせ: sway・SwayFX(docs/redesign-rust.md の「設定」)。PRELUDE が窓を並べて追う(段 3)
+[windows]
+level = "follow"

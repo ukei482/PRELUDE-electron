@@ -6,6 +6,44 @@
 ## [未リリース]
 
 ### 追加
+- AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする
+- MCP のサーバー `prelude mcp`(標準入出力)。PRELUDE の命令を AI のツールにする(状態・一覧・開く・タブ・ペイン・Web・スペース・ブックマーク・フォルダ。31 個)。消す・閉じるツールには印を付け、人からもらったブックマークの起動コマンドは AI からは実行させない。例: `claude mcp add prelude -- prelude mcp`。`prelude` のコマンドでも、ブックマークを番号(b3)で指せる
+- AI のペイン: 既定のレシピ `agent`(「AI」)。端末を今のブックマークの作業フォルダで開き、既定の AI を起動する。`prelude agent [頼みごと]` は今のフォルダで起動する(AI は `PRELUDE_AGENT`、無ければ claude・codex・gemini・opencode の順に探す)
+- `prelude term [--cwd <フォルダ>] [-- <コマンド>]`: 設定の端末(`terminal`。auto は foot・kitty・ghostty・alacritty・wezterm・konsole の順)を、端末ごとの作業フォルダとコマンドの渡し方の表のとおりに開く。新しいプロセスで開く引数をいつも付ける(選ぶ画面が待てるように、窓を起動したプロセスで見分けられるように)。既定のレシピ(ファイラ・コンソール・CLI・AI)とダイアログの選ぶ画面はこれを使い、konsole の決め打ちをやめた。レシピの窓の名前 `@terminal` は設定の端末の窓の名前になる
+- 設定の台帳と `prelude config`(`docs/redesign-rust.md` の「設定」の作る順番の 1)
+  - 項目は台帳(`prelude-format` の `settings.rs`)の 1 か所に置き、型・既定・説明・効き方を持つ。層は 既定 → おすすめの組み合わせ(sway・kde・omarchy。`profile = "auto"` なら環境から)→ `settings.toml`
+  - `prelude config list [--json]`・`get`・`set`(型を確かめ、コメントと知らない項目を残して書く)・`unset`・`defaults`・`path`。MCP にも `config_get`・`config_set`
+  - コアは settings.toml を見張り、すぐ効く項目(覚えておく閉じたタブの数 `tabs.closed_max`、`download_dir`)を当てはめて状態の `config_rev` を上げる。起動し直しが要る項目はログで知らせる。書きかけで読めない間は前の設定を使い続ける
+  - `prelude agent` は設定の `agent` も使う(`PRELUDE_AGENT` → 設定 → PATH の順)
+  - まだ効かない項目(窓のつなぎ・サイドバー・端末など)は `prelude config list` で「not used by PRELUDE yet」と出る
+  - 直した不具合: ダウンロードの保存先が、paths にも設定にも無いときにホームの直下になっていた(paths がホームまで必ず返すため、設定の `download_dir` も使われていなかった)。今は paths → 設定 → Chromium の既定の順
+  - `prelude` コマンドの出力を `head` などで途中で切っても、落ちずに静かに終わる
+- HTML/CSS の UI の試作(`proto/web`)。Slint と比べるため。部品の決まり(`parts.js`。決まりに無い部品・props・頼みごとを使うと止まる)、コアとのつなぎ(`glue.js`)、サイドバー(テーマ: 白・黒・クリア・クリア黒。右クリックのメニュー・ドラッグでの並べ替え・細い列)、偽のコア、本物のコアのソケットへの橋(`bridge.js`)。`node proto/web/build.js` で見る用の 1 枚の HTML を作る。色は 背景・文字・強調 の 3 つと透け具合だけで作る(ほかの色はこの 3 つを薄めたもの)。サイドバーは上から 開閉・スペース・タブ・ブックマーク で、今のペインの詳しい表示は出さない
+  - テーマ「ガラス」(iOS の Liquid Glass に倣う)。文字は白。ガラスの材質を見せるのはサイドバーの面と今のタブ(光を受けた雫のカプセル)の 2 か所だけで、ほかは面を持たない白い文字。明るい壁紙でも読めるよう膜の下を少し暗くする。字は Noto Sans CJK JP をかなを詰めて(palt)組む
+  - 細い列を整えた: アイコンを列の真ん中の 1 本に揃え、開いている印(白い点)は列の左の縁に出す。見出しと操作ボタンは隠して短い線で区切り、スペースは名前の頭の 1 字だけ
+  - 上の行(広げたとき)に、今のペインの 戻る・進む(Web のペイン。`web.go`)と 閉じる(`pane.close`)
+  - 下に分割のボタン 1 つ(左右・上下をまとめた)。動きは設定で選ぶ: 自動(ペインが横長なら右、縦長なら下。右クリックで向きを選ぶ)・向きを選ぶ(押すと十字が出て、新しいペインを置く側をクリックか矢印キーで選ぶ)。部品 PaneBar の決まりに `canGoBack`・`splitMode`・`autoSplit` と `back`・`forward` を足し、`split` の向きに right・left・down・up を足した(Slint の `parts.slint` も同じ)
+  - 見た目の台: この PC の壁紙(swaybg の画像)を選べる。橋から開いたときの既定
+- 設定の `[windows]`(作る順番の 3)。コアの起動のときに当てはめる
+  - 窓のつなぎの段を 0 起動だけ・1 作業領域だけ・2 並べる・3 読む・4 追う に振り直した(状態の `windows.level` の数も変わる。分割で開けるのは 2 から)
+  - `windows.backend`(auto・sway・kwin・hyprland・none)でつなぎを選び、`windows.level` で任せる段を止める。sway のつなぎは `workspace` なら窓をタブの作業領域へ移すだけで、並べ方・大きさは環境に任せる。`read` から使用者の並び・選んだ窓を読み、`follow` で PRELUDE を通さずに開いた窓を引き取る(`windows.adopt = "none"` なら引き取らない)
+  - `windows.floating`(いつも浮かせる)・`windows.ignore`(触らない)の窓は、ペインに取り込まない
+  - `windows.gaps_inner`(窓と窓の間)・`windows.gaps_outer`(窓と画面の端の間)。px か auto(環境のまま)。sway のつなぎは sway の `gaps` にする。サイドバーも同じ決まりで並べる(端から outer、隣の窓とは inner。上下の端・角丸を窓と揃える)。設定の型に「auto か整数」を足した
+  - `windows.workspace_prefix`: タブの作業領域の名前の番号の後ろに付ける(`3:work`。番号は先頭のままなので `$mod+数字` が効く)
+- Rust 版のコアを、設計の見直し(ファイラを外す・OS の役割を持たない)に合わせた。ふだんの PRELUDE(Electron 版)は変わらない
+  - 既定のファイラは端末の中の yazi(`files` のレシピ)。コアは `files`・`field` を名指ししない(`field` は `files` の別名として読む)。ペイン・タブの名前は、種類によらず `path` の最後の名前
+  - 起動したペインに `PRELUDE_PANE` を渡す。`prelude pane path [--pane <id>] <folder>` でペインの今の場所をコアに伝えると、タブを開き直したときにそこで開く(yazi から呼ぶ例は `docs/rice.md`)
+  - アプリのダイアログの最初のフォルダは「保存し直すファイルのフォルダ → 今のブックマークの paths → アプリが頼んだフォルダ → ホーム」の順。選ぶ画面の既定は `prelude choose`(端末の中の yazi。保存は保存する名前の仮のファイルを置いて選ぶ)
+  - 対応するコンポジタが無いデスクトップでも、ペインのアプリを起動する(つなぎ無し。窓の置き場所はデスクトップに任せる)。今のつなぎの名前と段は状態の `windows` に出す
+  - sway のつなぎは、PRELUDE のサイドバー・ランチャーの窓をタブのペインに引き取らない
+  - タブの命令: `tab.duplicate`(すぐ下に複製)・`tab.renumber`(番号を変える。使われていれば入れ替える)・`tab.reopen`(閉じたタブを開き直す。スペースごとに 20 個まで覚える)。状態に `closed`(開き直せる数)。コマンドは `prelude tab dup [n]`・`prelude tab renumber <n> <new>`・`prelude reopen`
+  - ブックマークを書く命令: `bookmark.save`(タブを保存。同じ名前は「(2)」)・`bookmark.overwrite`(今の配置で上書き。題名・paths・知らない項目は残す)・`bookmark.rename`・`bookmark.move`・`bookmark.trash`(freedesktop のゴミ箱へ)、フォルダの `folder.create`・`folder.rename`・`folder.remove`(中身はスペースの直下へ)。書けるのは今のスペースの中だけ。開いているタブ・閉じたタブ・ランチャーの点数が指すパスも合わせる。書いたら状態の `bookmarks_rev` が増える。コマンドは `prelude bookmark save|overwrite|rename|move|trash`・`prelude folder new|rename|remove`
+  - ブックマークの並びと番号: `bookmark.reorder`(並べ替えた順は `space.toml` の `order`。名前の変更・移動にも付いていく)。`bookmark.list` に `num`(ランチャーの b3 と同じ番号)と `kind`(1 つのペインならその種類、分割なら layout)。空のフォルダも出す `folder.list`。コマンドは `prelude bookmark reorder`・`prelude folders`・`prelude open b3`。`prelude bookmarks` は番号も出す
+  - 消音とアイコン: `web.mute`(書き出さない。Chromium を起動し直してもかけ直す)。配置のペインに `icon`(アプリは `.desktop` のアイコン、Web は拡張機能が送るファビコンを `~/.cache/prelude/favicons` に保存したもの)と `muted`。コマンドは `prelude mute <pane> [on|off]`
+  - NixOS のモジュール(`services.prelude`)が yazi も入れる(既定のファイラとダイアログの選ぶ画面に使う)
+  - アプリのダイアログのポータルを別のプロセスにした(`prelude-core --portal`。コアが子として起動し、終わるときに止める)。最初のフォルダはソケットの `dialog.folder` で聞き、コアが動いていなければアプリが頼んだフォルダを使う。ポータルが落ちてもコアは巻き込まれない
+  - インストール済みのアプリの出どころを `AppSource` のトレイトにした(今の実装は XDG の `.desktop`。ほかの OS では別の実装に差し替える)。アプリの一覧を写さずに分け合う
+  - ブックマークのフォルダの監視: ファイラなどで外から `.prelude` を足す・消す・書き換えると、2 秒以内に状態の知らせ(`bookmarks_rev`)を配る。中身の印を比べる形で、OS の監視の仕組みには頼らない
 - Rust 版(sway)の使いやすさ。ふだんの PRELUDE(Electron 版)には入らない
   - この PC の rice(`nix/rice.nix`): 通知を mako から swaync に替えた。バーの Wi-Fi・電池・音量・時計を押すと、通知(× で消す・全部消す・通知を止める)とクイック設定(音量・明るさ・Wi-Fi と Bluetooth の入/切・スクリーンショット・ロック・スリープ・ログアウト・再起動・シャットダウン)が開く。Wi-Fi の一覧はトレイの nm-applet
   - バーの左に、今のペインを左右・上下に分割するボタン(出すものをランチャーで選ぶ)と、今のペインを閉じるボタンを足した
@@ -36,13 +74,13 @@
   - 最初のフォルダは今のタブの paths の `open` / `save`。保存し直しで今のファイルを渡されたときは、そのフォルダ
   - 選ぶ画面は `~/.config/prelude/chooser.toml` で替えられる。既定は `prelude-filer --choose`(開く・複数を開く・フォルダ・保存)
 
-- Rust 版のコアの sway・SwayFX の裏側(移行の段階 3 の残り。判断 10〜12)。sway の中でコアを動かすと(`SWAYSOCK` で決まる。`PRELUDE_COMPOSITOR=sway` でも)、タブ 1 つが作業領域 1 つ、ペイン 1 つが窓 1 つになり、タブの分割の形と比率のとおりに sway が窓を並べる。ふだんの PRELUDE(Electron 版)は変わらない
+- Rust 版のコアの sway・SwayFX の裏側(移行の段階 3 の残り。「窓のつなぎ」)。sway の中でコアを動かすと(`SWAYSOCK` で決まる。`PRELUDE_COMPOSITOR=sway` でも)、タブ 1 つが作業領域 1 つ、ペイン 1 つが窓 1 つになり、タブの分割の形と比率のとおりに sway が窓を並べる。ふだんの PRELUDE(Electron 版)は変わらない
   - sway で作業領域・窓を選ぶと、コアの今のタブ・ペインもそれになる。コアでタブを切り替えると sway の作業領域が切り替わる
   - 窓を閉じるとペインは止まったものになり、コアを止めると起動したアプリを閉じる。コアが落ちたときは、次の起動で窓の印だけを外す(窓は閉じない)
   - 浮いた窓(ダイアログなど)は取り込まず、sway が浮かせたままにする
   - NixOS の設定で SwayFX を入れ、SDDM で Plasma と選べるようにした(ランチャーの代わりの fuzzel も)
   - sway で動かした配置がコアに戻る: 窓の移動・入れ替え・大きさの変更がタブの配置になり、起動し直しても戻る。別の作業領域へ移せばペインも移り、番号の新しい作業領域へ移せば新しいタブになる
-  - PRELUDE を通さずに開いた普通の窓(判断 12)は、sway が置いた場所のまま今のタブのペインになる。インストール済みのアプリは開き直せる。そうでない窓はタブにはいるが残らず、閉じるとペインごと消える。コアを止めても閉じない
+  - PRELUDE を通さずに開いた普通の窓は、sway が置いた場所のまま今のタブのペインになる。インストール済みのアプリは開き直せる。そうでない窓はタブにはいるが残らず、閉じるとペインごと消える。コアを止めても閉じない
   - アプリのダイアログの選ぶ画面は、どのプログラムでも浮かせる(環境変数 `PRELUDE_DIALOG=1` が付く)
 - rice とつなぐ出口と設定の断片(移行の段階 6。`docs/rice.md`)。ふだんの PRELUDE(Electron 版)は変わらない
   - `prelude watch --bar`: 状態が変わるたびに、スペースと今のタブの題名を 1 行の JSON で出す(waybar の custom モジュールでそのまま使える)。コアが止まっていても終わらず、つなぎ直す
@@ -58,7 +96,7 @@
   - 最初の起動で Electron 版の設定を引き継ぐ: `~/.config/prelude/theme.toml`(色・文字の大きさ・サイドバーの幅)、`settings.toml`(検索・隠しファイル・スペースのフォルダ・ダウンロード)を作り、`~/ブックマーク/*.prelude` を `Main` にコピーする。既にあるファイルは上書きせず、元のファイルも変えない。無くなる設定は `migrated.txt` に出す
   - サイドバー・ランチャー・ファイラが `theme.toml` と `settings.toml` を読む
 
-- ランチャーを入口にした(判断 10。rice が無くても使える)
+- ランチャーを入口にした(rice が無くても使える)
   - ランチャーの COMMANDS: 設定・PRELUDE CLI・サイドバーの開閉・分割(右・下)・ペインを閉じる・タブを閉じる
   - 分割では、ランチャーで開くものを選ぶ(`prelude-launcher --split row|col`)。アプリも分割で開ける(`item.open` の `split`)
   - `prelude sidebar [show|hide|toggle|restart]`、対話の `prelude shell`(PRELUDE CLI。ペインの種類 `cli`)
@@ -66,10 +104,11 @@
   - sway では起動のときに PRELUDE CLI のタブから始める(Electron 版のホームの代わり)
 - バーがサイドバーの外側に来るように、サイドバーをバーより後に起動する
 
-- Web のペインの URL(判断 12): ランチャーの `Change URL`(今の URL が入ったランチャーを開き、Enter で同じペインに読み込む)、サイドバーの今のタブの下に URL を出す
+- Web のペインの URL: ランチャーの `Change URL`(今の URL が入ったランチャーを開き、Enter で同じペインに読み込む)、サイドバーの今のタブの下に URL を出す
 - アプリのダイアログの残り(移行の段階 7): ファイルの種類の絞り込み(`filters`。MIME の型だけの種類は出さない)、アプリが頼んだ最初のフォルダ(`current_folder`)、`SaveFiles`
 
 ### 修正
+- sway で分割したタブのペインを閉じると、今のペインがコアの選んだものと違うものになることがあった。窓を先に閉じたため、sway が自分の決まりで別の窓を選んで知らせていた。先に次のペインを選んでから窓を閉じる
 - 入り直したときに前の Chromium が残っていると、コアが Chromium の終了と取り違えて Web のペインを忘れ、開き直しを繰り返していた
 - sway でランチャーから Zed などの GPUI のアプリを開くと落ちることがあった。ランチャーが閉じて席のキーボードが無くなり、keymap が届いていなかった。アプリを起動するときに席のキーボードを決め直す
 - Web のペインで Google にログインできなかった。CDP をやめて、小さな拡張機能(native messaging)でつなぐ。`navigator.webdriver` が `false` になる。URL・題名の知らせ、`Change URL`、戻る・進む、新しいタブの捕捉、ダウンロードはそのまま(ダウンロードは終わってから paths の download へ移す)
@@ -85,9 +124,17 @@
 - sway を抜けてもコアが動き続け、`SWAYSOCK` が Plasma のアプリにも渡っていた
 
 ### 変更
+- CI(GitHub Actions)で Rust 版のテストも回す: `crates/` の整形の確認(`cargo fmt --check`)・clippy(警告は失敗)・`cargo test`、Slint の試作(`proto/slint`)の整形の確認と `cargo test`。合わせて、元からあった整形のずれを `cargo fmt` でそろえた
 - CI で `npm ci --ignore-scripts` を実行するようにした(0.12.0 の前から `smol-toml` が無くて失敗していた)
 - `/bin/bash` の決め打ちをやめて `PATH` から探すようにした(NixOS には無い。ホームの端末・音量の監視など)
-- フィールド表示のカードは、ファイラの本体が持つフォルダの木の見せ方にする設計にした(`docs/redesign-rust.md` の判断 13。実装は後回し)
+- Rust 版の設計を見直し、`docs/redesign-rust.md` を判断の番号ではなく話題ごとの節(全体の形・スペースとブックマーク・ペイン・Web のペイン・窓のつなぎ・アプリのダイアログ・UI・ソケットの約束・環境に任せるもの・移行)に書き直した。コードのコメントも節の名前で指すようにした
+  - ファイラを PRELUDE から外す。既定のファイラとアプリのダイアログの選ぶ画面は yazi にし、フィールド表示はやめる。ブックマークのペインの `path` は「開き始める場所」になる
+  - PRELUDE は OS の役割を持たない。本体はコア・コマンド・ランチャーだけで、窓・アプリのダイアログ・サイドバーは環境ごとの「つなぎ」(sway・KWin などに合わせる。無くても使える)、デスクトップの外回り・OS の設定・セッション・更新は OS とデスクトップに任せる。NixOS は前提ではなくなり(作者の PC の記録は `docs/rice.md`)、KWin の裏側は消さずに残す
+  - サイドバーは画面の左端に layer-shell で貼り付く(無い環境では普通のウィンドウ)。部品(枠・スペース・ブックマーク・タブ・新しいタブ・分割ボタン・ブックマークボタン)の組み合わせにし、部品ごとに決まり(Slint の `global`)を持つ。ペインではなく、窓のつなぎはサイドバーの窓をタブに引き取らない
+- Slint の試作(`proto/slint`)。PRELUDE の UI を GPUI の代わりに Slint で作れるかを確かめる。サイドバーの決まり(`ui/prelude.slint` の `global Prelude`)を破るとビルドで止まる。使用者が置いた `.slint` は読み込むときに決まりを確かめる(`--load`)。ふだんの PRELUDE には入らない
+  - 設定の設計: 項目の台帳を 1 か所に置き、既定・おすすめの組み合わせ・使用者の 3 つの層にする。`prelude config`、任せる段の上限(`windows.level`)、端末(`prelude term` が端末ごとの違いを受け持つ)・既定の AI など(`docs/redesign-rust.md` の「設定」)
+  - Omarchy と比べて PRELUDE に足りないもの(使う人が触れる面: 命令の台帳・設定の層・フック・説明書・複数の画面など)、窓を取り合わない決まり、作業領域だけ指定する形を設計書に書いた(`docs/redesign-rust.md` の「Omarchy から学んだこと」「窓のつなぎ」)
+  - Rust 版の UI は Slint で作ることにした(GPUI から替える。`docs/redesign-rust.md` の「UI」)
 
 ## [0.12.0] - 2026-11-03
 

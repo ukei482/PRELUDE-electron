@@ -1,9 +1,19 @@
 //! prelude コマンド。コアのソケット(prelude-proto)につないで、状態を見る・操作する。
 //! 画面の文は Electron 版に合わせて英語。外のスクリプトからは `prelude raw` と `prelude watch` で JSON をそのまま使える。
-use prelude_proto::{BookmarkInfo, BookmarkOpened, Client, Incoming, Item, RecipeInfo, State};
+use prelude_proto::{BookmarkInfo, BookmarkOpened, Client, FolderInfo, Incoming, Item, RecipeInfo, State};
 use serde_json::{json, Value};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+mod agent;
+mod choose;
+mod config;
+mod mcp;
+mod skill;
+mod target;
+mod term;
+
+use target::{abs, bookmark_path, folder_path, Target};
 
 const HELP: &str = "\
 usage: prelude <command> [args]
@@ -12,8 +22,14 @@ usage: prelude <command> [args]
   tabs                   List tabs (* = current)
   tab <n>                Switch to tab n
   close [n]              Close tab n (default: current)
+  reopen                 Reopen the last closed tab of this space
+  tab dup [n]            Duplicate tab n (default: current) below it
+  tab renumber <n> <new> Give tab n the number <new> (swaps with the tab that has it)
   pane close [id]        Close a pane (default: the current pane of the current tab)
-  open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name
+  pane path [--pane <id>] <folder>
+                         Tell the core where a pane is now (e.g. the folder a file manager moved to), so the tab reopens there.
+                         The pane defaults to $PRELUDE_PANE (set for programs PRELUDE starts in a pane), then the current pane
+  open [--run] <target>  Open a URL, a folder, a .prelude file, or a bookmark of this space by name or number (b3)
                          (--run: also run commands that do not match an installed app)
   open [--run]           Read one line from stdin: a line of `prelude items`, or a target as above
   items [--json]         Launcher items: tabs, then bookmarks, apps and spaces by score
@@ -24,10 +40,22 @@ usage: prelude <command> [args]
   recipes                Pane types made from recipes (~/.config/prelude/panes)
   url <pane> <url>       Open a URL in a web pane
   go <pane> back|forward|reload  Move in a web pane's history
+  mute <pane> [on|off]   Mute (default) or unmute a web pane
   spaces                 List spaces (* = current)
   space <name>           Switch to a space
   space new <name>       Create a space
   bookmarks              List bookmarks of this space
+  bookmark save <title> [<folder>]   Save the current tab as a bookmark (in <folder> of this space)
+  bookmark overwrite     Overwrite the current tab's bookmark with its current layout
+  bookmark rename <bookmark> <title>
+  bookmark move <bookmark> [<folder>]  Move a bookmark into <folder> (default: the top of the space)
+  bookmark trash <bookmark>          Move a bookmark to the trash
+  bookmark reorder <bookmark> [<before>]  Put a bookmark before <before> (same folder; default: last)
+                         <bookmark> is a .prelude path or a name as `prelude bookmarks` shows it (folder/title)
+  folders                List bookmark folders of this space (empty ones too)
+  folder new <name>      Create a bookmark folder in this space
+  folder rename <folder> <name>
+  folder remove <folder> Remove a bookmark folder; its contents move to the top of the space
   paths [n]              Folders used by tab n (files, open, save, download, terminal)
   watch                  Print state events as JSON lines
   watch --bar            One JSON line per change for a bar (waybar's custom module, return-type json).
@@ -35,6 +63,23 @@ usage: prelude <command> [args]
   sidebar [show|hide|toggle|wide|compact|restart]
                          Toggle the sidebar between wide and compact (default: toggle). hide stops it
   shell                  Type these commands one after another (the PRELUDE CLI)
+  choose <open|open-multiple|directory|save> --output <file> [--name <name>] [--terminal <cmd>] <folder>
+                         The file chooser of app dialogs: yazi in a terminal. Writes the chosen paths to <file>
+                         (what prelude-core's dialog portal runs by default)
+  term [--cwd <folder>] [-- <command>...]
+                         Open the terminal from the settings (terminal) in <folder>, running <command> (default: a shell)
+  agent [<prompt>...]    Start the default AI agent in the current folder ($PRELUDE_AGENT, else claude, codex,
+                         gemini or opencode from PATH). The agent pane (new agent) runs this in the bookmark's folder
+  mcp                    Run an MCP server on stdin/stdout: PRELUDE's commands as tools for AI agents
+                         (e.g. claude mcp add prelude -- prelude mcp)
+  config [list [--json]] Settings: every item with its value, where it comes from and what it does
+  config get <key> | set <key> <value> | unset <key>
+                         Read or change one setting in ~/.config/prelude/settings.toml (checked; comments are kept).
+                         The core picks changes up within 2 seconds
+  config defaults | path The default settings file with comments | where settings.toml is
+  skill [show [<file>]]  Print the skill that teaches AI agents how to use PRELUDE (SKILL.md, format.md)
+  skill install [<dir>...]
+                         Write the skill into <dir>/prelude/ (default: ~/.agents/skills and ~/.claude/skills)
   raw <cmd> [args-json]  Send a command and print the result as JSON
 
 The core socket is $PRELUDE_CORE_SOCK or $XDG_RUNTIME_DIR/prelude/core.sock.";
@@ -77,9 +122,27 @@ fn print_tabs(s: &State) {
     }
 }
 
-fn abs(p: &str) -> PathBuf {
-    let p = Path::new(p);
-    std::fs::canonicalize(p).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(p))
+/// ペインの今の場所(path)をコアに伝える。ペインは --pane、無ければ $PRELUDE_PANE、それも無ければ今のペイン
+fn pane_path(id: Option<&str>, folder: &str) -> Result<(), String> {
+    let id = id.map(str::to_string).or_else(|| std::env::var("PRELUDE_PANE").ok().filter(|s| !s.is_empty()));
+    let mut c = Conn::open(false)?;
+    let pane: u64 = match id {
+        Some(id) => id.parse().map_err(|_| format!("Not a pane id: {id}"))?,
+        None => {
+            let s = c.state()?;
+            s.tabs.iter().find(|t| Some(t.id) == s.active).map(|t| t.active_pane).ok_or("No tab")?
+        }
+    };
+    let path = abs(folder);
+    c.call("pane.update", json!({ "pane": pane, "fields": { "path": path.to_string_lossy() } }))?;
+    Ok(())
+}
+
+fn bm_save(title: &str, folder: &str) -> Result<(), String> {
+    let mut c = Conn::open(false)?;
+    let folder = if folder.is_empty() { String::new() } else { folder_path(&mut c, folder)? };
+    println!("{}", c.call("bookmark.save", json!({ "title": title, "folder": folder }))?.as_str().unwrap_or(""));
+    Ok(())
 }
 
 /// ブックマークを開く。インストール済みのアプリと一致しない起動コマンドは、run でなければ外して開き、知らせる
@@ -100,29 +163,16 @@ fn open_bookmark(c: &mut Client, path: &str, run: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// open の対象を決める: .prelude のファイル → ブックマーク、フォルダ → フォルダのペイン、URL → Web、
-/// それ以外は今のスペースのブックマークの名前(同じ名前、なければ名前の始まり)
+/// 開く(対象の決め方は [`target::resolve`])
 fn open(c: &mut Client, target: &str, run: bool) -> Result<(), String> {
-    let p = Path::new(target);
-    if target.ends_with(".prelude") && p.is_file() {
-        return open_bookmark(c, &abs(target).to_string_lossy(), run);
-    }
-    if p.is_dir() {
-        c.call("tab.open", json!({ "pane": { "type": "files", "path": abs(target) } }))?;
-        return Ok(());
-    }
-    let url_like = target.contains("://") || (!target.contains(' ') && !target.starts_with('/') && target.contains('.') && !p.exists());
-    let list: Vec<BookmarkInfo> = serde_json::from_value(c.call("bookmark.list", json!({}))?).map_err(|e| e.to_string())?;
-    let lower = target.to_lowercase();
-    let hit =
-        list.iter().find(|b| b.title.to_lowercase() == lower).or_else(|| list.iter().find(|b| b.title.to_lowercase().starts_with(&lower)));
-    match hit {
-        Some(b) if !url_like || b.title.to_lowercase() == lower => open_bookmark(c, &b.path.clone(), run)?,
-        _ if url_like => {
-            let url = if target.contains("://") { target.to_string() } else { format!("https://{target}") };
+    match target::resolve(c, target)? {
+        Target::Bookmark(path) => open_bookmark(c, &path, run)?,
+        Target::Folder(path) => {
+            c.call("tab.open", json!({ "pane": { "type": "files", "path": path } }))?;
+        }
+        Target::Url(url) => {
             c.call("tab.open", json!({ "pane": { "type": "web", "url": url } }))?;
         }
-        _ => return Err(format!("Nothing to open: {target}")),
     }
     Ok(())
 }
@@ -372,6 +422,24 @@ fn shell() -> Result<(), String> {
 
 fn run(args: &[String]) -> Result<(), String> {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
+    if a.first() == Some(&"choose") {
+        return choose::run(&a[1..]);
+    }
+    if a.first() == Some(&"term") {
+        return term::run(&a[1..]);
+    }
+    if a.first() == Some(&"config") {
+        return config::run(&a[1..]);
+    }
+    if a.first() == Some(&"agent") {
+        return agent::run(&a[1..]);
+    }
+    if a.as_slice() == ["mcp"] {
+        return mcp::run();
+    }
+    if a.first() == Some(&"skill") {
+        return skill::run(&a[1..], &home());
+    }
     match a.as_slice() {
         ["shell"] => shell()?,
         ["sidebar"] => sidebar("toggle")?,
@@ -383,6 +451,23 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         ["help" | "-h" | "--help"] => println!("{HELP}"),
         ["tabs"] => print_tabs(&Conn::open(false)?.state()?),
+        ["mute", pane] | ["mute", pane, "on"] | ["mute", pane, "off"] => {
+            let pane: u64 = pane.parse().map_err(|_| format!("Not a pane id: {pane}"))?;
+            Conn::open(false)?.call("web.mute", json!({ "pane": pane, "on": a.get(2) != Some(&"off") }))?;
+        }
+        ["reopen"] => {
+            Conn::open(false)?.call("tab.reopen", json!({}))?;
+        }
+        ["tab", "dup"] => {
+            Conn::open(false)?.call("tab.duplicate", json!({}))?;
+        }
+        ["tab", "dup", n] => {
+            Conn::open(false)?.call("tab.duplicate", json!({ "tab": num_arg(n)? }))?;
+        }
+        ["tab", "renumber", n, new] => {
+            let num: u32 = new.parse().map_err(|_| format!("Not a number: {new}"))?;
+            Conn::open(false)?.call("tab.renumber", json!({ "tab": num_arg(n)?, "num": num }))?;
+        }
         ["tab", n] => {
             Conn::open(false)?.call("tab.activate", json!({ "tab": num_arg(n)? }))?;
         }
@@ -398,6 +483,8 @@ fn run(args: &[String]) -> Result<(), String> {
             let pane = s.tabs.iter().find(|t| Some(t.id) == s.active).map(|t| t.active_pane).ok_or("No tab")?;
             c.call("pane.close", json!({ "pane": pane }))?;
         }
+        ["pane", "path", folder] => pane_path(None, folder)?,
+        ["pane", "path", "--pane", id, folder] => pane_path(Some(id), folder)?,
         ["pane", "close", id] => {
             let pane: u64 = id.parse().map_err(|_| format!("Not a pane id: {id}"))?;
             Conn::open(false)?.call("pane.close", json!({ "pane": pane }))?;
@@ -421,6 +508,11 @@ fn run(args: &[String]) -> Result<(), String> {
             pane.insert("type".into(), json!(kind));
             for kv in rest {
                 let (k, v) = kv.split_once('=').ok_or_else(|| format!("Not key=value: {kv}"))?;
+                // 引用符で囲まれてシェルが ~ を直さなかったときも、ホームにする
+                let v = match v.strip_prefix('~') {
+                    Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("{}{rest}", home()),
+                    _ => v.to_string(),
+                };
                 pane.insert(k.into(), json!(v));
             }
             Conn::open(false)?.call("tab.open", json!({ "pane": pane }))?;
@@ -474,12 +566,65 @@ fn run(args: &[String]) -> Result<(), String> {
         ["space", name @ ..] if !name.is_empty() => {
             Conn::open(false)?.call("space.switch", json!({ "name": name.join(" ") }))?;
         }
+        ["bookmark", "save", title] => bm_save(title, "")?,
+        ["bookmark", "save", title, folder] => bm_save(title, folder)?,
+        ["bookmark", "overwrite"] => {
+            println!("{}", Conn::open(false)?.call("bookmark.overwrite", json!({}))?.as_str().unwrap_or(""));
+        }
+        ["bookmark", "rename", b, title] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            println!("{}", c.call("bookmark.rename", json!({ "path": path, "title": title }))?.as_str().unwrap_or(""));
+        }
+        ["bookmark", "move", b] | ["bookmark", "move", b, _] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            let folder = match a.get(3) {
+                Some(f) => folder_path(&mut c, f)?,
+                None => String::new(),
+            };
+            println!("{}", c.call("bookmark.move", json!({ "path": path, "folder": folder }))?.as_str().unwrap_or(""));
+        }
+        ["bookmark", "trash", b] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            c.call("bookmark.trash", json!({ "path": path }))?;
+        }
+        ["bookmark", "reorder", b] | ["bookmark", "reorder", b, _] => {
+            let mut c = Conn::open(false)?;
+            let path = bookmark_path(&mut c, b)?;
+            let before = match a.get(3) {
+                Some(x) => bookmark_path(&mut c, x)?,
+                None => String::new(),
+            };
+            c.call("bookmark.reorder", json!({ "path": path, "before": before }))?;
+        }
+        ["folders"] => {
+            let list: Vec<FolderInfo> =
+                serde_json::from_value(Conn::open(false)?.call("folder.list", json!({}))?).map_err(|e| e.to_string())?;
+            for f in list {
+                println!("  {}", f.title);
+            }
+        }
+        ["folder", "new", name] => {
+            println!("{}", Conn::open(false)?.call("folder.create", json!({ "name": name }))?.as_str().unwrap_or(""));
+        }
+        ["folder", "rename", f, name] => {
+            let mut c = Conn::open(false)?;
+            let path = folder_path(&mut c, f)?;
+            println!("{}", c.call("folder.rename", json!({ "path": path, "name": name }))?.as_str().unwrap_or(""));
+        }
+        ["folder", "remove", f] => {
+            let mut c = Conn::open(false)?;
+            let path = folder_path(&mut c, f)?;
+            c.call("folder.remove", json!({ "path": path }))?;
+        }
         ["bookmarks"] => {
             let list: Vec<BookmarkInfo> =
                 serde_json::from_value(Conn::open(false)?.call("bookmark.list", json!({}))?).map_err(|e| e.to_string())?;
             for b in list {
                 let name = if b.folder.is_empty() { b.title } else { format!("{}/{}", b.folder, b.title) };
-                println!("  {name}");
+                println!("  {:>4}  {name}", format!("b{}", b.num));
             }
         }
         ["paths"] | ["paths", _] => {
@@ -515,6 +660,11 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn main() {
+    // 出力を head などで途中で切られたら、慌てずに黙って終わる(Rust は SIGPIPE を無視して、書けずに panic する)
+    // SAFETY: 起動の直後に、シグナルの扱いを既定に戻すだけ
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = run(&args) {
         eprintln!("prelude: {e}");

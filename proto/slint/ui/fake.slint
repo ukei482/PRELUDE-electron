@@ -1,0 +1,9 @@
+// 実行時に読み込む(--load)ときの見本: 決まり(prelude.slint)を使わず、自分で似た global を作ったもの。
+// コンパイルは通るが、読み込むときの確かめ(check_contract)で断られる
+export global Prelude {
+    in property <[string]> tabs;
+}
+
+export component Fake inherits Window {
+    for t in Prelude.tabs: Text { text: t; }
+}

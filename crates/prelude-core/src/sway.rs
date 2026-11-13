@@ -1,4 +1,4 @@
-//! sway・SwayFX の裏側([`Compositor`]。i3 の IPC)。判断 10〜12 の「コンポジタに窓を並べさせる」形。
+//! sway・SwayFX の裏側([`Compositor`]。i3 の IPC)。docs/redesign-rust.md の「窓のつなぎ」の段 4(設定の windows.level で下げられる)。
 //!
 //! - タブ 1 つ = 作業領域 1 つ(名前は `<タブの番号><印>`)、ペイン 1 つ = 窓 1 つ。配置の木([`Tree`])を sway の分割の木として組む
 //! - 起動はコアがする(どのプロセスの窓かを知るため)。窓が出たら、起動したプロセス・窓の名前・題名の印(Web のペイン)で見分けて
@@ -6,11 +6,11 @@
 //! - 木はコアの木が変わったときだけ組み直す。使用者が sway で動かした窓・変えた大きさは、sway の木を読んでコアの木に戻す
 //!   ([`Note::Layout`]。読むのは動かした知らせのときと 1 秒ごと。sway は大きさの変更を知らせない)。戻した木は組み直さない
 //! - 使用者が作業領域・窓を選んだら [`Note::Focus`] でコアに知らせる(コアの今のタブ・ペインが付いてくる)
-//! - 浮いた窓(ダイアログなど)は取り込まない。sway がそのまま浮かせる(判断 12)
-//! - PRELUDE を通さずに開いた普通の窓は、タブの作業領域に出たら、sway が置いた場所のままペインにする([`Note::Foreign`]。判断 12)。
+//! - 浮いた窓(ダイアログなど)は取り込まない。sway がそのまま浮かせる(「PRELUDE を通さずに開いた窓」)
+//! - PRELUDE を通さずに開いた普通の窓は、タブの作業領域に出たら、sway が置いた場所のままペインにする([`Note::Foreign`]。「PRELUDE を通さずに開いた窓」)。
 //!   タブでない作業領域の窓には触らない。少し待ってから決める(起動したペインの窓が遅れて見分けられることがある)
 //! - アプリのダイアログの選ぶ画面は親のある窓として扱い、すぐ浮かせる。どのプログラムでもよいように、起動の環境変数の印([`DIALOG_ENV`])で見分ける
-use crate::compositor::{Compositor, Note, Scene, TabScene, Tree, Want};
+use crate::compositor::{Compositor, Level, Note, Options, Scene, TabScene, Tree, Want};
 use crate::launch::{self, keys_of};
 use crate::portal::DIALOG_ENV;
 use crate::procs;
@@ -111,6 +111,18 @@ impl Ipc {
 /// get_workspaces の返事から、選ばれている作業領域の名前
 fn focused_name(v: &Value) -> Option<String> {
     v.as_array()?.iter().find(|w| w["focused"] == true)?["name"].as_str().map(str::to_string)
+}
+
+/// ペインを閉じる前に選んでおく窓: 閉じるペインがあるとき、今のタブの今のペイン(閉じるものでなく、窓があるもの)の窓
+fn pre_focus(scene: &Scene, closing: &[u64], con: impl Fn(u64) -> Option<i64>) -> Option<i64> {
+    if closing.is_empty() {
+        return None;
+    }
+    let tab = scene.tabs.iter().find(|t| Some(t.id) == scene.active)?;
+    if closing.contains(&tab.active_pane) {
+        return None;
+    }
+    con(tab.active_pane)
 }
 
 // ------------------------------------------------------------------ sway の木を読む
@@ -254,19 +266,60 @@ pub fn looks_same(x: &Tree, y: &Tree) -> bool {
 
 // ------------------------------------------------------------------ 木を組むコマンド(計算だけ。テストする)
 
-/// タブの作業領域の名前。番号で始めるので、sway の `workspace number <n>` のキーがそのまま効く
-pub fn ws_name(num: u32, tag: &str) -> String {
-    if tag.is_empty() {
-        num.to_string()
-    } else {
-        format!("{num}:prelude{tag}")
+/// 設定の windows.gaps_inner・gaps_outer → sway のコマンド。PRELUDE の outer は「窓と画面の端の間」だが、
+/// sway は端にも inner を足すので、sway の outer は outer − inner にする(負でもよい)。
+/// 既定(これから作る作業領域)と、今ある作業領域(all set)の両方に掛ける
+pub fn gaps_cmds(inner: Option<u32>, outer: Option<u32>) -> Vec<String> {
+    let mut out = vec![];
+    if let Some(i) = inner {
+        out.push(format!("gaps inner {i}"));
+        out.push(format!("gaps inner all set {i}"));
+    }
+    if let Some(o) = outer {
+        let o = o as i64 - inner.unwrap_or(0) as i64;
+        out.push(format!("gaps outer {o}"));
+        out.push(format!("gaps outer all set {o}"));
+    }
+    out
+}
+
+/// タブの作業領域の名前の、番号の後ろ。設定の windows.workspace_prefix と、別のソケットのコアの印から作る
+pub fn ws_suffix(prefix: &str, tag: &str) -> String {
+    match (prefix.is_empty(), tag.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => format!(":{prefix}"),
+        (true, false) => format!(":prelude{tag}"),
+        (false, false) => format!(":{prefix}-prelude{tag}"),
     }
 }
 
+/// タブの作業領域の名前。番号で始めるので、sway の `workspace number <n>` のキーがそのまま効く
+pub fn ws_name(num: u32, suffix: &str) -> String {
+    format!("{num}{suffix}")
+}
+
 /// 作業領域の名前 → タブの番号([`ws_name`] の逆)。タブにできない名前は None
-pub fn ws_num(name: &str, tag: &str) -> Option<u32> {
-    let n = if tag.is_empty() { name } else { name.strip_suffix(&format!(":prelude{tag}"))? };
+pub fn ws_num(name: &str, suffix: &str) -> Option<u32> {
+    let n = if suffix.is_empty() { name } else { name.strip_suffix(suffix)? };
     n.parse().ok().filter(|n| *n > 0)
+}
+
+/// 「作業領域だけ指定する形」(段 1): 窓のあるペインを、タブの作業領域へ移すコマンド。移したもの(ペイン → タブの番号)は placed に覚え、
+/// 移し済みのものはもう動かさない(使用者が動かしたら、そのまま)。タブの番号が変わったら移し直す
+pub fn workspace_cmds(tabs: &[TabScene], con: &HashMap<u64, i64>, suffix: &str, placed: &mut HashMap<u64, u32>) -> Vec<String> {
+    let mut out = vec![];
+    for t in tabs {
+        let mut l = vec![];
+        leaves(&t.tree, &mut l);
+        for p in l {
+            let Some(c) = con.get(&p) else { continue };
+            if placed.get(&p) != Some(&t.num) {
+                out.push(format!("[con_id={c}] move container to workspace {}", quote(&ws_name(t.num, suffix))));
+                placed.insert(p, t.num);
+            }
+        }
+    }
+    out
 }
 
 /// 窓のあるペインだけの木。片側が空の分割はもう片側だけになる
@@ -356,10 +409,7 @@ pub fn ratio_cmds(t: &Tree, con: &impl Fn(u64) -> i64, sway: &Value) -> Vec<Stri
 
 /// 浮かせた選ぶ画面を、画面の中に収まる大きさで真ん中に置くコマンド
 pub fn dialog_cmds(con: i64) -> Vec<String> {
-    vec![
-        format!("[con_id={con}] resize set width 60 ppt height 70 ppt"),
-        format!("[con_id={con}] move position center"),
-    ]
+    vec![format!("[con_id={con}] resize set width 60 ppt height 70 ppt"), format!("[con_id={con}] move position center")]
 }
 
 /// sway のコマンドの文字列の引用
@@ -400,11 +450,16 @@ enum Msg {
 #[derive(Clone)]
 pub struct Handle {
     tx: mpsc::UnboundedSender<Msg>,
+    /// 使う段(つなぎの最大の段 4 と、設定の上限の小さいほう)
+    level: Level,
 }
 
 impl Compositor for Handle {
     fn name(&self) -> &'static str {
         "sway"
+    }
+    fn level(&self) -> crate::compositor::Level {
+        self.level
     }
     fn arrange(&self, scene: Scene) {
         let _ = self.tx.send(Msg::Arrange(scene));
@@ -420,7 +475,8 @@ impl Compositor for Handle {
 }
 
 /// 始める。`SWAYSOCK`(無ければ `I3SOCK`)につなぐ。つながらなければ None
-pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Handle> {
+/// opts は設定の [windows](任せる段の上限・引き取り・浮かせる窓・触らない窓・作業領域の名前の頭)
+pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>, opts: Options) -> Option<Handle> {
     let Some(path) = ["SWAYSOCK", "I3SOCK"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty())) else {
         eprintln!("prelude-core: SWAYSOCK is not set. Panes will not show windows");
         return None;
@@ -452,9 +508,14 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Hand
         tx: tx.clone(),
         notes,
         tag: tag.to_string(),
+        ws_suffix: ws_suffix(&opts.workspace_prefix, tag),
+        level: opts.level(Level::Follow),
+        opts,
+        placed: HashMap::new(),
         panes: HashMap::new(),
         scene: Scene::default(),
         applied: HashMap::new(),
+        applied_num: HashMap::new(),
         fresh: HashMap::new(),
         loose: HashSet::new(),
         asked: HashSet::new(),
@@ -462,9 +523,14 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>) -> Option<Hand
         echoes: vec![],
         quiet_until: Instant::now(),
     };
+    let level = s.level;
+    let gaps = gaps_cmds(s.opts.gaps_inner, s.opts.gaps_outer);
+    if !gaps.is_empty() {
+        s.ipc.run(&gaps).await;
+    }
     s.recover().await;
     tokio::spawn(s.run(rx));
-    Some(Handle { tx })
+    Some(Handle { tx, level })
 }
 
 struct Pane {
@@ -494,10 +560,20 @@ struct Sway {
     tx: mpsc::UnboundedSender<Msg>,
     notes: mpsc::UnboundedSender<Note>,
     tag: String,
+    /// タブの作業領域の名前の、番号の後ろ([`ws_suffix`])
+    ws_suffix: String,
+    /// 使う段(「窓のつなぎ」の段)。並べる・読む・追うを、ここまでに止める
+    level: Level,
+    /// 設定の [windows]
+    opts: Options,
+    /// 段 1(作業領域だけ)で、作業領域へ移したペインとタブの番号
+    placed: HashMap<u64, u32>,
     panes: HashMap<u64, Pane>,
     scene: Scene,
     /// タブごとの、最後に組んだ木(窓のあるペインだけ)
     applied: HashMap<u64, Tree>,
+    /// タブごとの、最後に組んだときの番号(作業領域の名前)。番号が変わったら組み直して、窓を新しい作業領域へ移す
+    applied_num: HashMap<u64, u32>,
     /// sway で作られた作業領域の木(タブの番号ごと)。コアがタブにしたら applied へ移す
     fresh: HashMap<u32, Tree>,
     /// 窓はあるが木に並んでいないペイン(使用者が浮かせた窓など)
@@ -589,7 +665,13 @@ impl Sway {
     /// コアの状態に合わせる
     async fn sync(&mut self, scene: Scene) {
         let ids: HashSet<u64> = scene.panes.iter().map(|w| w.pane).collect();
-        for id in self.panes.keys().copied().filter(|id| !ids.contains(id)).collect::<Vec<_>>() {
+        let closing: Vec<u64> = self.panes.keys().copied().filter(|id| !ids.contains(id)).collect();
+        // 分割したタブのペインを閉じるときは、先にコアが選んだ次のペインへフォーカスを移してから窓を閉じる。
+        // 先に閉じると、sway が自分の決まりで別の窓を選んで知らせてきて、それが使用者の選んだものとして今のペインになる
+        if let Some(c) = pre_focus(&scene, &closing, |p| self.panes.get(&p).and_then(|w| w.con)) {
+            self.ipc.run(&[format!("[con_id={c}] focus")]).await;
+        }
+        for id in closing {
             self.close_pane(id).await;
         }
         let mut known: Option<HashSet<i64>> = None;
@@ -622,6 +704,7 @@ impl Sway {
             if adopted.iter().any(|p| l.contains(p)) || (fresh.is_some() && !self.applied.contains_key(&t.id)) {
                 if let Some(s) = shown() {
                     self.applied.insert(t.id, s);
+                    self.applied_num.insert(t.id, t.num);
                 }
             }
         }
@@ -665,18 +748,26 @@ impl Sway {
     async fn foreign(&mut self, con: i64, tries: u32) {
         self.claim().await;
         self.layout().await;
+        // PRELUDE を通さずに開いた窓を引き取るのは、段 4(追う)で、設定の windows.adopt が tabs のときだけ
+        if self.level < Level::Follow || !self.opts.adopt {
+            return;
+        }
         if self.asked.contains(&con) || self.panes.values().any(|p| p.con == Some(con)) {
             return;
         }
         let tree = self.ipc.tree().await;
         let Some(v) = views(&tree).into_iter().find(|v| v.id == con).filter(|v| !v.floating) else { return };
+        // PRELUDE の UI(サイドバー・ランチャー)の窓はペインではない。設定で触らない窓も
+        if crate::compositor::is_prelude_ui(&v.app) || self.opts.ignores(&v.app) {
+            return;
+        }
         // Web のペインの窓は、題名の印が付くまで見分けられない
         let web_pending = self.panes.values().any(|p| !p.want.marker.is_empty() && p.con.is_none());
         if web_pending && v.app.contains("chrom") && tries < 10 {
             self.later(Msg::Foreign(con, tries + 1), Duration::from_secs(2));
             return;
         }
-        let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.tag) == v.workspace) else { return };
+        let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.ws_suffix) == v.workspace) else { return };
         let mine: HashMap<i64, u64> = self.panes.iter().filter_map(|(id, p)| Some((p.con?, *id))).chain([(con, 0)]).collect();
         let Some(ws) = workspaces(&tree).into_iter().find(|w| w["name"] == v.workspace.as_str()) else { return };
         let Some(t) = read_tree(ws, &|c| mine.get(&c).copied()) else { return };
@@ -695,6 +786,10 @@ impl Sway {
 
     /// sway の今の並びを読み、組んだ木と違っていたら(使用者が動かした)コアの木に戻す
     async fn reconcile(&mut self) {
+        // 使用者が動かした並びを読んでコアに合わせるのは、段 3(読む)から
+        if self.level < Level::Read {
+            return;
+        }
         let mine: HashMap<i64, u64> = self.panes.iter().filter_map(|(id, p)| Some((p.con?, *id))).collect();
         // 窓が閉じたばかりのペインは、次の窓を待っている間(窓を作り直すアプリ)。今の木はまだ確かでない
         if mine.is_empty() || self.panes.values().any(|p| p.con.is_none() && p.had_window) {
@@ -717,7 +812,11 @@ impl Sway {
         let mut changes = vec![];
         let mut placed = vec![];
         for t in &self.scene.tabs {
-            let cur = read.remove(&ws_name(t.num, &self.tag));
+            // 番号を変えたばかりで、まだ窓を新しい作業領域へ移していないタブは読まない(窓が無くなったと取り違えないように)
+            if self.applied_num.get(&t.id).is_some_and(|n| *n != t.num) {
+                continue;
+            }
+            let cur = read.remove(&ws_name(t.num, &self.ws_suffix));
             if let Some(c) = &cur {
                 leaves(c, &mut placed);
             }
@@ -730,11 +829,12 @@ impl Sway {
                 Some(c) => self.applied.insert(t.id, c.clone()),
                 None => self.applied.remove(&t.id),
             };
+            self.applied_num.insert(t.id, t.num);
             changes.push((t.num, cur));
         }
         // タブでない作業領域へ移した窓: 番号の作業領域なら新しいタブ、そうでなければ木に並んでいないものとして扱う
         for (name, t) in read {
-            if let Some(num) = ws_num(&name, &self.tag) {
+            if let Some(num) = ws_num(&name, &self.ws_suffix) {
                 leaves(&t, &mut placed);
                 self.fresh.insert(num, t.clone());
                 changes.push((num, Some(t)));
@@ -754,7 +854,7 @@ impl Sway {
             self.later(Msg::Keyboard, Duration::from_millis(ms));
         }
         if w.marker.is_empty() {
-            match launch::spawn(&w.cmd, &w.cwd) {
+            match launch::spawn(&w.cmd, &w.cwd, w.pane) {
                 Ok(mut child) => {
                     let pid = child.id().unwrap_or(0);
                     let (tx, pane) = (self.tx.clone(), w.pane);
@@ -838,7 +938,7 @@ impl Sway {
                 }
                 let p = &self.panes[id];
                 let mine = &pids[id];
-                let pick = all.iter().filter(|v| !v.floating && !taken.contains(&v.id)).find(|v| {
+                let pick = all.iter().filter(|v| !v.floating && !taken.contains(&v.id) && !self.opts.ignores(&v.app)).find(|v| {
                     if !p.want.marker.is_empty() {
                         return strong && v.title.contains(&p.want.marker);
                     }
@@ -874,16 +974,32 @@ impl Sway {
             self.panes.iter().filter(|(id, _)| !self.loose.contains(id)).filter_map(|(id, p)| Some((*id, p.con?))).collect();
         let tabs: Vec<TabScene> = self.scene.tabs.clone();
         let mut moved = false;
-        for t in &tabs {
+        // 段 1(作業領域だけ): 窓をタブの作業領域へ移すだけで、分割・比率は組まない
+        if self.level == Level::Workspace {
+            let suffix = self.ws_suffix.clone();
+            let cmds = workspace_cmds(&tabs, &con, &suffix, &mut self.placed);
+            if !cmds.is_empty() {
+                self.ipc.run(&cmds).await;
+                moved = true;
+            }
+            let live: HashSet<u64> = self.panes.keys().copied().collect();
+            self.placed.retain(|p, _| live.contains(p));
+        }
+        for t in tabs.iter().filter(|_| self.level >= Level::Arrange) {
+            // 番号(作業領域の名前)が変わったタブは、木が同じでも組み直して、窓を新しい作業領域へ移す
+            if self.applied_num.get(&t.id).is_some_and(|n| *n != t.num) {
+                self.applied.remove(&t.id);
+            }
             let Some(want) = prune(&t.tree, &|p| con.contains_key(&p)) else {
                 self.applied.remove(&t.id);
+                self.applied_num.insert(t.id, t.num);
                 continue;
             };
             if self.applied.get(&t.id) == Some(&want) {
                 continue;
             }
             let c = |p: u64| con[&p];
-            let ws = ws_name(t.num, &self.tag);
+            let ws = ws_name(t.num, &self.ws_suffix);
             if !self.applied.get(&t.id).is_some_and(|old| same_shape(old, &want)) {
                 let m = |p: u64| self.mark(p);
                 let cmds = build_cmds(&want, &c, &m, &ws, &self.tmp_ws());
@@ -896,9 +1012,11 @@ impl Sway {
                 self.ipc.run(&cmds).await;
             }
             self.applied.insert(t.id, want);
+            self.applied_num.insert(t.id, t.num);
         }
         let live: HashSet<u64> = tabs.iter().map(|t| t.id).collect();
         self.applied.retain(|id, _| live.contains(id));
+        self.applied_num.retain(|id, _| live.contains(id));
 
         // 今のタブ・ペイン。コアの望みが変わったときだけ(使用者が sway で選んだものと取り合わない)
         let tab = self.scene.active.and_then(|a| tabs.iter().find(|t| t.id == a));
@@ -911,7 +1029,7 @@ impl Sway {
             self.echoes.drain(..=i);
         }
         if let Some(t) = tab.filter(|_| (changed && echoed.is_none()) || moved) {
-            let mut cmds = vec![format!("workspace {}", quote(&ws_name(t.num, &self.tag)))];
+            let mut cmds = vec![format!("workspace {}", quote(&ws_name(t.num, &self.ws_suffix)))];
             if let Some(c) = con.get(&t.active_pane) {
                 cmds.push(format!("[con_id={c}] focus"));
             }
@@ -947,6 +1065,16 @@ impl Sway {
                             self.later(Msg::Dialog(id), Duration::from_millis(300));
                             return;
                         }
+                        // 設定でいつも浮かせる窓は、浮かせるだけ(浮いた窓はペインに取り込まない)
+                        let app = v["container"]["app_id"]
+                            .as_str()
+                            .or_else(|| v["container"]["window_properties"]["class"].as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if self.opts.floats(&app) {
+                            self.ipc.run(&[format!("[con_id={id}] floating enable")]).await;
+                            return;
+                        }
                         self.claim().await;
                         self.layout().await;
                         self.later(Msg::Foreign(id, 0), FOREIGN_WAIT);
@@ -977,6 +1105,10 @@ impl Sway {
                         }
                     }
                     "focus" => {
+                        // 使用者が選んだ窓をコアの今のペインにするのは、段 3(読む)から
+                        if self.level < Level::Read {
+                            return;
+                        }
                         let Some(pane) = owner else { return };
                         if Instant::now() < self.quiet_until {
                             return;
@@ -996,7 +1128,7 @@ impl Sway {
                         };
                         // サイドバーを押した後の切り替えの途中で、sway は元の窓を選び直して知らせてくる。
                         // 今もその作業領域が選ばれているときだけ、使用者が選んだものとして扱う
-                        if self.ipc.focused_ws().await.as_deref() != Some(ws_name(num, &self.tag).as_str()) {
+                        if self.ipc.focused_ws().await.as_deref() != Some(ws_name(num, &self.ws_suffix).as_str()) {
                             return;
                         }
                         // 開いたばかりのペインの窓を待っている間に、ランチャーが閉じて元の窓が選ばれ直しても、今のペインを戻さない。
@@ -1015,11 +1147,11 @@ impl Sway {
                 }
             }
             kind::EV_WORKSPACE => {
-                if v["change"] != "focus" || Instant::now() < self.quiet_until {
+                if v["change"] != "focus" || Instant::now() < self.quiet_until || self.level < Level::Read {
                     return;
                 }
                 let name = v["current"]["name"].as_str().unwrap_or("").to_string();
-                let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.tag) == name).map(|t| t.id) else { return };
+                let Some(tab) = self.scene.tabs.iter().find(|t| ws_name(t.num, &self.ws_suffix) == name).map(|t| t.id) else { return };
                 if self.ipc.focused_ws().await.as_deref() != Some(name.as_str()) {
                     return;
                 }
@@ -1178,6 +1310,21 @@ mod tests {
     }
 
     #[test]
+    fn ペインを閉じる前に次のペインを選ぶ() {
+        let tab = |active_pane| TabScene { id: 1, num: 1, tree: P(2), active_pane };
+        let scene = Scene { panes: vec![], tabs: vec![tab(2)], active: Some(1) };
+        let con = |p: u64| (p == 2).then_some(20);
+        // 閉じるものがあり、今のペインに窓があれば、その窓を先に選ぶ
+        assert_eq!(pre_focus(&scene, &[3], con), Some(20));
+        // 閉じるものが無い・今のペインそのものを閉じる・窓がまだ無い・今のタブが無いときは何もしない
+        assert_eq!(pre_focus(&scene, &[], con), None);
+        assert_eq!(pre_focus(&scene, &[2], con), None);
+        assert_eq!(pre_focus(&scene, &[3], |_| None), None);
+        let none = Scene { active: None, ..scene.clone() };
+        assert_eq!(pre_focus(&none, &[3], con), None);
+    }
+
+    #[test]
     fn 選ばれている作業領域() {
         let v = json!([{ "name": "1", "focused": false }, { "name": "3", "focused": true }]);
         assert_eq!(focused_name(&v).as_deref(), Some("3"));
@@ -1187,8 +1334,9 @@ mod tests {
     #[test]
     fn 作業領域の名前からタブの番号() {
         assert_eq!(ws_num("3", ""), Some(3));
-        assert_eq!(ws_num("3:prelude.d01", ".d01"), Some(3));
-        assert_eq!(ws_num("3", ".d01"), None);
+        assert_eq!(ws_num("3:prelude.d01", &ws_suffix("", ".d01")), Some(3));
+        assert_eq!(ws_num("3", &ws_suffix("", ".d01")), None);
+        assert_eq!(ws_num("3:work", &ws_suffix("work", "")), Some(3));
         assert_eq!(ws_num("mail", ""), None);
         assert_eq!(ws_num("0", ""), None);
         assert_eq!(ws_num("__i3_scratch", ""), None);
@@ -1206,7 +1354,41 @@ mod tests {
     #[test]
     fn 作業領域の名前() {
         assert_eq!(ws_name(3, ""), "3");
-        assert_eq!(ws_name(3, ".d0011aabb"), "3:prelude.d0011aabb");
+        assert_eq!(ws_name(3, &ws_suffix("", ".d0011aabb")), "3:prelude.d0011aabb");
+        // 設定の windows.workspace_prefix。番号は先頭のまま($mod+数字 のキーが効く)
+        assert_eq!(ws_name(3, &ws_suffix("work", "")), "3:work");
+        assert_eq!(ws_name(3, &ws_suffix("work", ".d1")), "3:work-prelude.d1");
+    }
+
+    #[test]
+    fn 間のコマンド() {
+        assert!(gaps_cmds(None, None).is_empty());
+        assert_eq!(gaps_cmds(Some(8), None), vec!["gaps inner 8", "gaps inner all set 8"]);
+        // 端までの間 12 = sway の outer 4 + inner 8
+        assert_eq!(gaps_cmds(Some(8), Some(12))[2..], ["gaps outer 4", "gaps outer all set 4"]);
+        // 窓どうしは 8、端は 0: sway の outer は負
+        assert_eq!(gaps_cmds(Some(8), Some(0))[2], "gaps outer -8");
+    }
+
+    #[test]
+    fn 作業領域だけ指定する形の移すコマンド() {
+        let tabs = vec![
+            TabScene { id: 1, num: 2, tree: row(P(10), P(11), 0.5), active_pane: 10 },
+            TabScene { id: 2, num: 5, tree: P(12), active_pane: 12 },
+        ];
+        let con: HashMap<u64, i64> = [(10, 100), (12, 120)].into_iter().collect(); // 11 はまだ窓が無い
+        let mut placed = HashMap::new();
+        let cmds = workspace_cmds(&tabs, &con, "", &mut placed);
+        assert_eq!(cmds, vec!["[con_id=100] move container to workspace \"2\"", "[con_id=120] move container to workspace \"5\""]);
+        // 移し済みは動かさない(使用者が動かしても戻さない)
+        assert!(workspace_cmds(&tabs, &con, "", &mut placed).is_empty());
+        // 窓が出たペインと、番号が変わったタブは移す
+        let con: HashMap<u64, i64> = [(10, 100), (11, 110), (12, 120)].into_iter().collect();
+        let tabs2 = vec![tabs[0].clone(), TabScene { num: 7, ..tabs[1].clone() }];
+        assert_eq!(
+            workspace_cmds(&tabs2, &con, ":w", &mut placed),
+            vec!["[con_id=110] move container to workspace \"2:w\"", "[con_id=120] move container to workspace \"7:w\""]
+        );
     }
 
     #[test]

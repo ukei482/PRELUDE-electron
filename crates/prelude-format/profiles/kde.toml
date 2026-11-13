@@ -1,0 +1,5 @@
+# おすすめの組み合わせ: KDE Plasma(Wayland)。KWin のつなぎは並べるまで(段 1)
+terminal = "konsole"
+
+[windows]
+level = "arrange"

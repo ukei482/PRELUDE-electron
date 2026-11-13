@@ -1,0 +1,32 @@
+# Slint の試作。GPUI の代わりに Slint で UI を作れるかを確かめる(proto/gpui と同じく、ルートのワークスペースには入れない)
+[package]
+name = "prelude-slint-proto"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+# 使用者が置いた .slint を実行時に読み込む(--load)。ふだんのビルドの重さに入れないよう、既定では入れない
+interpreter = ["dep:slint-interpreter", "dep:spin_on"]
+
+[dependencies]
+slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility"] }
+slint-interpreter = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software"], optional = true }
+prelude-proto = { path = "../../crates/prelude-proto" }
+serde_json = "1"
+spin_on = { version = "0.1", optional = true }
+
+[build-dependencies]
+slint-build = "1.18.1"
+
+[dev-dependencies]
+# 決まりを破った .slint がコンパイルで止まることを確かめる(tests/contract.rs)
+slint-interpreter = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2"] }
+spin_on = "0.1"
+# 画面の無い所で描いて PNG に書き出す(examples/screenshot.rs)
+png = "0.17"
+
+[profile.dev]
+opt-level = 1

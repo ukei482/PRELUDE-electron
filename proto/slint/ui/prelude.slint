@@ -1,0 +1,38 @@
+// PRELUDE のサイドバーの決まり。サイドバーはこの global を通してだけコアとやり取りする。
+// - in property: コア → サイドバー(表示するもの)。サイドバーは書き換えない
+// - callback: サイドバー → コア(頼むこと)。中身は PRELUDE(Rust の側)が付ける
+// 名前や型を間違えた .slint は、ビルドのとき(組み込む場合)か読み込むとき(--load)に止まる
+
+export struct Tab {
+    id: int,
+    num: int,
+    title: string,
+    kind: string,
+    active: bool,
+}
+
+export struct Bookmark {
+    path: string,
+    title: string,
+    // ブックマークのフォルダ(スペースの直下なら空)
+    folder: string,
+}
+
+export global Prelude {
+    // コアにつながっているか。つながっていなければ status に理由
+    in property <bool> online;
+    in property <string> status;
+    in property <string> space;
+    in property <[string]> spaces;
+    in property <[Bookmark]> bookmarks;
+    in property <[Tab]> tabs;
+    // 細い列で出すか(幅の切り替えは toggle-compact で頼む)
+    in property <bool> compact;
+
+    callback switch-space(string);
+    callback open-bookmark(string);
+    callback activate-tab(int);
+    callback close-tab(int);
+    callback open-launcher();
+    callback toggle-compact();
+}

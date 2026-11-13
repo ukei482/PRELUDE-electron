@@ -1,4 +1,4 @@
-//! Web のペイン(docs/redesign-rust.md の判断 3)。Chromium を PRELUDE 専用のプロファイルで 1 つだけ動かし、小さな拡張機能とやり取りする。
+//! Web のペイン(docs/redesign-rust.md の「Web のペイン」)。Chromium を PRELUDE 専用のプロファイルで 1 つだけ動かし、小さな拡張機能とやり取りする。
 //!
 //! - CDP は使わない。`--remote-debugging-pipe` で起動すると `navigator.webdriver` が true になり、Google のログインに拒まれる
 //! - 拡張機能(`extension/`)は事実を知らせて頼まれたことをするだけで、判断はここでする([`decide`])。起動のときにファイルへ書き出す
@@ -24,6 +24,8 @@ use tokio::sync::{mpsc, oneshot};
 pub struct WebWant {
     pub pane: u64,
     pub url: String,
+    /// 音を消すか
+    pub muted: bool,
 }
 
 /// 戻る・進む・読み直す
@@ -197,11 +199,12 @@ pub fn download_target(from: &Path, dir: &str) -> Option<PathBuf> {
     if !first.exists() {
         return Some(first);
     }
-    let (stem, ext) = (from.file_stem()?.to_string_lossy(), from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default());
+    let (stem, ext) =
+        (from.file_stem()?.to_string_lossy(), from.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default());
     (1..1000).map(|i| Path::new(dir).join(format!("{stem} ({i}){ext}"))).find(|p| !p.exists())
 }
 
-/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる。Chromium は NixOS のモジュールが入れるので、それ以上の扱いはしない。判断 12)。
+/// Web のペインを始める。Chromium が無ければ None(Web のペインは止まったものになる。Chromium はパッケージが入れるので、それ以上の扱いはしない。「Web のペイン」)。
 /// socket は拡張機能がつなぐ Unix ソケット
 pub fn start(tag: &str, socket: PathBuf, notes: mpsc::UnboundedSender<Note>) -> Option<Handle> {
     let Some((bin, profile, page)) = locate(tag) else {
@@ -210,7 +213,8 @@ pub fn start(tag: &str, socket: PathBuf, notes: mpsc::UnboundedSender<Note>) -> 
     };
     let base = page.parent().unwrap_or(Path::new("/")).to_path_buf();
     let extension = base.join(format!("prelude-extension{tag}"));
-    let ready = std::fs::create_dir_all(&base).and_then(|_| std::fs::write(&page, PANE_PAGE)).and_then(|_| install_extension(&extension, &profile));
+    let ready =
+        std::fs::create_dir_all(&base).and_then(|_| std::fs::write(&page, PANE_PAGE)).and_then(|_| install_extension(&extension, &profile));
     if let Err(e) = ready {
         eprintln!("prelude-core: cannot prepare Chromium ({e})");
         return None;
@@ -285,6 +289,8 @@ struct Pane {
     now: String,
     tab: Option<i64>,
     claimed: bool,
+    /// 音を消すか(タブが分かったら、そのたびに頼む)
+    muted: bool,
 }
 
 struct Web {
@@ -356,13 +362,19 @@ impl Web {
         for w in wants {
             match self.panes.get_mut(&w.pane) {
                 Some(p) => {
+                    let mute = p.muted != w.muted;
+                    p.muted = w.muted;
                     if p.url != w.url {
                         p.url = w.url;
                         self.navigate(w.pane);
                     }
+                    if mute {
+                        self.apply_mute(w.pane);
+                    }
                 }
                 None => {
-                    self.panes.insert(w.pane, Pane { url: w.url, asked: String::new(), now: String::new(), tab: None, claimed: false });
+                    let p = Pane { url: w.url, asked: String::new(), now: String::new(), tab: None, claimed: false, muted: w.muted };
+                    self.panes.insert(w.pane, p);
                     self.open_window(w.pane);
                 }
             }
@@ -418,6 +430,26 @@ impl Web {
         self.tell(json!({ "cmd": "go", "tab": tab, "url": url }));
     }
 
+    /// ペインのタブの消音を、コアの状態に合わせる(タブが分かっていれば)
+    fn apply_mute(&self, pane: u64) {
+        if let Some((tab, on)) = self.panes.get(&pane).and_then(|p| Some((p.tab?, p.muted))) {
+            self.tell(json!({ "cmd": "mute", "tab": tab, "on": on }));
+        }
+    }
+
+    /// 拡張機能が送ったファビコン(PNG の base64)を保存して、コアに知らせる
+    fn icon(&self, v: &Value) {
+        let tab = v["tab"].as_i64().unwrap_or(0);
+        let Some(pane) = self.panes.iter().find(|(_, p)| p.tab == Some(tab)).map(|(id, _)| *id) else { return };
+        let Some(png) = v["data"].as_str().and_then(base64_decode).filter(|b| b.starts_with(b"\x89PNG")) else { return };
+        let dir = favicon_dir();
+        // 中身が変わったら別のファイル名にする(同じパスのままだと、UI は読み直さない)
+        let path = dir.join(format!("{}-{:08x}.png", favicon_name(v["url"].as_str().unwrap_or(""), tab), fnv32(&png)));
+        if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, png)).is_ok() {
+            let _ = self.notes.send(Note::Icon { pane, path: path.to_string_lossy().into_owned() });
+        }
+    }
+
     fn go(&self, pane: u64, g: Go) {
         let Some(tab) = self.panes.get(&pane).and_then(|p| p.tab) else { return };
         let cmd = match g {
@@ -439,6 +471,7 @@ impl Web {
                 }
             }
             "download" => self.download(v),
+            "icon" => self.icon(v),
             "error" => eprintln!("prelude-core: browser extension: {v}"),
             _ => {}
         }
@@ -456,6 +489,9 @@ impl Web {
                     p.tab = Some(t.tab);
                 }
                 self.navigate(pane);
+                if self.panes.get(&pane).is_some_and(|p| p.muted) {
+                    self.apply_mute(pane);
+                }
             }
             Decision::Close => self.tell(json!({ "cmd": "close", "tab": t.tab })),
             Decision::Update(pane) => {
@@ -512,9 +548,68 @@ impl Web {
     }
 }
 
+/// ファビコンを置くフォルダ(`$XDG_CACHE_HOME/prelude/favicons`)
+fn favicon_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let cache = std::env::var("XDG_CACHE_HOME").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| format!("{home}/.cache"));
+    PathBuf::from(cache).join("prelude/favicons")
+}
+
+/// ファビコンのファイル名: URL のホスト(使える字だけ)。無ければタブの番号
+fn favicon_name(url: &str, tab: i64) -> String {
+    let host = url.split("://").nth(1).unwrap_or("").split(['/', '?', '#']).next().unwrap_or("");
+    let host: String = host.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')).take(100).collect();
+    if host.is_empty() || host.starts_with('.') {
+        format!("tab-{tab}")
+    } else {
+        host
+    }
+}
+
+/// FNV-1a(32 ビット)。ファビコンのファイル名に中身を表す印を付ける
+fn fnv32(b: &[u8]) -> u32 {
+    b.iter().fold(0x811c9dc5u32, |h, x| (h ^ *x as u32).wrapping_mul(0x01000193))
+}
+
+/// base64(標準の字。= の埋め・改行は無視)を戻す。字が合わなければ None
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let val = |c: u8| -> Option<u32> {
+        Some(match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        } as u32)
+    };
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0);
+    for c in s.bytes().filter(|c| !matches!(c, b'=' | b'\n' | b'\r')) {
+        acc = (acc << 6) | val(c)?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ファビコンの名前と_base64() {
+        assert_eq!(favicon_name("https://www.example.com:8080/a?b", 3), "www.example.com8080");
+        assert_eq!(favicon_name("https://../etc/passwd", 3), "tab-3");
+        assert_eq!(favicon_name("", 4), "tab-4");
+        assert_eq!(base64_decode("aGVsbG8gd29ybGQ="), Some(b"hello world".to_vec()));
+        assert_eq!(base64_decode("iVBORw0K\nGgo="), Some(b"\x89PNG\r\n\x1a\n".to_vec()));
+        assert_eq!(base64_decode("@@"), None);
+    }
 
     const PAGE: &str = "/c/prelude-pane.html";
 

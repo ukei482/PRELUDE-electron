@@ -1,7 +1,7 @@
-//! PRELUDE のサイドバー(docs/redesign-rust.md の判断 10・11、移行の段階 4)。
+//! PRELUDE のサイドバー(docs/redesign-rust.md の「UI」の「サイドバー」、移行の段階 4)。
 //!
 //! - 画面の左端に layer-shell で貼り付き、場所を予約する(ほかの窓はその右に並ぶ)
-//! - コアのソケット(prelude-proto)だけでつながる。サイドバーにだけ許された操作は無い(判断 10)。`prelude` コマンドでできることしかしない
+//! - コアのソケット(prelude-proto)だけでつながる。サイドバーにだけ許された操作は無い(「コアと UI の境目」)。`prelude` コマンドでできることしかしない
 //! - 出すもの: スペース(押すと切り替え)・ブックマーク(押すと開く。フォルダは 1 段)・タブ(押すと切り替え、× で閉じる)
 //! - 幅は「広い」と「細い列」の 2 つ。一番上の PRELUDE の行(つまみ)で切り替える。状態は `prelude_proto::sidebar` のファイルにあり、`prelude sidebar toggle` もそこを書き換える。完全に隠すのは `prelude sidebar hide` だけ
 //! - TABS の見出しの + で新しいタブ。Web は URL を打つのでランチャーを出し、ほかは種類を選べばそのまま開く
@@ -420,7 +420,7 @@ impl Sidebar {
                     );
                 }
             }
-            // 今のペインが Web なら URL を出す(アドレスバーが無いので。判断 12)
+            // 今のペインが Web なら URL を出す(アドレスバーが無いので。「Web のペイン」)
             if let Some(url) = prelude_proto::pane_str(&t.layout, t.active_pane, "url").filter(|_| active) {
                 list = list.child(
                     div().px(px(6.)).pb(px(2.)).text_size(px(11.)).text_color(color::dim()).overflow_hidden().whitespace_nowrap().child(SharedString::from(url.to_string())),

@@ -1,4 +1,4 @@
-//! ペインのレシピ(判断 7 の段階 1)。窓を取り込むペインの種類を、設定ファイルだけで増やす。
+//! ペインのレシピ(docs/redesign-rust.md の「レシピ」)。窓を取り込むペインの種類を、設定ファイルだけで増やす。
 //!
 //! ```toml
 //! # ~/.config/prelude/panes/console.toml
@@ -7,9 +7,11 @@
 //! class = "org.kde.konsole"                     # 省略できる。窓を見分ける名前(起動したプロセスで見つからないとき)
 //! ```
 //! - `.prelude` には `type = "console"` のように種類の名前だけを書く。コマンドは自分の設定にしか無いので、人からもらったファイルが勝手なコマンドを実行できない
-//! - 既定で `console` を持つ。同じ名前のファイルを置くと置き換わる。ペインに `cwd` があれば `{paths.terminal}` の代わりにそれを使う(ファイラの「ここで端末を開く」)
-//! - **ファイラの枠**(判断 10): `files`(一覧)と `field`(フィールド表示)のペインもレシピで開く。既定は PRELUDE のファイラ(`prelude-filer`)で、
-//!   `files.toml` を置けば yazi・Dolphin などに替えられる。`{path}` はペインのフォルダ(無ければ paths の `files`)、`{pane}` はペインの id
+//! - 既定で `console`・`cli`・`files`・`settings` と、AI のペイン `agent`(端末の中で `prelude agent`)を持つ。同じ名前のファイルを置くと置き換わる。ペインに `cwd` があれば `{paths.terminal}` の代わりにそれを使う(ファイラの「ここで端末を開く」)
+//! - 端末を開くレシピは `prelude term`(設定の端末を、端末の表のとおりに起動する)を使い、窓の名前を `@terminal` にする
+//! - **ファイラ**(docs/redesign-rust.md の「ファイラ」): `files` のペインもただのレシピ。既定は端末の中の yazi で、
+//!   `files.toml` を置けば Dolphin などに替えられる。`{path}` はペインの `path`(無ければ paths の `files`)、`{pane}` はペインの id。
+//!   `field`(やめたフィールド表示)は `files` の別名として読む
 //!
 //!   ```toml
 //!   # ~/.config/prelude/panes/files.toml
@@ -31,6 +33,9 @@ pub struct Recipe {
     pub class: String,
 }
 
+/// レシピの窓の名前に書くと、設定の端末(terminal)の窓の名前になる(端末の表 `prelude_format::term`)
+pub const TERMINAL_CLASS: &str = "@terminal";
+
 /// コアが特別に扱う種類(レシピの名前にできない)
 const RESERVED: [&str; 4] = ["web", "app", "home", "split"];
 
@@ -48,12 +53,32 @@ fn builtin() -> Vec<Recipe> {
         class: class.into(),
     };
     vec![
-        r("cli", "CLI", "konsole --workdir {paths.terminal} -e prelude shell", "org.kde.konsole"),
-        r("console", "Console", "konsole --workdir {paths.terminal}", "org.kde.konsole"),
+        r("agent", "AI", "prelude term --cwd {paths.terminal} -- prelude agent", TERMINAL_CLASS),
+        r("cli", "CLI", "prelude term --cwd {paths.terminal} -- prelude shell", TERMINAL_CLASS),
+        r("console", "Console", "prelude term --cwd {paths.terminal}", TERMINAL_CLASS),
         r("settings", "Settings", "prelude-settings", "prelude-settings"),
-        r("files", "Files", "prelude-filer --pane {pane} {path}", "prelude-filer"),
-        r("field", "Field", "prelude-filer --pane {pane} --view field {path}", "prelude-filer"),
+        r("files", "Files", "prelude term --cwd {path} -- yazi {path}", TERMINAL_CLASS),
     ]
+}
+
+/// 古い種類の名前を今の名前にする(`field` は `files` の別名)
+pub fn alias(kind: &str) -> &str {
+    if kind == "field" {
+        "files"
+    } else {
+        kind
+    }
+}
+
+/// 種類のレシピ(別名も見る)
+pub fn find<'a>(list: &'a [Recipe], kind: &str) -> Option<&'a Recipe> {
+    let kind = alias(kind);
+    list.iter().find(|r| r.kind == kind)
+}
+
+/// run がペインの `path` を使うか(`{path}` を含むか)。使うペインには、ブックマークを開くときに paths の `files` を入れておく
+pub fn uses_path(r: &Recipe) -> bool {
+    r.run.contains("{path}")
 }
 
 /// レシピの一覧(名前順)。読めないファイルは飛ばす
@@ -155,13 +180,19 @@ mod tests {
         std::fs::write(d.join("bad.toml"), "run = = 1").unwrap();
         let list = load(&d);
         let v: Vec<(&str, &str, &str)> = list.iter().map(|r| (r.kind.as_str(), r.name.as_str(), r.run.as_str())).collect();
-        assert_eq!(v[0].0, "cli");
-        assert_eq!(v[1], ("console", "console", "xterm"));
+        // AI のペイン: 端末を今のブックマークの作業フォルダで開いて、既定の AI を起動する
+        assert_eq!((v[0].0, v[0].1), ("agent", "AI"));
+        assert!(v[0].2.contains("{paths.terminal}") && v[0].2.ends_with("prelude agent"));
+        assert_eq!(v[1].0, "cli");
+        assert_eq!(v[2], ("console", "console", "xterm"));
         assert_eq!(v[4], ("notes", "メモ", "kate"));
         assert_eq!(v[5].0, "settings");
-        // ファイラの枠は既定を持ち、置き換えられる
-        assert_eq!((v[2].0, v[3].0), ("field", "files"));
-        assert!(v[3].2.starts_with("prelude-filer"));
+        // ファイラは既定(yazi)を持ち、置き換えられる。field は files の別名
+        assert_eq!(v[3].0, "files");
+        assert!(v[3].2.contains("yazi {path}"));
+        assert!(uses_path(&list[3]) && !uses_path(&list[2]));
+        assert_eq!(find(&list, "field").map(|r| r.kind.as_str()), Some("files"));
+        assert!(find(&list, "nope").is_none());
         std::fs::write(d.join("files.toml"), "run = \"dolphin {path}\"\n").unwrap();
         assert!(load(&d).iter().any(|r| r.kind == "files" && r.run == "dolphin {path}"));
     }

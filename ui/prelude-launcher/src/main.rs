@@ -1,4 +1,4 @@
-//! PRELUDE のランチャー(docs/redesign-rust.md の判断 11・12、移行の段階 4)。
+//! PRELUDE のランチャー(docs/redesign-rust.md の「UI」の「ランチャー」、移行の段階 4)。
 //!
 //! - 画面の上の方に layer-shell で浮かび、キーボードを取る。選んだら開いて終わる(1 回ごとに起動する。fuzzel と同じ使い方)
 //! - 候補と点数はコアが出す(`item.list`。タブが先、ほかは最近 + よく使う順)。開くのは `item.open`(点数も上がる)
@@ -6,7 +6,7 @@
 //! - 最後の行は「Web で開く / 検索」。URL らしければその URL、フォルダならフォルダのペイン、それ以外は検索
 //! - Ctrl+→ / Ctrl+↓: 選んだ行を、今のペインの右 / 下に分割して開く(Ctrl+Enter・Ctrl+クリックは右)
 //! - 名前に PRELUDE を付けない(ランチャーは PRELUDE の中のものなので)
-//! - `--pane <id> --url <URL>`: その Web のペインの今の URL を入れた状態で開き、Enter で同じペインに開く(判断 12)
+//! - `--pane <id> --url <URL>`: その Web のペインの今の URL を入れた状態で開き、Enter で同じペインに開く(「Web のペイン」)
 //!
 //! 使い方: `prelude-launcher [--window] [--pane <id> --url <URL>]`(`--window` は普通の窓で出す。試す用)
 //! 検索エンジンは `PRELUDE_SEARCH_ENGINE`(`%s` が言葉。既定は Google。Electron 版の設定の既定と同じ)

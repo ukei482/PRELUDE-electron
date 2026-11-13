@@ -1,0 +1,177 @@
+// サイドバーの部品の決まり(docs/redesign-rust.md の「サイドバー」の「部品」)。
+// 部品ごとに global を 1 つ持つ。in property はコア → 部品(表示するもの)、callback は部品 → コア(頼むこと)。
+// 見た目と並べ方は決めない。サイドバーは使う部品の global だけを満たせばよい(使わない部品があってもよい)。
+// 中身(コアとのやり取り)を付けるのは PRELUDE の Rust の側で、.slint はこれ以外の方法でコアとやり取りしない。
+// パスは絶対パス。id・番号はコアの状態(prelude-proto の State)のもの。
+
+export struct BookmarkItem {
+    path: string,
+    title: string,
+    // ランチャーの b3 と同じ番号(並び順はコアが持つ)。0 は番号無し
+    num: int,
+    // 1 つのペインならその種類(web・app・files など)、分割していれば layout
+    kind: string,
+    icon: image,
+    // このブックマークを開いたタブがあるか
+    open: bool,
+    // 入っているフォルダのパス(スペースの直下なら空)
+    folder: string,
+}
+
+export struct BookmarkFolder {
+    path: string,
+    title: string,
+    // 開いているか(サイドバーが覚える見た目の状態)
+    expanded: bool,
+    // 中に開いているブックマークがあるか
+    has-open: bool,
+}
+
+export struct TabItem {
+    id: int,
+    num: int,
+    title: string,
+    // 今のペインの種類
+    kind: string,
+    icon: image,
+    active: bool,
+    // 開いたブックマーク(.prelude のパス。無ければ空)
+    bookmark: string,
+    pane-count: int,
+}
+
+export struct PaneItem {
+    id: int,
+    // 入っているタブの id
+    tab: int,
+    title: string,
+    kind: string,
+    icon: image,
+    // タブの中の今のペインか
+    active: bool,
+}
+
+export struct PaneKind {
+    kind: string,
+    name: string,
+}
+
+// 枠: つながっているか・幅
+export global SidebarFrame {
+    in property <bool> online;
+    // つながっていない理由など
+    in property <string> status;
+    in property <bool> compact;
+    // 窓のつなぎの段(0 起動だけ、1 作業領域だけ、2 並べる、3 読む、4 追う)
+    in property <int> windows-level;
+
+    callback toggle-compact();
+    callback hide();
+}
+
+// スペース
+export global Spaces {
+    in property <string> current;
+    in property <[string]> all;
+
+    callback switch-to(string);
+    callback create(string);
+}
+
+// ブックマーク
+export global Bookmarks {
+    in property <[BookmarkItem]> items;
+    in property <[BookmarkFolder]> folders;
+
+    callback open(string);
+    // フォルダの中を全部開く
+    callback open-all(string);
+    // (パス, 新しい題名)
+    callback rename(string, string);
+    // (パス, フォルダのパス。空ならスペースの直下)
+    callback move-to(string, string);
+    // (パス, この前に置くブックマークのパス。空なら最後)
+    callback reorder(string, string);
+    // 入っているフォルダをファイラで見る
+    callback reveal(string);
+    // ゴミ箱へ
+    callback trash(string);
+    // フォルダ: (名前)・(パス, 新しい名前)・(パス。中身はスペースの直下へ出す)・(パス, 開くか)
+    callback create-folder(string);
+    callback rename-folder(string, string);
+    callback remove-folder(string);
+    callback set-expanded(string, bool);
+}
+
+// タブ
+export global Tabs {
+    in property <[TabItem]> items;
+    // 分割したタブのペイン(全部のタブの分)
+    in property <[PaneItem]> panes;
+    // 閉じたタブを開き直せるか
+    in property <bool> can-reopen;
+
+    callback activate(int);
+    callback close(int);
+    callback focus-pane(int);
+    // (タブの id, 移す先の位置。0 が一番上)
+    callback move-to(int, int);
+    callback duplicate(int);
+    // (タブの id, 新しい番号)
+    callback renumber(int, int);
+    // このタブより下を全部閉じる
+    callback close-below(int);
+    callback reopen();
+}
+
+// 新しいタブ
+export global NewTab {
+    // web とレシピの種類
+    in property <[PaneKind]> kinds;
+
+    // 種類を選んで開く(web はランチャーを出す)
+    callback open(string);
+}
+
+// 分割ボタン(今のペインの操作)
+export global PaneBar {
+    // 今のペインの id(無ければ 0)
+    in property <int> pane;
+    in property <string> kind;
+    in property <string> title;
+    // Web のペインなら URL
+    in property <string> url;
+    // 窓のつなぎが並べられるか(段が 2 以上)
+    in property <bool> can-split;
+    in property <bool> can-mute;
+    in property <bool> muted;
+    // 戻る・進むができる種類か(今は Web)
+    in property <bool> can-go-back;
+    // 分割のボタンの動き(設定): "auto"(ペインの形で向きを決める)・"pick"(押すと向きを選ぶ)
+    in property <string> split-mode;
+    // auto のときの向き: "right"(横長のペイン)・"down"(縦長のペイン)
+    in property <string> auto-split;
+
+    // 分割する。向きは "right"・"left"・"down"・"up"("row" は right、"col" は down と同じ)。ランチャーを分割の向きで開き、出すものを選ぶ
+    callback split(string);
+    callback close();
+    // 今の URL が入ったランチャーを開く
+    callback change-url();
+    callback set-muted(bool);
+    // 今のペインの戻る・進む
+    callback back();
+    callback forward();
+}
+
+// ブックマークボタン(今のタブをブックマークにする)
+export global BookmarkButton {
+    // 今のタブが開いたブックマーク(.prelude のパス。無ければ空)と、その題名
+    in property <string> bookmark;
+    in property <string> bookmark-title;
+    in property <int> pane-count;
+
+    // ブックマークにする(題名)。1 つのペインならそのペイン、分割していれば配置ごと
+    callback save(string);
+    // 今の配置でブックマークを上書きする
+    callback overwrite();
+}
