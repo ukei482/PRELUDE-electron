@@ -296,10 +296,10 @@ fn 取り込むペイン_レシピ_止まったペイン() {
     assert_eq!((h.cmd.as_str(), h.cwd.as_str()), ("konsole --workdir '/data/x y'", "/data/x y"));
     ok(&mut c, Command::PaneClose { pane: here });
 
-    // 窓が閉じたペインは残して止まったものにし、取り込まない。タブを開き直すと起動し直す
-    assert!(c.note_exited(kate));
-    assert!(!c.note_exited(kate));
-    assert!(!c.note_exited(999));
+    // 窓が出ずに終わったペインは残して止まったものにし、取り込まない。タブを開き直すと起動し直す
+    assert!(c.note_exited(kate, false));
+    assert!(!c.note_exited(kate, false));
+    assert!(!c.note_exited(999, false));
     assert_eq!(state(&c).tabs[0].layout["stopped"], json!(true));
     assert_eq!(c.wants().len(), 1);
     assert!(c.note_title(console, "~ : bash".into()));
@@ -427,7 +427,7 @@ fn web_のペイン_印_url_の知らせ_戻る() {
         ErrorCode::BadRequest
     );
     // 止まった Web のペインは開かない
-    c.note_exited(web);
+    c.note_exited(web, false);
     assert_eq!(c.web_wants().0.len(), 1);
 }
 
@@ -964,11 +964,27 @@ mod compositor_layout {
         let a = open(&mut c, "a");
         let b = split(&mut c, a, "b");
         let d = split(&mut c, b, "d");
-        c.note_exited(d);
+        c.note_exited(d, false);
         assert!(c.note_layout(&[(1, Some(row(P(b), P(a), 0.4)))]));
         let want = row(row(P(b), P(a), 0.4), P(d), 0.7);
         assert_eq!(tree_of(&c, 1), want);
         assert!(c.state().tabs[0].layout.to_string().contains("stopped"));
+    }
+
+    #[test]
+    fn 窓を閉じたペインはペインごと閉じる() {
+        let mut c = core("closed");
+        let a = open(&mut c, "a");
+        let b = split(&mut c, a, "b");
+        // 分割のうち 1 つの窓を閉じた: そのペインだけ無くなり、残りのペインが今のペインになる
+        assert!(c.note_exited(b, true));
+        assert_eq!(tree_of(&c, 1), P(a));
+        assert!(!c.state().tabs[0].layout.to_string().contains("stopped"));
+        assert_eq!(c.state().tabs[0].active_pane, a);
+        // 最後のペインの窓を閉じた: タブごと無くなる
+        assert!(c.note_exited(a, true));
+        assert!(c.state().tabs.iter().all(|t| t.num != 1));
+        assert!(!c.note_exited(a, true));
     }
 
     #[test]
@@ -1024,9 +1040,9 @@ mod compositor_layout {
         assert!(t.title.contains("題名"));
         assert!(!serde_json::to_string(&c.saved()).unwrap().contains("題名"));
         // 閉じるとペインごと消える(止まったものにしない)
-        assert!(c.note_exited(foo.pane));
+        assert!(c.note_exited(foo.pane, true));
         assert_eq!(tree_of(&c, 1), row(P(a), P(okular), 0.5));
-        assert!(c.note_exited(okular));
+        assert!(c.note_exited(okular, true));
         assert_eq!(tree_of(&c, 1), P(a));
         // 知らないタブには入れない
         assert!(!c.note_foreign(tab + 999, 502, "foo", "", false, &P(0)));

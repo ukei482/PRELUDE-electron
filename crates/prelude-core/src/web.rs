@@ -329,7 +329,7 @@ impl Web {
                 Msg::Connected(out) => self.out = Some(out),
                 Msg::Event(v) => self.event(&v),
                 Msg::Closed => {
-                    // Chromium が終わった(使用者が全部閉じた・落ちた)。窓が消えるので、ペインは取り込みの側から止まったものになる
+                    // Chromium が終わった(使用者が全部閉じた・落ちた)。窓が消えるので、ペインは取り込みの側から閉じられる
                     eprintln!("prelude-core: Chromium exited");
                     self.chromium = None;
                     self.out = None;
