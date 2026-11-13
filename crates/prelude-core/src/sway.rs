@@ -283,6 +283,11 @@ pub fn gaps_cmds(inner: Option<u32>, outer: Option<u32>) -> Vec<String> {
     out
 }
 
+/// 設定の windows.corner_radius → SwayFX のコマンド(素の sway は角丸を持たないので、コマンドは失敗するだけ)
+pub fn corner_cmds(radius: Option<u32>) -> Vec<String> {
+    radius.map(|r| vec![format!("corner_radius {r}")]).unwrap_or_default()
+}
+
 /// タブの作業領域の名前の、番号の後ろ。設定の windows.workspace_prefix と、別のソケットのコアの印から作る
 pub fn ws_suffix(prefix: &str, tag: &str) -> String {
     match (prefix.is_empty(), tag.is_empty()) {
@@ -524,7 +529,8 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>, opts: Options)
         quiet_until: Instant::now(),
     };
     let level = s.level;
-    let gaps = gaps_cmds(s.opts.gaps_inner, s.opts.gaps_outer);
+    let mut gaps = gaps_cmds(s.opts.gaps_inner, s.opts.gaps_outer);
+    gaps.extend(corner_cmds(s.opts.corner_radius));
     if !gaps.is_empty() {
         s.ipc.run(&gaps).await;
     }
@@ -1368,6 +1374,13 @@ mod tests {
         assert_eq!(gaps_cmds(Some(8), Some(12))[2..], ["gaps outer 4", "gaps outer all set 4"]);
         // 窓どうしは 8、端は 0: sway の outer は負
         assert_eq!(gaps_cmds(Some(8), Some(0))[2], "gaps outer -8");
+    }
+
+    #[test]
+    fn 角丸のコマンド() {
+        assert!(corner_cmds(None).is_empty());
+        assert_eq!(corner_cmds(Some(0)), vec!["corner_radius 0"]);
+        assert_eq!(corner_cmds(Some(10)), vec!["corner_radius 10"]);
     }
 
     #[test]

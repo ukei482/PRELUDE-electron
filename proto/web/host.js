@@ -129,10 +129,9 @@
     return host;
   }
 
-  // 見た目: テーマ(data-theme)と変数。本番では theme.toml から入れる。見た目の確かめ(stage)からは postMessage で届く
+  // 置き方の変数(窓として浮いているときの縁の線など)。見た目はサイドバーが 1 つだけ持ち、テーマは無い。見た目の確かめ(stage)からは postMessage で届く
   function applyLook(look) {
     const r = document.documentElement;
-    if (look.theme) r.dataset.theme = look.theme;
     for (const [k, v] of Object.entries(look.vars || {})) r.style.setProperty(`--${k}`, v);
   }
   window.addEventListener('message', (e) => {
@@ -143,8 +142,6 @@
       window.preludeHost && window.preludeHost.transport.refresh();
     }
   });
-  const q = new URLSearchParams(location.search);
-  if (q.get('theme')) applyLook({ theme: q.get('theme') });
 
   window.PreludeHost = { start, applyLook };
 })();

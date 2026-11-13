@@ -130,6 +130,13 @@ pub const ITEMS: &[Item] = &[
         "窓と画面の端の間(px)。サイドバーも同じだけ端から離す。auto は環境の設定のまま",
         Apply::Restart,
     ),
+    item(
+        "windows.corner_radius",
+        Kind::AutoInt { min: 0, max: 32 },
+        "\"auto\"",
+        "窓の角丸(px)。サイドバーの角も同じにする。auto は環境の設定のまま。効くのは角丸を持つコンポジタ(SwayFX など)だけ",
+        Apply::Restart,
+    ),
     planned("sidebar.side", Kind::Choice(&["left", "right"]), "\"left\"", "サイドバーを出す辺", Apply::Now),
     planned(
         "sidebar.surface",

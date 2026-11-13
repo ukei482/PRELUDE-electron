@@ -125,6 +125,8 @@ pub struct Options {
     /// 窓と窓の間・窓と画面の端の間(px。None は環境のまま)。サイドバーも同じ決まりで並べる
     pub gaps_inner: Option<u32>,
     pub gaps_outer: Option<u32>,
+    /// 窓の角丸(px。None は環境のまま)。サイドバーも同じにする
+    pub corner_radius: Option<u32>,
 }
 
 impl Default for Options {
@@ -138,6 +140,7 @@ impl Default for Options {
             workspace_prefix: String::new(),
             gaps_inner: None,
             gaps_outer: None,
+            corner_radius: None,
         }
     }
 }
@@ -153,6 +156,7 @@ impl Options {
             workspace_prefix: c.str("windows.workspace_prefix").to_string(),
             gaps_inner: c.get("windows.gaps_inner").as_integer().map(|n| n as u32),
             gaps_outer: c.get("windows.gaps_outer").as_integer().map(|n| n as u32),
+            corner_radius: c.get("windows.corner_radius").as_integer().map(|n| n as u32),
         }
     }
 
