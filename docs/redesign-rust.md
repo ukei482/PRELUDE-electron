@@ -7,7 +7,7 @@ PRELUDE を Electron から Rust に移すにあたっての設計。節の名�
 もっと使いやすく、ミニマルで、拡張しやすいものにする。
 
 - **PRELUDE が持つのは「何をしているか」**(スペース・ブックマーク・paths・履歴)と、それを開く入口(ランチャー)だけ
-- 本体は Rust。Web は Chromium そのもの、ファイラは yazi などの外のプログラムに任せる
+- 本体は Rust。Web はブラウザ、ファイラは yazi などの外のプログラムに任せる
 - OS・デスクトップの役割(窓の管理・バー・通知・ロック・電源・更新)は持たない。そのかわり、どの OS・デスクトップにも載る
 - 環境に合わせる部分は「つなぎ」として差し込める。つなぎが無くても使える
 
@@ -28,7 +28,7 @@ PRELUDE を Electron から Rust に移すにあたっての設計。節の名�
 ```
 ┌─ prelude-core(Rust・常駐。画面を持たない) ─────────────┐
 │ 状態: スペース / タブ / 分割 / ペイン / .prelude / 履歴    │
-│ 開く: アプリ・レシピ・Chromium(Web のペイン)            │
+│ 開く: アプリ・レシピ(Web のペインもブラウザのレシピ)    │
 │ 公開: コマンドとイベント(ソケットの約束)                │
 └──────▲───────────────────────────────▲──────────────────┘
        │ ソケットの約束(Unix ソケット)  │ 差し込み口
@@ -119,7 +119,7 @@ files    = "~/研究/論文"        # ファイラの最初のフォルダ
 ### 種類
 | 種類 | 中身 |
 |---|---|
-| `web` | Chromium のアプリの窓(「Web のペイン」) |
+| `web` | ブラウザの窓。中身は既定のレシピ `web`(「Web のペイン」) |
 | `app` | 起動コマンドを直接書くアプリ。自分で作ったブックマークは今までどおり。人からもらったものは、インストール済みのアプリと一致しないコマンドを確かめてから実行する |
 | レシピの名前(`console`・`cli`・`files`・`settings` など) | 設定ファイルで決めたコマンド(下の「レシピ」) |
 
@@ -159,27 +159,35 @@ class = "org.kde.konsole"                     # 省略できる。窓を見分�
 
 ## Web のペイン
 
-Web は全部 Chromium で、PRELUDE は Web エンジンを持たない(Electron 版は WebContentsView で自前で描き、合わないサイトだけ Chromium へ逃がしていた)。
+**Web はブラウザに任せ、PRELUDE は URL を渡して開くだけにする**(2026-11-13 決定)。ファイラを yazi に任せたのと同じ考え方で、`web` も特別扱いしないレシピの 1 つにする。PRELUDE は Web エンジンを持たず、ブラウザの中とも話さない(Electron 版は WebContentsView で自前で描いていた。Rust 版の初めは、Chromium に小さな拡張機能を入れてコアとつないでいた)。
 
 ### 形
-- **Chromium は PRELUDE 専用のプロファイルで 1 つだけ** 起動する。`PATH` から探し(`xdg.rs`)、snap 版ならプロファイルと印のページを `~/snap/chromium/common` に置く。無いときの扱いは作らない(パッケージが入れる)
-- **Web のペイン 1 つ = Chromium のアプリの窓 1 つ**(`--app`。アドレスバーもタブも無い)。PRELUDE のタブと Chromium のタブが二重にならず、「1 ブックマーク = 最大 1 タブ」が保てる
-  - `--app=` は `data:` や `about:blank` では窓にならないので、題名に印を出すだけのページ(`prelude-pane.html#<コアの印>:<ペイン>`)で開き、窓を見分けてから本当の URL へ移す
-- **つなぐのは小さな拡張機能**(`crates/prelude-core/extension/`)。CDP は使わない: `--remote-debugging-pipe` で起動すると `navigator.webdriver` が `true` になり、Google のログインが「安全でないブラウザ」として拒まれる
-  - 拡張機能はコアに埋め込み、起動のときに書き出して `--load-extension` で読む(Google 版の Chrome では外された引数なので Chromium を使う)。事実を知らせて頼まれたことをするだけで、判定は `web.rs` の `decide` がする
-  - native messaging でつなぐ。Chromium が `prelude-core --web-host` を起動し、これがコアの Unix ソケット(`core.web`)へつなぐ。宣言は `<プロファイル>/NativeMessagingHosts/`、id は `manifest.json` の `key` で固定する
-- URL・タイトルはサイドバーに出す。URL を書き換えるときは、キー 1 つで **今の URL が入った状態のランチャー** を開き、Enter で同じペインに開く。戻る・進むは Chromium のキー(Alt+←/→)。`web.go` は同じことをコマンドからするためのもの
-- 権限の確認・拡張機能・パスワード・ログインは **Chromium に任せる**
+- **`web` は既定のレシピ**。`.prelude` の `type = "web"` と `url` はそのまま読み、ペインの `path` と同じく **ブックマークの `url` は「開き始める場所」** にする。ページの中で移った先は覚えない。立ち上げ直したときはブックマークの `url` から開き直す
+- ブラウザは設定の `browser`(auto は `PATH` から探す)。ブラウザごとの開き方の違い(Chromium 系は `--app=<URL>` でアドレスバーとタブの無い窓、Firefox 系は `--new-window <URL>` など)は、端末と同じく PRELUDE の 1 か所の表だけが知る。表に無いブラウザは URL だけを渡す
+- ブラウザのプロファイル・ログイン・拡張機能・パスワード・権限の確認・戻る/進む・新しい窓は **ブラウザに任せる**。PRELUDE 専用のプロファイルも作らない(使用者のふだんのブラウザをそのまま使う)
+- 窓を見分けるのは、ほかのアプリと同じ窓のつなぎの仕事。ブラウザは窓が増えても同じプロセスのままなので、起動したプロセスでは見分けられない。そのときは題名に印を出すだけのページ(`prelude-pane.html#<コアの印>:<ペイン>`)で開き、ページが自分で本当の URL へ移る(拡張機能は要らない)。細かいところは画面のある PC で確かめる
+- サイドバーなどに出す題名は窓の題名、アイコンはブラウザのアイコン(`.desktop`)。今の URL・ファビコン・消音は持たない
 
-### Chromium との分担
+### ダウンロード
+ダウンロードだけは、**始めたタブのブックマークの `paths` に入れる**(`download` → `save` → スペースの既定…)。ブラウザの中とは話さないので、ブラウザの保存先のフォルダをコアが見張って、あとから移す。
 
-| | 決めたこと |
+- 見張るフォルダは設定の `download_dir`(空なら XDG のダウンロードのフォルダ)。ブラウザの保存先もそこにしておく
+- 新しいファイル(書きかけの `.crdownload`・`.part` を含む)が **最初に現れたときの今のタブ** を覚える。書き終わる(書きかけの名前が消え、大きさが変わらなくなる)と、そのタブのブックマークの `paths` へ移す。同じ名前があれば `名前 (1).拡張子` にする。移したら `download` のイベントで知らせる
+- 移すのは、現れたときの今のペインが `web` で、そのタブのブックマークかスペースに `download`(か代わりの項目)が書いてあるときだけ。それ以外(PRELUDE の外のブラウザの窓、端末から保存したファイル、ブックマークでないタブ)は動かさない
+- 監視は、ブックマークのフォルダと同じく中身を定期的に比べる(OS の監視の仕組みには頼らない)
+- 現れた直後に別のタブへ移ると、まれに違うタブのフォルダに入る。そのかわりブラウザを選ばない
+
+### やめたこと
+前の形(Chromium + 拡張機能 + native messaging)でしていた次のことは、やめる。
+
+| やめたこと | これから |
 |---|---|
-| 立ち上げ直し | **PRELUDE(コア)が戻す**。コアがペインの URL を覚えていて、開き直させる。Chromium 自身の「前回のページを開く」は切る。ページ内の戻る履歴・スクロール位置・入力途中のフォームは戻らない |
-| 新しい窓 | タブ付きの窓(`normal`)に出た http(s) のページは閉じて **PRELUDE の新しいタブ** にする。ログインなどの小さな窓(`popup`)は取り込まず、浮かせたまま前に出す |
-| ダウンロード | 保存先は **ダウンロードを始めたタブのブックマークの `paths`**(`download` → `save` → スペースの既定…)。拡張機能からは絶対パスで頼めないので、終わってからコアが移す |
-| プロファイル | **1 つだけ**。どのスペースでも同じログイン状態。スペースごとに分ける(`space.toml` の `profile`)は、要るようになったら足す |
-| 終わり | Chromium は窓が無くなると終わる。次の Web のペインで起動し直す |
+| 今の URL を覚えて、立ち上げ直したときに戻す | ブックマークの `url` から開き直す |
+| ブラウザの新しい窓を閉じて PRELUDE の新しいタブにする(設定の `tabs.links`) | ブラウザ任せ。窓のつなぎが「PRELUDE を通さずに開いた窓」として引き取れる範囲だけ |
+| サイドバーの URL・ファビコン・消音、URL を書き換えるランチャー、戻る/進む(`web.go`・`web.mute`) | 持たない。別の URL は新しいペインで開く |
+| Chromium に限る(`--load-extension`)、snap 版の扱い、専用のプロファイル | どのブラウザでもよい |
+
+- 欲しくなったら、コアの外の **プラグイン**(「プラグイン」)として足す。ブラウザの拡張機能がソケットにつながり、ほかのプログラムと同じ命令を使う。コアには戻さない
 
 ---
 
@@ -199,7 +207,7 @@ Web は全部 Chromium で、PRELUDE は Web エンジンを持たない(Electro
 | 4. 追う | 窓の動き・PRELUDE を通さずに開いた窓を追いかけて、コアの状態に合わせる |
 
 - `[layout]` は分割の木と比率。つなぎが無ければ「開くものの一覧」として読む
-- 対応するコンポジタが無ければ、つなぎ無し(`plain.rs`。段 0)で動く。アプリはペインごとに 1 回だけ起動し、Web のペインの Chromium の窓も環境が置く。`--no-embed` はアプリも起動しない(状態だけを試す)
+- 対応するコンポジタが無ければ、つなぎ無し(`plain.rs`。段 0)で動く。アプリはペインごとに 1 回だけ起動し、Web のペインのブラウザの窓も環境が置く。`--no-embed` はアプリも起動しない(状態だけを試す)
 - 今のつなぎの名前と段は、状態の `windows`(`backend`・`level`)に出す
 - 分割で開く(ランチャーの Ctrl+→ など)は、つなぎが並べられるとき(段 2 から)だけ出す
 - 使う段は、つなぎの最大の段と、設定の `windows.level`(任せる段の上限)の小さいほう。設定は起動のときに当てはめる(変えたらコアを起動し直す)
@@ -329,7 +337,7 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 | ブックマーク(`Bookmarks`) | ブックマーク(題名・番号 b1…・種類・アイコン・開いているか)、フォルダ(題名・開閉・中に開いているものがあるか) | 開く、フォルダの中を全部開く、名前を変える、フォルダへ移す・フォルダから出す、並べ替える、フォルダで見る、ゴミ箱へ、フォルダを作る・名前を変える・中身を残して消す、フォルダを開閉する | `bookmark.open`、※ `bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`・`folder.create`・`folder.rename`・`folder.remove`。開いているかはタブの `bookmark` から、開閉はサイドバーが覚える |
 | タブ(`Tabs`) | タブ(番号・題名・種類・アイコン・今のタブか・開いたブックマーク)、分割したタブのペイン(種類・題名・アイコン・今のペインか)、閉じたタブがあるか | 切り替える、閉じる、ペインへ移る、並べ替える、複製する、番号を変える、下のタブを閉じる、閉じたタブを開き直す | `tab.activate`・`tab.close`・`pane.focus`・`tab.move`、※ `tab.duplicate`・`tab.renumber`・`tab.reopen` |
 | 新しいタブ(`NewTab`) | 開ける種類(Web・レシピの一覧) | 種類を選んで開く(Web はランチャーを出す) | `tab.open`・`recipe.list` |
-| 分割ボタン(`PaneBar`) | 今のペイン(種類・題名・URL)、分割できるか(段が 2 以上)、消音できるか・消音中か(Web) | 右・下に分割する(ランチャーを分割の向きで開き、出すものを選ぶ)、今のペインを閉じる、URL を変える(今の URL が入ったランチャー)、消音 | `pane.close`、※ `web.mute`。分割は `prelude-launcher --split row\|col`、URL は `--pane <id> --url <URL>` |
+| 分割ボタン(`PaneBar`) | 今のペイン(種類・題名)、分割できるか(段が 2 以上) | 右・下に分割する(ランチャーを分割の向きで開き、出すものを選ぶ)、今のペインを閉じる | `pane.close`。分割は `prelude-launcher --split row\|col` |
 | ブックマークボタン(`BookmarkButton`) | 今のタブがブックマークから開いたものか(その題名)、ペインがいくつか | ブックマークにする(1 つのペインならそのペイン、分割していれば配置ごと)、今の配置で上書きする | ※ `bookmark.save`・`bookmark.overwrite` |
 
 決まりは `proto/slint/ui/parts.slint`(全部を使う見本は `parts-check.slint`。コンパイルが通ることを `proto/slint` のテストで確かめる)。UI を作るときに本番の場所へ移す。
@@ -343,8 +351,8 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 
 #### コアに足すもの
 済(2026-11-11)。ブックマークを書く処理は `bmwrite.rs`、ゴミ箱は `trash.rs`、アプリのアイコンは `icons.rs`。どの命令も `prelude` コマンドからも使える。
-- 命令(上の表の ※): ブックマークを書く(`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`)、ブックマークのフォルダ(`folder.create`・`folder.rename`・`folder.remove`)、タブ(`tab.duplicate`・`tab.renumber`・`tab.reopen`。閉じたタブはコアが覚える)、`web.mute`
-- 状態に足す項目: ブックマークの番号(並び順はコアが持ち、ランチャーの `b3` と同じ番号にする。順は `space.toml` に書く)と種類、ペインのアイコン(アプリは `.desktop` のアイコンのファイル、Web はファビコンをコアが保存したファイル)、閉じたタブがあるか、Web のペインの消音
+- 命令(上の表の ※): ブックマークを書く(`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`)、ブックマークのフォルダ(`folder.create`・`folder.rename`・`folder.remove`)、タブ(`tab.duplicate`・`tab.renumber`・`tab.reopen`。閉じたタブはコアが覚える)。`web.mute` も足したが、Web を切り離したので消す(「Web のペイン」)
+- 状態に足す項目: ブックマークの番号(並び順はコアが持ち、ランチャーの `b3` と同じ番号にする。順は `space.toml` に書く)と種類、ペインのアイコン(`.desktop` のアイコンのファイル。Web はブラウザのアイコン)、閉じたタブがあるか
 - ブックマークを書く命令は、「ファイルには使用者が決めたことだけ」の例外ではない。使用者がサイドバーで頼んだことを、コアが代わりに書く
 
 ### Slint の試作で分かったこと
@@ -384,6 +392,8 @@ PRELUDE の UI はランチャー・サイドバー・設定だけ。PRELUDE の
 段階 3-a で足したもの: `recipe.list`、`bookmark.open` の `allow` と返事の `held`(外した起動コマンド)、ペインの `window_title`・`stopped`。取り込みの D-Bus は `org.prelude.Core`(`/org/prelude/Core` の `Report`。KWin スクリプトが呼ぶ)
 
 段階 3-b で足したもの: `web.go`、`download` のイベント
+
+Web を切り離して消すもの(2026-11-13。「Web のペイン」): `web.go`・`web.mute`、配置のペインの `muted`。消すので版を 2 にする。版 1 の相手にはこの 2 つの命令に `unknown_command` を返し、`muted` は送らない。`download` のイベントは残す(見張って移したときに出す)
 
 サイドバーの部品のために足したもの(2026-11-11): `tab.duplicate`・`tab.renumber`・`tab.reopen`、`bookmark.save`・`bookmark.overwrite`・`bookmark.rename`・`bookmark.move`・`bookmark.reorder`・`bookmark.trash`、`folder.list`・`folder.create`・`folder.rename`・`folder.remove`、`web.mute`。状態に `windows`・`closed`・`bookmarks_rev`、`bookmark.list` に `num`・`kind`、配置のペインに `icon`(ファイルのパス)・`muted`。どれも足しただけなので、版は 1 のまま
 
@@ -426,11 +436,12 @@ profile = "auto"            # おすすめの組み合わせ(auto・none・sway�
 search_engine = "https://www.google.com/search?q=%s"
 show_hidden   = false
 space_dir     = ""          # 空なら ~/スペース
-download_dir  = ""
+download_dir  = ""          # 見張るダウンロードのフォルダ(ブラウザの保存先)。空なら XDG のダウンロードのフォルダ
 
 # 道具
 terminal = "auto"           # 端末。auto は PATH から foot・kitty・ghostty・alacritty・wezterm・konsole の順
 agent    = "auto"           # 既定の AI。auto は PRELUDE_AGENT、無ければ claude・codex・gemini・opencode の順
+browser  = "auto"           # Web のペインのブラウザ。auto は PATH から探す(「Web のペイン」)
 
 [windows]                   # 窓のつなぎ(「窓のつなぎ」)
 backend  = "auto"           # auto・sway・kwin・hyprland・none
@@ -448,7 +459,6 @@ side = "left"               # left・right
 surface = "auto"            # auto(layer-shell があればそれ)・layer・window
 
 [tabs]
-links = "tab"               # Web のペインから新しく開くリンク: tab(新しいタブ)・split(右に分割)
 closed_max = 20             # 覚えておく閉じたタブの数
 ```
 - `level` は **上限**。つなぎがもっと上の段を持っていても、そこまでしかしない。`workspace` は「作業領域だけ指定する形」(「窓のつなぎ」)
@@ -561,7 +571,7 @@ Omarchy は OS ごと持つことで完成形を作っている。PRELUDE は同
 | 0 | Rust の開発環境、UI の試作(`proto/gpui`・`proto/slint`) | 済(上の「Slint の試作で分かったこと」) |
 | 1 | `.prelude`・`space.toml` の TOML(`prelude-format`)。Electron 版も TOML を読み書きする | 済 |
 | 2 | `prelude-core` の骨組み(状態・ソケットの約束・`prelude` コマンド) | 済 |
-| 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(`web.rs`)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`・つなぎ無しの `plain.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済 |
+| 3 | ペインを開く: レシピ(`recipes.rs`)、人からもらったブックマークの起動コマンドの確認、Web のペイン(`web.rs`。のちに切り離す)、窓のつなぎ(`compositor.rs`・`embed.rs`・`sway.rs`・つなぎ無しの `plain.rs`)、PRELUDE を通さずに開いた窓、ランチャーの候補(`item.list`) | 済 |
 | 4 | UI: サイドバー・ランチャー・設定 | GPUI で作ったものを Slint で作り直す(下の「これから」) |
 | 5 | ファイラ | 自作のファイラ(`prelude-filer`)を作ったが、外のファイラ(yazi)に任せることにした。コアの側は済。`prelude-filer` は UI を Slint にするときに消す |
 | 6 | 環境とのつなぎ: `prelude watch --bar`(waybar の custom モジュールの形)、作者の環境の NixOS のモジュール(`nix/module.nix`) | 済 |
@@ -572,8 +582,9 @@ Omarchy は OS ごと持つことで完成形を作っている。PRELUDE は同
 済(2026-11-11): コアが `files`・`field` を名指ししない(`field` は `files` の別名)、既定の `files` は yazi、起動したペインに `PRELUDE_PANE`、`prelude pane path`、ダイアログの最初のフォルダの順、選ぶ画面の既定は `prelude choose`(yazi)、つなぎ無し(段 0。`plain.rs`)、つなぎが段を名乗る(状態の `windows`)、sway のつなぎが UI の窓を引き取らない、サイドバーの部品の決まり(`proto/slint/ui/parts.slint`)と、そのためのコアの命令・状態の項目、ブックマークのフォルダの監視、ダイアログのポータルを別のプロセスに(`prelude-core --portal`)、CI で Rust のテスト・clippy・整形、アプリの一覧を差し替えられる形に(`AppSource`)
 
 - 次にすること: **設定**(「設定」の「作る順番」)。AI 連携(スキル・MCP・AI のペイン)と設定の設計は済(2026-11-11)。そのあと「Omarchy から学んだこと」の、命令の台帳・フック・段 0 の小さな直し・おすすめの組み合わせ・説明書・複数の画面
-- 画面のある PC で確かめること: `prelude choose` の保存・フォルダを選ぶ操作、yazi のプラグインの例、拡張機能の消音とファビコン
+- 画面のある PC で確かめること: `prelude choose` の保存・フォルダを選ぶ操作、yazi のプラグインの例、Web のペインの窓の見分け方(印のページ)とダウンロードの見張り
 
+0. **Web を切り離す**(「Web のペイン」): `web.rs`・`webhost.rs`・`extension/`・native messaging・`core.web` のソケット・`prelude-core --web-host` を消し、既定のレシピ `web` と設定の `browser`・ブラウザの表を足す。ダウンロードはフォルダの見張りに替える。`web.go`・`web.mute`・`muted` を消して約束の版を 2 に、設定の `tabs.links` を台帳から外し、MCP・`prelude` コマンド・スキル(`skills/prelude/`)・`nix/module.nix`・`proto/web` のサイドバー(戻る・進む)・CLAUDE.md を合わせる。GPUI の `ui/` は手を入れない
 1. **Slint で layer-shell を使えるかの試作**: `proto/slint` に、Slint の自前のプラットフォーム + smithay-client-toolkit の layer-shell の面を足す。左端に貼り付く・場所を予約する・幅を変える・日本語入力・キーボード(名前の変更のときだけ取る)を確かめる。だめなら普通のウィンドウで出し、コンポジタの決まりで端に固定する
 2. **UI を Slint で作り直す**: サイドバー(部品ごとの決まり)・ランチャー(状態の `windows.level` が 2 以上のときだけ分割で開くを出す)・設定。色・字は PRELUDE の 1 つの見た目(テーマは読まない)。できたら GPUI の `ui/`(`prelude-filer` を含む)と `proto/gpui` を消す。日本語入力を画面のある PC で確かめる
 3. **`nix/`**: PRELUDE のパッケージと小さなモジュール(コアのサービス・任意のつなぎ)だけにし、作者の PC の設定は別のリポジトリへ(リポジトリは使用者が作る)。yazi のプラグインの例(`docs/rice.md`)を試す
@@ -592,5 +603,5 @@ Omarchy は OS ごと持つことで完成形を作っている。PRELUDE は同
 | 動き(`behavior`) | `settings.toml`。Rust 版で無くなる設定(`chromiumSites` など)は `migrated.txt` に一覧にして知らせる |
 | ショートカット(`shortcuts`)・タブの開き方(`tabs`) | 引き継がない。キーは環境が受ける |
 | 前回のタブ(`workspace*.json`) | 引き継がない(スペースのブックマークから開き直せる) |
-| Web のログイン | 引き継がない。NixOS の Chromium は `~/.config/PRELUDE-electron/browser-profile` を使い、Kubuntu の snap 版の `prelude-profile` は移さない(Cookie は鍵で暗号化されていて、移しても残るとは限らない)。**足りないサイトは一度ログインし直す**(2026-11-05 決定) |
+| Web のログイン | 引き継がない(Web を切り離したので、使用者のふだんのブラウザのログインをそのまま使う。以下は切り離す前の決まり)。NixOS の Chromium は `~/.config/PRELUDE-electron/browser-profile` を使い、Kubuntu の snap 版の `prelude-profile` は移さない(Cookie は鍵で暗号化されていて、移しても残るとは限らない)。**足りないサイトは一度ログインし直す**(2026-11-05 決定) |
 | 元のファイル | 消さない。いつでも Electron 版に戻れる |
