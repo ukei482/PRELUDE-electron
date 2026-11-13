@@ -19,7 +19,7 @@ services.prelude.enable = true;   # flake の nixosModules.default が package �
 | ダイアログ | sway のセッションだけ、アプリの「開く」「保存」を PRELUDE にする(`xdg.portal.config.sway`)。`services.prelude.portal.enable = false` で外す |
 
 ### GPUI の UI
-`services.prelude.ui.enable = true` で、サイドバー・ランチャー・ファイラが入る。サイドバーを起動しないなら `services.prelude.ui.sidebar = false`。ランチャーは `services.prelude.launcher` で替えられる(fuzzel などのプログラムでよい)
+`services.prelude.ui.enable = true` で、サイドバー・ランチャー・ファイラが入る。サイドバーを起動しないなら `services.prelude.ui.sidebar = false`。HTML のサイドバーの試作(`proto/web`)を使うなら、それに加えて `services.prelude.webSidebar.enable = true`(この PC はこちら)。ランチャーは `services.prelude.launcher` で替えられる(fuzzel などのプログラムでよい)
 
 ### sway の断片
 - sway の起動のときに、セッションの環境(`PATH` も)を systemd に渡してから `prelude-core.service` を restart する。sway が終わったらコアを止め、`SWAYSOCK` を消す

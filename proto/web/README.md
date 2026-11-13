@@ -2,6 +2,10 @@
 
 UI を Slint にするか HTML/CSS にするかを決めるための試作。サイドバーの部品の決まり(`proto/slint/ui/parts.slint` と同じ中身)を JS で書き、その決まりだけを使うサイドバーを HTML/CSS で作った。偽のコアでも、本物のコアでも動く。依存は無い(Node とブラウザだけ)。
 
+## sway で使う(NixOS)
+
+`services.prelude.webSidebar.enable = true`(GPUI のサイドバーは `services.prelude.ui.sidebar = false`)で、sway と一緒に橋(`prelude-sidebar-bridge`)と窓のホスト(`prelude-sidebar-web`)が起動する。パッケージは `nix/prelude-web-sidebar.nix`。手で試すなら `node proto/web/bridge.js` の後に `python3 proto/web/layer-host.py`(WebKitGTK・gtk-layer-shell・PyGObject が要る)。
+
 ## 見る
 
 ```bash
@@ -27,7 +31,8 @@ node proto/web/bridge.js         # → http://127.0.0.1:8370/(台)・/sidebar.ht
 | `sidebar.js`・`sidebar.css`・`sidebar.html` | サイドバーの 1 つの作り。部品の決まりだけを使う | 使用者が差し替えられる |
 | `host.js` | 画面の中のホスト。コアへの道(偽のコア・橋)を選び、サイドバーを描く | Rust の外側の窓(WebKitGTK・layer-shell)の中 |
 | `fake.js` | 偽のコア(命令の名前・引数・返事は本物と同じ) | 無し |
-| `bridge.js` | 本物のコアのソケット ⇔ ブラウザ(SSE と POST) | Rust の外側 |
+| `bridge.js` | 本物のコアのソケット ⇔ ブラウザ(SSE と POST)。ランチャーの起動(`POST /launch`)。POST は `x-prelude` の頭が要る | Rust の外側 |
+| `layer-host.py` | 窓のホスト(仮)。WebKitGTK の面を layer-shell で画面の左端に貼る。幅は中身の題名(`prelude:compact`・`prelude:wide`)で変える | Rust の外側 |
 | `stage.html`・`build.js` | 見た目を確かめる台と、1 枚の HTML にする道具 | 無し |
 
 ### 決まりを守らせる仕組み
