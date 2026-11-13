@@ -132,6 +132,7 @@
 - sway を抜けてもコアが動き続け、`SWAYSOCK` が Plasma のアプリにも渡っていた
 
 ### 変更
+- Rust 版の設計: Web をブラウザに任せ、PRELUDE は URL を渡して開くだけにすることにした(`docs/redesign-rust.md` の「Web のペイン」)。`web` は既定のレシピの 1 つにし、どのブラウザでも使えるようにする。ダウンロードはブラウザの保存先のフォルダをコアが見張り、始めたタブのブックマークの `paths` へ移す。今の URL を覚える・新しい窓をタブにする・消音・ファビコン・`web.go`・`web.mute` はやめる。コードはまだ前のまま(次の PR で切り離す)
 - CI(GitHub Actions)で Rust 版のテストも回す: `crates/` の整形の確認(`cargo fmt --check`)・clippy(警告は失敗)・`cargo test`、Slint の試作(`proto/slint`)の整形の確認と `cargo test`。合わせて、元からあった整形のずれを `cargo fmt` でそろえた
 - CI で `npm ci --ignore-scripts` を実行するようにした(0.12.0 の前から `smol-toml` が無くて失敗していた)
 - `/bin/bash` の決め打ちをやめて `PATH` から探すようにした(NixOS には無い。ホームの端末・音量の監視など)
