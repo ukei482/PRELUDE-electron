@@ -20,6 +20,7 @@
       rustPlatform = pkgs.makeRustPlatform { cargo = rust; rustc = rust; };
       prelude = pkgs.callPackage ./nix/prelude.nix { inherit rustPlatform; };
       prelude-ui = pkgs.callPackage ./nix/prelude-ui.nix { inherit rustPlatform; };
+      prelude-web-sidebar = pkgs.callPackage ./nix/prelude-web-sidebar.nix { };
       # GPUI が起動のときに読むライブラリ(リンクせずに開くものも含む)
       runtimeLibs = with pkgs; [
         fontconfig
@@ -34,7 +35,7 @@
     in
     {
       packages.${system} = {
-        inherit prelude prelude-ui;
+        inherit prelude prelude-ui prelude-web-sidebar;
         default = prelude;
         claude-desktop = pkgs.callPackage ./nix/claude-desktop.nix { };
         open-pdf-studio = pkgs.callPackage ./nix/open-pdf-studio.nix { };
@@ -66,6 +67,7 @@
         imports = [ ./nix/module.nix ];
         services.prelude.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.prelude;
         services.prelude.ui.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.prelude-ui;
+        services.prelude.webSidebar.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.prelude-web-sidebar;
       };
 
       nixosConfigurations.prelude = nixpkgs.lib.nixosSystem {

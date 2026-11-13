@@ -34,6 +34,11 @@ let
       # サイドバー(画面の左端に貼り付く。コアが動いていなければ、つながるまで待つ)。
       # sway は層の窓に、作られた順に場所を割り当てる。rice のバーより後に起動して、バーがサイドバーの外側に来るようにする
       exec sh -c "sleep 1.5; exec ${cfg.ui.package}/bin/prelude-sidebar"''}
+    ${lib.optionalString cfg.webSidebar.enable ''
+
+      # HTML のサイドバー(試作)。橋がコアとつなぎ、ホストが画面の左端に貼る。橋はコアが動くまでつなぎ直す
+      exec ${cfg.webSidebar.package}/bin/prelude-sidebar-bridge
+      exec sh -c "sleep 1.5; exec ${cfg.webSidebar.package}/bin/prelude-sidebar-web"''}
 
     # PRELUDE のタブ = 作業領域(名前はタブの番号)。$mod+数字(sway の既定のキー)でタブを切り替える
 
@@ -75,6 +80,14 @@ in
       };
     };
 
+    webSidebar = {
+      enable = lib.mkEnableOption "HTML のサイドバーの試作(proto/web)。sway と一緒に橋とホストを起動する。GPUI のサイドバー(ui.sidebar)とは片方だけにする";
+      package = lib.mkOption {
+        type = lib.types.package;
+        description = "prelude-sidebar-bridge・prelude-sidebar-web の入ったパッケージ(flake の packages.prelude-web-sidebar)";
+      };
+    };
+
     sway = {
       enable = lib.mkOption {
         type = lib.types.bool;
@@ -105,7 +118,17 @@ in
   config = lib.mkIf cfg.enable {
     # Web のペインは Chromium そのもの(「Web のペイン」。無いときの扱いは作らない)
     # 既定のファイラ(files のペイン)とアプリのダイアログの選ぶ画面(prelude choose)は、端末の中の yazi
-    environment.systemPackages = [ cfg.package pkgs.chromium pkgs.yazi ] ++ lib.optional cfg.ui.enable cfg.ui.package;
+    environment.systemPackages =
+      [ cfg.package pkgs.chromium pkgs.yazi ]
+      ++ lib.optional cfg.ui.enable cfg.ui.package
+      ++ lib.optional cfg.webSidebar.enable cfg.webSidebar.package;
+
+    assertions = [
+      {
+        assertion = !(cfg.webSidebar.enable && cfg.ui.enable && cfg.ui.sidebar);
+        message = "services.prelude: サイドバーは片方だけにする(webSidebar.enable と ui.sidebar)";
+      }
+    ];
 
     # AI のための PRELUDE のスキル(ほかのスキルは上書きしない)
     systemd.user.services.prelude-skill = lib.mkIf cfg.skill.enable {

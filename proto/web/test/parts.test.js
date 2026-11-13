@@ -183,3 +183,12 @@ test('戻る・進むは Web のペインだけ web.go になる', () => {
   assert.ok(Sidebar.render(partsOf(core, { splitMode: 'pick' })).includes('data-menu="split"'));
   assert.ok(Sidebar.render(partsOf(core, { splitMode: 'pick' }), { menu: { kind: 'split', x: 0, y: 0 } }).includes('class="splitpad"'));
 });
+
+test('橋はランチャーの引数を作る(左・上はまだ右・下になる)', () => {
+  const { launcherArgs } = require('../bridge.js');
+  assert.deepStrictEqual(launcherArgs({ split: 'row', before: true, pane: 2 }), ['--split', 'row']);
+  assert.deepStrictEqual(launcherArgs({ split: 'col' }), ['--split', 'col']);
+  assert.deepStrictEqual(launcherArgs({ pane: 3, url: 'https://example.com' }), ['--pane', '3', '--url', 'https://example.com']);
+  assert.deepStrictEqual(launcherArgs({ split: 'x; rm -rf /' }), []);
+  assert.deepStrictEqual(launcherArgs({}), []);
+});

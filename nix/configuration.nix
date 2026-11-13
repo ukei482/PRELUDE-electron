@@ -62,6 +62,9 @@
   # PRELUDE のコア・コマンドと、sway の設定の断片・ダイアログ(nix/module.nix)
   services.prelude.enable = true;
   services.prelude.ui.enable = true;
+  # サイドバーは HTML の試作(proto/web)を使う。GPUI のサイドバーは起動しない(ランチャー・ファイラは GPUI のまま)
+  services.prelude.ui.sidebar = false;
+  services.prelude.webSidebar.enable = true;
 
   environment.systemPackages = with pkgs; [
     (callPackage ./claude-desktop.nix { })

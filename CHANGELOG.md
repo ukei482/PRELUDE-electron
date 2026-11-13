@@ -25,6 +25,8 @@
   - 上の行(広げたとき)に、今のペインの 戻る・進む(Web のペイン。`web.go`)と 閉じる(`pane.close`)
   - 下に分割のボタン 1 つ(左右・上下をまとめた)。動きは設定で選ぶ: 自動(ペインが横長なら右、縦長なら下。右クリックで向きを選ぶ)・向きを選ぶ(押すと十字が出て、新しいペインを置く側をクリックか矢印キーで選ぶ)。部品 PaneBar の決まりに `canGoBack`・`splitMode`・`autoSplit` と `back`・`forward` を足し、`split` の向きに right・left・down・up を足した(Slint の `parts.slint` も同じ)
   - 見た目の台: 操作盤は窓の設定(窓の角丸・窓と窓の間・画面の端との間)と分割のボタンの動きだけにした。サイドバーの窓の角も窓と同じ角丸にする。この PC の壁紙(swaybg の画像)を選べ、橋から開いたときの既定
+  - sway で使えるようにした: 窓のホスト `prelude-sidebar-web`(`layer-host.py`。WebKitGTK の面を layer-shell で画面の左端に貼り、その幅だけ窓が避ける。細い列にすると幅も変わる。画面の端との間・窓の角丸は settings.toml の `[windows]` に合わせる)と、橋 `prelude-sidebar-bridge`。本番の形(Rust の外側)ができるまでの仮のもの。NixOS のモジュールの `services.prelude.webSidebar.enable` で sway と一緒に起動する(GPUI のサイドバーとは片方だけ)。この PC はこちらに替えた
+  - 橋: 分割のボタン・新しい Web のタブで、本当に `prelude-launcher` を起動する(`POST /launch`。左・上はランチャーがまだ持たないので右・下になる)。`POST` はどれも `x-prelude` の頭を要るようにした(ほかの Web ページから命令を送らせない)
 - 設定 `windows.corner_radius`(窓の角丸。px か auto)。sway のつなぎは SwayFX の `corner_radius` にする(素の sway は角丸を持たない)。サイドバーの窓の角も同じにする
 - 設定の `[windows]`(作る順番の 3)。コアの起動のときに当てはめる
   - 窓のつなぎの段を 0 起動だけ・1 作業領域だけ・2 並べる・3 読む・4 追う に振り直した(状態の `windows.level` の数も変わる。分割で開けるのは 2 から)

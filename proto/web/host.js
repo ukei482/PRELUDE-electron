@@ -54,11 +54,18 @@
         es.onmessage = (e) => onSnap(JSON.parse(e.data));
         es.onerror = () => onSnap({ online: false, status: '橋につながっていません(bridge.js)', state: null });
       },
+      // 橋は x-prelude の頭の無い頼みを断る(ほかの Web ページから命令を送らせないため)
       async run(cmd, args) {
-        const r = await fetch('cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cmd, args }) });
+        const r = await fetch('cmd', { method: 'POST', headers: { 'content-type': 'application/json', 'x-prelude': '1' }, body: JSON.stringify({ cmd, args }) });
         const j = await r.json();
         if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
         return j.result;
+      },
+      // ランチャーを起動する(橋が prelude-launcher を起動する)
+      async launch(a) {
+        const r = await fetch('launch', { method: 'POST', headers: { 'content-type': 'application/json', 'x-prelude': '1' }, body: JSON.stringify(a) });
+        const j = await r.json();
+        if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
       },
       refresh() {},
       iconUrl: (p) => (p.startsWith('data:') ? p : `icon?path=${encodeURIComponent(p)}`),
@@ -72,7 +79,12 @@
     const ui = { compact: store.get('compact', false), expanded: store.get('expanded', {}), splitMode: store.get('splitMode', 'auto'), screen: { w: screen.width || 16, h: screen.height || 9 } };
     let parts = null;
     const listeners = [];
+    // 窓のホスト(layer-host.py)への知らせ: 細い列かどうかを題名で伝え、ホストが面の幅を合わせる
+    const tellHost = () => {
+      document.title = ui.compact ? 'prelude:compact' : 'prelude:wide';
+    };
     const changed = () => {
+      tellHost();
       parts = null;
       listeners.forEach((f) => f());
     };
@@ -90,6 +102,12 @@
           changed();
         } else if (s.ui === 'hide') {
           toast('サイドバーを隠す(本番では layer-shell の面を隠す)');
+        } else if (s.launcher && transport.launch) {
+          try {
+            await transport.launch(s.launcher);
+          } catch (e) {
+            toast(`ランチャー: ${e.message}`);
+          }
         } else if (s.launcher) {
           const a = s.launcher;
           toast(`ランチャーを開く: prelude-launcher${a.split ? ` --split ${a.split}${a.before ? ' --before' : ''}` : ''}${a.pane ? ` --pane ${a.pane}` : ''}${a.url ? ` --url ${a.url}` : ''}`);
@@ -125,6 +143,12 @@
       core = snap;
       changed();
     });
+    // 窓のホストが渡す置き方(?gap=画面の端との間&radius=窓の角丸。settings.toml の [windows])
+    const q = new URLSearchParams(location.search);
+    const gap = Number(q.get('gap')) || 0;
+    const radius = Number(q.get('radius')) || 0;
+    if (gap || radius) applyLook({ vars: { 'sb-radius': `${radius}px`, 'sb-edge': gap ? 'inset 0 0 0 1px var(--line)' : 'inset -1px 0 0 var(--line)' } });
+    tellHost();
     window.PreludeSidebar.mount(el, host);
     return host;
   }

@@ -2,7 +2,7 @@
    (見た目を変えたい人は、部品の決まり parts.js を満たす別のサイドバーを作る)。
    角丸なし・黒のベース・灰色の文字とアイコン。色は使わず、今のタブは文字を明るくし、面をわずかに浮かせるだけで分ける。
    使用者が設定で変えるのは窓の並べ方だけ(窓の角丸・窓と窓の間・画面の端との間。settings.toml の [windows])。
-   サイドバーの窓の角と置き場所はホストがその設定に合わせ、中身(ここ)は角を丸めない。
+   サイドバーの窓の角と置き場所はホストがその設定に合わせ(角は --sb-radius)、中身の行・ボタンは角を丸めない。
    アプリのアイコン・ファビコンはアプリの持ち物だが、灰色にそろえる(--icon-filter) */
 :root {
   --font: "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif;
@@ -47,6 +47,8 @@ input { font: inherit; color: inherit; }
   background: var(--bg);
   /* 縁の線。窓と同じ間で浮いているなら四方(ホストが --sb-edge を入れる)、端に付いているなら隣の窓の側だけ */
   box-shadow: var(--sb-edge, inset -1px 0 0 var(--line));
+  border-radius: var(--sb-radius, 0); /* 窓の角丸。ホストが設定(windows.corner_radius)から入れる */
+  overflow: hidden;
 }
 
 /* 一番上: 開閉。広げているときは、その横に今のペインの 戻る・進む、右端に閉じる */
