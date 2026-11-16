@@ -1,6 +1,7 @@
 #!/bin/bash
 # PRELUDE のランチャーを Omarchy のメニューで出す(バーの PRELUDE を押したとき・Super+Alt+P)。
-# 候補は `prelude items`(タブ・ブックマーク・アプリ・スペース)。選んだ行を `prelude open` に渡す。
+# 候補は `prelude items` のタブ・ブックマーク・スペース。選んだ行を `prelude open` に渡す。
+# アプリは出さない: 新しいタブは Omarchy のアプリの一覧で開く(prelude-omarchy-newtab。Super+Alt+Space)。
 # 打った文字が候補に無ければ、その文字を開く(URL・フォルダ・ブックマークの名前)。
 set -uo pipefail
 
@@ -15,7 +16,7 @@ if ! items=$(prelude items 2>&1); then
   notify "PRELUDE のコアが動いていません: $items"
   exit 1
 fi
-mapfile -t lines <<<"$items"
+mapfile -t lines < <(grep -v '  ·  App$' <<<"$items")
 
 if command -v omarchy-menu-select >/dev/null; then
   choice=$(omarchy-menu-select PRELUDE "${lines[@]}" -- --width 640) || exit 0

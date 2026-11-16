@@ -105,14 +105,6 @@ function bookmarkRows(state, bookmarks, folders, expanded) {
   return out
 }
 
-// 新しいタブで開ける種類(Web はランチャーから)
-function newKinds(recipes) {
-  var out = [{ kind: "web", name: "Web" }]
-  var rs = recipes || []
-  for (var i = 0; i < rs.length; i++) if (rs[i].type !== "settings") out.push({ kind: rs[i].type, name: rs[i].name || rs[i].type })
-  return out
-}
-
 // `prelude raw` の返事を読む(壊れていれば fallback)
 function parse(text, fallback) {
   try {

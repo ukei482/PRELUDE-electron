@@ -10,7 +10,7 @@ const ctx = {};
 vm.runInNewContext(src, ctx);
 // 別の realm の配列は deepStrictEqual で一致しないので、JSON で持ち出す
 const M = Object.fromEntries(
-  ['tabRows', 'bookmarkRows', 'newKinds', 'width', 'parse', 'hyprStyle'].map((k) => [k, (...a) => JSON.parse(JSON.stringify(ctx[k](...a)))]),
+  ['tabRows', 'bookmarkRows', 'width', 'parse', 'hyprStyle'].map((k) => [k, (...a) => JSON.parse(JSON.stringify(ctx[k](...a)))]),
 );
 
 const state = {
@@ -72,11 +72,6 @@ test('ブックマークの行: フォルダの外が先、閉じたフォルダ
       ['bookmark', '論文', 1],
     ],
   );
-});
-
-test('新しいタブの種類: Web が先、設定は出さない', () => {
-  const k = M.newKinds([{ name: 'Files', type: 'files' }, { name: 'Settings', type: 'settings' }]);
-  assert.deepStrictEqual(k.map((x) => x.kind), ['web', 'files']);
 });
 
 test('幅の設定: 文字でも読み、範囲に丸め、読めなければ既定', () => {
