@@ -1,14 +1,23 @@
 // Omarchy のバーの PRELUDE の部品(docs/redesign-rust.md の「Omarchy の上で PRELUDE が使うところ」)。
 // `prelude watch --bar`(waybar の形の JSON を 1 行ずつ)を読んで、スペースと今のタブを出す。
-//   左クリック  PRELUDE のランチャー(prelude-omarchy-launcher。Omarchy のメニューで候補を選ぶ)
+//   左クリック  サイドバー(Sidebar.qml)を開け閉めする。設定の click を "launcher" にするとランチャー
 //   中クリック  AI のペイン(今のブックマークのフォルダで既定の AI)
 //   右クリック  Omarchy のメニューの PRELUDE の項目
-// 設定(shell.json のこの部品の項目): maxWidth(既定 320)、launcher(左クリックのコマンド)
+// 設定(shell.json のこの部品の項目。`omarchy bar set prelude.bar <名前> <値>`):
+//   maxWidth          バーの題名の最大の幅(既定 320)
+//   launcher          ランチャーのコマンド(既定 prelude-omarchy-launcher)
+//   click             左クリック: "sidebar"(既定)・"launcher"
+//   sidebarWidth      サイドバーの幅(既定 260、160〜800)
+//   sidebarCompactWidth  細い列の幅(既定 48、32〜120)
+//   sidebarSide       置く側: "left"(既定)・"right"
+//   sidebarOpen       シェルの起動のときに開いておくか(既定 false)
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "SidebarModel.js" as SidebarModel
 
 BarWidget {
   id: root
@@ -19,6 +28,15 @@ BarWidget {
   property bool online: false
   readonly property int maxLabelWidth: Number(setting("maxWidth", 320))
   readonly property string launcher: String(setting("launcher", "prelude-omarchy-launcher"))
+  readonly property string click: String(setting("click", "sidebar"))
+  readonly property int sidebarWidth: SidebarModel.width(setting("sidebarWidth", 260), 260, 160, 800)
+  readonly property int sidebarCompactWidth: SidebarModel.width(setting("sidebarCompactWidth", 48), 48, 32, 120)
+  readonly property string sidebarSide: String(setting("sidebarSide", "left")) === "right" ? "right" : "left"
+
+  // サイドバーは部品の窓と同じ画面に出す。開いているか・細い列かは、シェルが動いている間だけ覚える
+  property bool sidebarShown: String(setting("sidebarOpen", false)) === "true"
+  property bool sidebarCompact: false
+  readonly property var hostScreen: root.QsWindow.window ? root.QsWindow.window.screen : null
 
   // waybar の形は pango の文字なので、戻す
   function plain(s) {
@@ -54,6 +72,21 @@ BarWidget {
     onTriggered: watch.running = true
   }
 
+  LazyLoader {
+    active: root.sidebarShown && !!root.hostScreen
+    Sidebar {
+      screen: root.hostScreen
+      compact: root.sidebarCompact
+      wideWidth: root.sidebarWidth
+      compactWidth: root.sidebarCompactWidth
+      side: root.sidebarSide
+      launcher: root.launcher
+      fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+      onCloseRequested: root.sidebarShown = false
+      onCompactToggled: root.sidebarCompact = !root.sidebarCompact
+    }
+  }
+
   Row {
     id: row
     anchors.centerIn: parent
@@ -69,6 +102,15 @@ BarWidget {
       font.bold: true
       color: root.bar ? root.bar.barForeground : Commons.Color.foreground
       opacity: root.online ? 1 : 0.45
+      // サイドバーが開いているあいだは下線
+      Rectangle {
+        visible: root.sidebarShown
+        anchors.top: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: parent.width + Style.space(2)
+        height: Style.space(2)
+        color: parent.color
+      }
     }
 
     Text {
@@ -96,7 +138,8 @@ BarWidget {
       if (!root.bar) return
       if (mouse.button === Qt.RightButton) root.bar.run("omarchy menu summon prelude")
       else if (mouse.button === Qt.MiddleButton) root.bar.run("prelude new agent")
-      else root.bar.run(root.launcher)
+      else if (root.click === "launcher") root.bar.run(root.launcher)
+      else root.sidebarShown = !root.sidebarShown
     }
     onEntered: if (root.bar) root.bar.showTooltip(root, root.tip !== "" ? root.tip : "PRELUDE")
     onExited: if (root.bar) root.bar.hideTooltip(root)

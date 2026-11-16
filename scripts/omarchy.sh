@@ -118,7 +118,7 @@ install_all() {
     say "バーに PRELUDE を足す"
     rm -rf "$PLUGIN_DIR"
     mkdir -p "$PLUGIN_DIR"
-    cp "$SRC/plugin/manifest.json" "$SRC/plugin/BarWidget.qml" "$PLUGIN_DIR/"
+    cp "$SRC"/plugin/*.json "$SRC"/plugin/*.qml "$SRC"/plugin/*.js "$PLUGIN_DIR/"
     if have omarchy-shell; then omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true; fi
     if have omarchy; then
       omarchy plugin enable "$PLUGIN_ID" left --after omarchy.workspaces </dev/null ||
@@ -149,7 +149,7 @@ install_all() {
     else setsid "$BIN/prelude-core" >/dev/null 2>&1 &
     fi
   fi
-  say "できました。バーの PRELUDE を押すか $KEY でランチャー、右クリックで PRELUDE のメニュー"
+  say "できました。バーの P を押すとサイドバー、$KEY でランチャー、右クリックで PRELUDE のメニュー(部品が古いままなら omarchy restart shell)"
 }
 
 uninstall_all() {

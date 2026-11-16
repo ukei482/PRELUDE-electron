@@ -1,0 +1,452 @@
+// Omarchy の上の PRELUDE のサイドバー(docs/omarchy.md の「サイドバー」、docs/redesign-rust.md の「サイドバー」)。
+// 画面の端に layer-shell で貼り付き、幅の分だけ場所を予約する(Hyprland はほかの窓をその横に並べる)。
+// コアとは `prelude` コマンドだけでやり取りする: `prelude watch` の知らせで `prelude raw …` を読み直し、
+// 押されたら `prelude raw <命令> <引数>` を送る(サイドバーにだけ許された操作は作らない)。
+// 開け閉め・幅・置く側は BarWidget.qml が決める(バーの P を押すと開け閉め)。
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+import Quickshell.Wayland
+import qs.Commons
+import qs.Commons as Commons
+import "SidebarModel.js" as Model
+
+PanelWindow {
+  id: win
+
+  // BarWidget から
+  property bool compact: false
+  property int wideWidth: 260
+  property int compactWidth: 48
+  property string side: "left"
+  property string launcher: "prelude-omarchy-launcher"
+  property string fontFamily: Style.font.family
+  signal closeRequested()
+  signal compactToggled()
+
+  // コアの様子
+  property bool online: false
+  property var core: ({})
+  property var bookmarks: []
+  property var folders: []
+  property var spaces: []
+  property var recipes: []
+  property var expanded: ({})
+  property bool spacesOpen: false
+  property bool newOpen: false
+
+  readonly property int barWidth: compact ? compactWidth : wideWidth
+  readonly property color fg: Commons.Color.foreground
+  readonly property color bg: Commons.Color.background
+  readonly property color accent: Commons.Color.accent
+  readonly property color dim: Commons.Color.muted
+  readonly property int rowH: Style.space(26)
+  readonly property int pad: Style.space(8)
+
+  readonly property var tabRows: Model.tabRows(win.core)
+  readonly property var bookmarkRows: Model.bookmarkRows(win.core, win.bookmarks, win.folders, win.expanded)
+  readonly property var newKinds: Model.newKinds(win.recipes)
+
+  WlrLayershell.namespace: "prelude-sidebar"
+  WlrLayershell.layer: WlrLayer.Top
+  WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+  anchors {
+    left: win.side !== "right"
+    right: win.side === "right"
+    top: true
+    bottom: true
+  }
+  implicitWidth: barWidth
+  exclusiveZone: barWidth
+  color: "transparent"
+
+  // ---------------------------------------------------------------- コアとのやり取り
+
+  // 命令を送る。引数は argv で渡すので、題名やパスがシェルに読まれることはない
+  function send(cmd, args) {
+    Util.execArgv(["prelude", "raw", cmd, JSON.stringify(args || {})])
+    // 知らせの来ない命令(フォルダの開閉など)もあるので、少し後に読み直す
+    refreshSoon.restart()
+  }
+
+  function run(command) {
+    Util.execDetached(command)
+  }
+
+  function refresh() {
+    if (fetch.running) {
+      refreshSoon.restart()
+      return
+    }
+    fetch.running = true
+  }
+
+  function readAll(text) {
+    var parts = String(text || "").split("\u001e\n")
+    var st = Model.parse(parts[0], null)
+    win.online = !!st && typeof st === "object"
+    win.core = win.online ? st : ({})
+    win.bookmarks = Model.parse(parts[1], [])
+    win.folders = Model.parse(parts[2], [])
+    win.spaces = Model.parse(parts[3], [])
+    win.recipes = Model.parse(parts[4], [])
+  }
+
+  // 命令の名前は決まった文字だけ。使用者のデータはここに入らない
+  Process {
+    id: fetch
+    command: ["bash", "-lc", "for c in state.get bookmark.list folder.list space.list recipe.list; do prelude raw \"$c\" 2>/dev/null || echo null; printf '\\036\\n'; done"]
+    stdout: StdioCollector { onStreamFinished: win.readAll(text) }
+  }
+
+  // 状態が変わるたびに 1 行来る。コアが止まっていれば終わるので、少し待ってつなぎ直す
+  Process {
+    id: watch
+    command: ["bash", "-lc", "exec prelude watch"]
+    running: true
+    stdout: SplitParser { onRead: function(line) { refreshSoon.restart() } }
+    onExited: {
+      win.online = false
+      reconnect.start()
+    }
+  }
+
+  Timer {
+    id: reconnect
+    interval: 3000
+    onTriggered: {
+      watch.running = true
+      win.refresh()
+    }
+  }
+
+  Timer {
+    id: refreshSoon
+    interval: 120
+    onTriggered: win.refresh()
+  }
+
+  Component.onCompleted: refresh()
+
+  // ---------------------------------------------------------------- 見た目の部品
+
+  component Label: Text {
+    textFormat: Text.PlainText
+    color: win.fg
+    font.family: win.fontFamily
+    font.pixelSize: Style.font.body
+    elide: Text.ElideRight
+    verticalAlignment: Text.AlignVCenter
+  }
+
+  // 1 行。左に印、右に題名。hover で薄く塗る
+  component Row1: Rectangle {
+    id: r
+    property string mark: ""
+    property string text: ""
+    property string note: ""
+    property bool active: false
+    property bool lit: false
+    property int depth: 0
+    property bool closable: false
+    signal clicked(var mouse)
+    signal closeClicked()
+
+    width: parent ? parent.width : 0
+    height: win.rowH
+    radius: Style.cornerRadius
+    color: active ? Style.selectedFill : (area.containsMouse ? Style.hoverFill : "transparent")
+
+    MouseArea {
+      id: area
+      anchors.fill: parent
+      hoverEnabled: true
+      acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+      cursorShape: Qt.PointingHandCursor
+      onClicked: function(mouse) { r.clicked(mouse) }
+    }
+
+    Label {
+      id: markText
+      x: win.compact ? 0 : win.pad + r.depth * win.pad * 1.5
+      width: win.compact ? r.width : Style.space(22)
+      height: r.height
+      horizontalAlignment: win.compact ? Text.AlignHCenter : Text.AlignLeft
+      text: r.mark
+      font.bold: true
+      font.pixelSize: Style.font.bodySmall
+      color: r.active || r.lit ? win.accent : win.dim
+      elide: Text.ElideNone
+    }
+
+    Label {
+      visible: !win.compact
+      anchors.left: markText.right
+      anchors.right: noteText.left
+      anchors.rightMargin: Style.space(4)
+      height: r.height
+      text: r.text
+      opacity: r.active || r.lit ? 1 : 0.8
+    }
+
+    Label {
+      id: noteText
+      visible: !win.compact && text !== ""
+      anchors.right: closeBox.visible ? closeBox.left : parent.right
+      anchors.rightMargin: win.pad
+      height: r.height
+      text: r.note
+      color: win.dim
+      font.pixelSize: Style.font.caption
+      width: visible ? implicitWidth : 0
+    }
+
+    Label {
+      id: closeBox
+      visible: !win.compact && r.closable && area.containsMouse
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(4)
+      width: visible ? Style.space(18) : 0
+      height: r.height
+      horizontalAlignment: Text.AlignHCenter
+      text: "×"
+      color: closeArea.containsMouse ? win.fg : win.dim
+      MouseArea {
+        id: closeArea
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: r.closeClicked()
+      }
+    }
+  }
+
+  component Heading: Label {
+    visible: !win.compact
+    width: parent ? parent.width : 0
+    leftPadding: win.pad
+    height: Style.space(22)
+    font.pixelSize: Style.font.caption
+    font.bold: true
+    color: win.dim
+  }
+
+  // ---------------------------------------------------------------- 中身
+
+  Rectangle {
+    anchors.fill: parent
+    color: win.bg
+
+    // 隣の窓の側にだけ線を引く
+    Rectangle {
+      width: Style.spacing.hairline
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.right: win.side === "right" ? undefined : parent.right
+      anchors.left: win.side === "right" ? parent.left : undefined
+      color: Style.normalBorderColor
+    }
+
+    // 上: スペースの名前(押すとスペースの一覧)、細い列の切り替え、閉じる
+    Item {
+      id: header
+      anchors.top: parent.top
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.topMargin: Style.space(4)
+      height: win.rowH + Style.space(4)
+
+      Row1 {
+        anchors.left: parent.left
+        anchors.right: win.compact ? parent.right : buttons.left
+        anchors.verticalCenter: parent.verticalCenter
+        mark: win.compact ? (win.online ? "P" : "!") : (win.spacesOpen ? "▾" : "▸")
+        text: win.online ? (win.core.space || "") : "コアにつながっていません"
+        lit: true
+        onClicked: function(mouse) {
+          if (win.compact) win.compactToggled()
+          else win.spacesOpen = !win.spacesOpen
+        }
+      }
+
+      Row {
+        id: buttons
+        visible: !win.compact
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(4)
+        anchors.verticalCenter: parent.verticalCenter
+        Repeater {
+          model: [{ t: "‹", f: "compact" }, { t: "×", f: "close" }]
+          delegate: Label {
+            required property var modelData
+            width: Style.space(22)
+            height: win.rowH
+            horizontalAlignment: Text.AlignHCenter
+            text: modelData.t
+            color: btnArea.containsMouse ? win.fg : win.dim
+            MouseArea {
+              id: btnArea
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: modelData.f === "close" ? win.closeRequested() : win.compactToggled()
+            }
+          }
+        }
+      }
+    }
+
+    Flickable {
+      id: scroller
+      anchors.top: header.bottom
+      anchors.bottom: footer.top
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.leftMargin: Style.space(4)
+      anchors.rightMargin: Style.space(4)
+      clip: true
+      contentHeight: list.implicitHeight
+      boundsBehavior: Flickable.StopAtBounds
+
+      Column {
+        id: list
+        width: scroller.width
+        spacing: Style.space(1)
+
+        // スペースの一覧(上の名前を押したとき)
+        Repeater {
+          model: win.spacesOpen && !win.compact ? win.spaces : []
+          delegate: Row1 {
+            required property var modelData
+            depth: 1
+            mark: modelData === win.core.space ? "●" : "○"
+            text: String(modelData)
+            active: modelData === win.core.space
+            onClicked: function(mouse) {
+              win.spacesOpen = false
+              if (modelData !== win.core.space) win.send("space.switch", { name: String(modelData) })
+            }
+          }
+        }
+
+        Heading { text: "タブ" }
+        Label {
+          visible: !win.compact && win.online && win.tabRows.length === 0
+          leftPadding: win.pad
+          height: win.rowH
+          text: "タブはありません"
+          color: win.dim
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        // タブ: 押すと切り替え、中クリック・× で閉じる。分割したタブはペインの行が続く
+        Repeater {
+          model: win.tabRows
+          delegate: Row1 {
+            required property var modelData
+            readonly property bool isPane: modelData.row === "pane"
+            visible: !(isPane && win.compact)
+            height: visible ? win.rowH : 0
+            depth: isPane ? 1 : 0
+            mark: isPane ? modelData.mark : (win.compact ? String(modelData.num) : modelData.mark)
+            text: modelData.title
+            note: isPane ? "" : String(modelData.num)
+            active: modelData.active
+            closable: true
+            onClicked: function(mouse) {
+              if (isPane) {
+                if (mouse.button === Qt.MiddleButton) win.send("pane.close", { pane: modelData.id })
+                else win.send("pane.focus", { pane: modelData.id })
+              } else if (mouse.button === Qt.MiddleButton) win.send("tab.close", { tab: { id: modelData.id } })
+              else if (mouse.button === Qt.RightButton) win.send("tab.duplicate", { tab: { id: modelData.id } })
+              else win.send("tab.activate", { tab: { id: modelData.id } })
+            }
+            onCloseClicked: isPane ? win.send("pane.close", { pane: modelData.id }) : win.send("tab.close", { tab: { id: modelData.id } })
+          }
+        }
+
+        Row1 {
+          visible: !win.compact && (win.core.closed || 0) > 0
+          height: visible ? win.rowH : 0
+          mark: "↺"
+          text: "閉じたタブを開き直す"
+          onClicked: win.send("tab.reopen", {})
+        }
+
+        Item { width: 1; height: Style.space(8) }
+        Heading { text: "ブックマーク" }
+        Label {
+          visible: !win.compact && win.online && win.bookmarkRows.length === 0
+          leftPadding: win.pad
+          height: win.rowH
+          text: "ブックマークはありません"
+          color: win.dim
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        // ブックマーク: 押すと開く(開いていればそのタブへ)。右クリックでフォルダを開く。フォルダは押すと開閉
+        Repeater {
+          model: win.bookmarkRows
+          delegate: Row1 {
+            required property var modelData
+            readonly property bool isFolder: modelData.row === "folder"
+            visible: !(win.compact && isFolder)
+            height: visible ? win.rowH : 0
+            depth: modelData.depth || 0
+            mark: isFolder ? (modelData.expanded ? "▾" : "▸") : (win.compact && modelData.num ? "b" + modelData.num : modelData.mark)
+            text: modelData.title
+            note: isFolder ? String(modelData.count) : ""
+            lit: isFolder ? modelData.hasOpen : modelData.open
+            onClicked: function(mouse) {
+              if (isFolder) {
+                var next = {}
+                for (var k in win.expanded) next[k] = win.expanded[k]
+                next[modelData.path] = !modelData.expanded
+                win.expanded = next
+              } else if (mouse.button === Qt.RightButton) {
+                win.send("tab.open", { pane: { type: "files", path: String(modelData.path).replace(/\/[^/]*$/, "") } })
+              } else win.send("bookmark.open", { path: modelData.path })
+            }
+          }
+        }
+      }
+    }
+
+    // 下: 新しいタブ(押すと種類の一覧)
+    Column {
+      id: footer
+      anchors.bottom: parent.bottom
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.margins: Style.space(4)
+      spacing: Style.space(1)
+
+      Repeater {
+        model: win.newOpen && !win.compact ? win.newKinds : []
+        delegate: Row1 {
+          required property var modelData
+          depth: 1
+          mark: Model.kindMark(modelData.kind)
+          text: modelData.name
+          onClicked: function(mouse) {
+            win.newOpen = false
+            if (modelData.kind === "web") win.run(win.launcher)
+            else win.send("tab.open", { pane: { type: modelData.kind } })
+          }
+        }
+      }
+
+      Row1 {
+        mark: "+"
+        text: "新しいタブ"
+        enabled: win.online
+        opacity: win.online ? 1 : 0.5
+        onClicked: function(mouse) {
+          if (win.compact) win.run(win.launcher)
+          else win.newOpen = !win.newOpen
+        }
+      }
+    }
+  }
+}
