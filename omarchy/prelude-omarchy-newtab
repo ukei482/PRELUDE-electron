@@ -1,34 +1,129 @@
-#!/bin/bash
-# PRELUDE の新しいタブ(Omarchy)。docs/omarchy.md の「新しいタブ」
-# 空いている番号の作業領域へ移り、Omarchy のアプリの一覧(omarchy.dock apps)を開く。
-# 選んだアプリの窓はその作業領域に出て、コアが引き取って新しいタブにする(windows.adopt = "tabs")。
+#!/usr/bin/env -S python3 -I
+# PRELUDE の新しいタブ・分割(Omarchy)。docs/omarchy.md の「新しいタブ」
+#
+#   prelude-omarchy-newtab           新しいタブ: Omarchy のアプリの一覧を開き、選んだアプリの窓を空いた番号の作業領域へ移す(付いていく)
+#   prelude-omarchy-newtab --split   分割: アプリの一覧を開くだけ。窓は今の作業領域に出て、今のタブのペインになる
+#
+# どちらも、出た窓はコアが引き取る(windows.adopt = "tabs")。先に作業領域を移さないので、一覧を選ばずに閉じれば何も変わらない。
 # 空いている番号 = PRELUDE のタブの番号でも、窓のある作業領域の番号でもない、いちばん小さい数
-set -uo pipefail
+import json
+import os
+import select
+import socket
+import subprocess
+import sys
+import time
 
-# 使っている番号(PRELUDE のタブ・窓のある作業領域)の次の空き。JSON は python で読む(Arch の既定にある)
-n=$(
-  python3 -I -c '
-import json, sys
-used = set()
-for i, text in enumerate(sys.argv[1:]):
+GRID = "omarchy-dock-apps"  # アプリの一覧の layer-shell の名前空間(開いている間だけある)
+APPEAR = 2.0  # 一覧が出るのを待つ秒
+LAUNCH = 10.0  # 一覧が閉じてから、選んだアプリの窓を待つ秒
+OPEN_MAX = 300.0  # 一覧を開いたままにできる秒
+
+
+def out(*cmd):
     try:
-        v = json.loads(text)
-    except ValueError:
-        continue
-    if i == 0:
-        used |= {t.get("num") for t in v.get("tabs", [])}
-    else:
-        used |= {w.get("id") for w in v if w.get("windows", 0) > 0}
-n = 1
-while n in used:
-    n += 1
-print(n)
-' "$(prelude raw state.get 2>/dev/null)" "$(hyprctl workspaces -j 2>/dev/null)"
-)
-[[ $n =~ ^[0-9]+$ ]] || n=1
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
-# Hyprland 0.5x(Lua)の形を先に、通らなければ前の形で
-if ! hyprctl dispatch "hl.dsp.focus({ workspace = \"$n\" })" 2>/dev/null | grep -qx ok; then
-  hyprctl dispatch workspace "$n" >/dev/null 2>&1
-fi
-exec omarchy-shell omarchy.dock apps
+
+def as_json(text, fallback):
+    try:
+        return json.loads(text)
+    except ValueError:
+        return fallback
+
+
+def grid_open():
+    layers = as_json(out("hyprctl", "layers", "-j"), {})
+    return any(
+        s.get("namespace") == GRID
+        for m in layers.values()
+        for level in m.get("levels", {}).values()
+        for s in level
+    )
+
+
+def free_num():
+    used = {t.get("num") for t in as_json(out("prelude", "raw", "state.get"), {}).get("tabs", [])}
+    used |= {w.get("id") for w in as_json(out("hyprctl", "workspaces", "-j"), []) if w.get("windows", 0) > 0}
+    n = 1
+    while n in used:
+        n += 1
+    return n
+
+
+def dispatch(lua, legacy):
+    # Hyprland 0.5x(Lua)の形を先に、通らなければ前の形で
+    if out("hyprctl", "dispatch", lua).strip() != "ok":
+        out("hyprctl", "dispatch", legacy)
+
+
+def events():
+    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    for d in (os.path.join(os.environ.get("XDG_RUNTIME_DIR", ""), "hypr", sig), os.path.join("/tmp/hypr", sig)):
+        path = os.path.join(d, ".socket2.sock")
+        if sig and os.path.exists(path):
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(path)
+            return s
+    return None
+
+
+def floating(addr):
+    for c in as_json(out("hyprctl", "clients", "-j"), []):
+        if c.get("address", "").lower().removeprefix("0x") == addr:
+            return bool(c.get("floating"))
+    return True  # もう無い窓は触らない
+
+
+def main():
+    split = "--split" in sys.argv[1:]
+    if split:
+        os.execvp("omarchy-shell", ["omarchy-shell", "omarchy.dock", "apps"])
+    ev = events()
+    out("omarchy-shell", "omarchy.dock", "apps")
+    if ev is None:
+        return
+    start = time.monotonic()
+    seen = False  # 一覧が出た
+    closed_at = None
+    buf = b""
+    while True:
+        now = time.monotonic()
+        is_open = grid_open()
+        if is_open:
+            seen = True
+        elif seen and closed_at is None:
+            closed_at = now
+        elif not seen and now - start > APPEAR:
+            return  # 一覧が出なかった(既に開いていて閉じた、など)
+        if closed_at is not None and now - closed_at > LAUNCH:
+            return  # 選ばずに閉じた(キャンセル)
+        if now - start > OPEN_MAX:
+            return
+        r, _, _ = select.select([ev], [], [], 0.25)
+        if not r:
+            continue
+        data = ev.recv(65536)
+        if not data:
+            return
+        buf += data
+        *lines, buf = buf.split(b"\n")
+        for line in lines:
+            name, _, rest = line.decode("utf-8", "replace").partition(">>")
+            if name != "openwindow":
+                continue
+            addr = rest.split(",", 1)[0].lower()
+            if floating(addr):
+                continue
+            n = free_num()
+            dispatch(
+                f'hl.dsp.window.move({{ workspace = "{n}", follow = true, window = "address:0x{addr}" }})',
+                f"movetoworkspace {n},address:0x{addr}",
+            )
+            return
+
+
+if __name__ == "__main__":
+    main()

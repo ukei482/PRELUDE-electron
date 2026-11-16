@@ -6,7 +6,7 @@
 #   scripts/omarchy.sh status                 入っているもの
 #
 # 足すもの(どれも印の付いた塊なので、何度流しても 1 つだけ。外すときは塊ごと消す):
-#   ~/.local/bin/prelude, prelude-core, prelude-omarchy-launcher, prelude-omarchy-newtab
+#   ~/.local/bin/prelude, prelude-core, prelude-omarchy-launcher, prelude-omarchy-newtab, prelude-omarchy-bookmark
 #   ~/.config/omarchy/plugins/prelude.bar/        バーの部品(スペースと今のタブ。押すとサイドバー)。Omarchy の作業領域の部品は外す(タブ = 作業領域なので)
 #   ~/.config/omarchy/extensions/omarchy-menu.jsonc  メニューの「PRELUDE」
 #   ~/.config/hypr/bindings.lua                   Super+Alt+P でランチャー、Super+Alt+Space で新しいタブ(空いた作業領域で Omarchy のアプリの一覧)
@@ -104,7 +104,7 @@ install_all() {
   [[ $nobuild == --no-build ]] || build
   have prelude || [[ -x $BIN/prelude ]] || { warn "prelude コマンドがありません"; exit 1; }
   case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN が PATH にありません(Omarchy は既定で入っています)" ;; esac
-  install -m 755 "$SRC/prelude-omarchy-launcher" "$SRC/prelude-omarchy-newtab" "$BIN/"
+  install -m 755 "$SRC/prelude-omarchy-launcher" "$SRC/prelude-omarchy-newtab" "$SRC/prelude-omarchy-bookmark" "$BIN/"
 
   # 設定: おすすめの組み合わせを omarchy に(使用者が書いた設定は触らない)
   mkdir -p "$CFG/prelude"
@@ -165,13 +165,13 @@ uninstall_all() {
   drop_block "$BINDINGS" "--"
   drop_block "$AUTOSTART" "--"
   drop_block "$HYPRCONF" "#"
-  rm -f "$BIN/prelude-omarchy-launcher" "$BIN/prelude-omarchy-newtab"
+  rm -f "$BIN/prelude-omarchy-launcher" "$BIN/prelude-omarchy-newtab" "$BIN/prelude-omarchy-bookmark"
   say "外しました(コア・コマンド・~/.config/prelude は残しています。止めるなら pkill -x prelude-core)"
 }
 
 status() {
   local f
-  for f in "$BIN/prelude" "$BIN/prelude-core" "$BIN/prelude-omarchy-launcher" "$BIN/prelude-omarchy-newtab" "$PLUGIN_DIR/manifest.json"; do
+  for f in "$BIN/prelude" "$BIN/prelude-core" "$BIN/prelude-omarchy-launcher" "$BIN/prelude-omarchy-newtab" "$BIN/prelude-omarchy-bookmark" "$PLUGIN_DIR/manifest.json"; do
     [[ -e $f ]] && echo "ok  $f" || echo "--  $f"
   done
   for f in "$MENU" "$BINDINGS" "$AUTOSTART" "$HYPRCONF"; do

@@ -1,0 +1,63 @@
+#!/usr/bin/env -S python3 -I
+# 今のタブをブックマークにする(Omarchy のバーのブックマークのボタン)。docs/omarchy.md の「バー」
+# ブックマークから開いたタブなら「上書き」か「新しく保存」を選び、そうでなければ名前を聞いて保存する。
+# 名前は Omarchy のメニューの入力欄(omarchy-menu-input)で聞き、prelude コマンドに引数で渡す(シェルに読ませない)
+import json
+import subprocess
+
+
+def run(*cmd):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return p.returncode, p.stdout.strip(), p.stderr.strip()
+    except (OSError, subprocess.SubprocessError) as e:
+        return 1, "", str(e)
+
+
+def notify(msg):
+    for cmd in (["omarchy-notification-send", msg], ["notify-send", "PRELUDE", msg]):
+        if run(*cmd)[0] == 0:
+            return
+
+
+def ask_name():
+    code, name, _ = run("omarchy-menu-input", "ブックマークの名前", "--width", "480")
+    return name.strip() if code == 0 else ""
+
+
+def save():
+    name = ask_name()
+    if not name:
+        return
+    code, _, err = run("prelude", "bookmark", "save", name)
+    notify(f"ブックマーク「{name}」を保存しました" if code == 0 else f"保存できませんでした: {err}")
+
+
+def main():
+    code, text, err = run("prelude", "raw", "state.get")
+    if code != 0:
+        notify(f"PRELUDE のコアが動いていません: {err}")
+        return
+    st = json.loads(text or "{}")
+    tab = next((t for t in st.get("tabs", []) if t.get("id") == st.get("active")), None)
+    if tab is None:
+        notify("ブックマークにするタブがありません")
+        return
+    bm = tab.get("bookmark") or ""
+    if not bm:
+        save()
+        return
+    title = bm.rsplit("/", 1)[-1].removesuffix(".prelude")
+    over, new = f"「{title}」を今の並びで上書き", "新しいブックマークとして保存"
+    code, choice, _ = run("omarchy-menu-select", "ブックマーク", over, new, "--", "--width", "480")
+    if code != 0 or not choice:
+        return
+    if choice == over:
+        code, _, err = run("prelude", "bookmark", "overwrite")
+        notify(f"「{title}」を上書きしました" if code == 0 else f"上書きできませんでした: {err}")
+    elif choice == new:
+        save()
+
+
+if __name__ == "__main__":
+    main()
