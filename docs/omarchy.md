@@ -7,9 +7,10 @@ Omarchy(Arch + Hyprland + Quickshell の `omarchy-shell`。4.0 から)の上で�
 
 | どこ | 何 |
 |---|---|
-| **バー** | 左(作業領域の右)に PRELUDE の部品。スペースと今のタブの題名を出し、乗せるとタブの一覧。**左クリックで PRELUDE のランチャー**(タブ・ブックマーク・アプリ・スペースを Omarchy のメニューで選んで開く)、中クリックで AI のペイン、右クリックで PRELUDE のメニュー |
+| **バー** | 左(作業領域の右)に PRELUDE の部品。スペースと今のタブの題名を出し、乗せるとタブの一覧。**左クリックでサイドバーを開け閉め**(開いている間は P に下線)、中クリックで AI のペイン、右クリックで PRELUDE のメニュー |
+| **サイドバー** | 画面の左端に貼り付き、幅の分だけ場所を予約する(窓はその右に並ぶ)。スペース・タブ・ブックマーク・新しいタブ。下の「サイドバー」 |
 | **メニュー** | Omarchy のメニューに「PRELUDE」(開く・AI・ファイラ・ブックマークに保存・設定・コアの起動し直し)。`omarchy menu summon prelude` でも開く |
-| **キー** | `Super + Alt + P` で PRELUDE のランチャー(Omarchy の既定のキーと重ならない) |
+| **キー** | `Super + Alt + P` で PRELUDE のランチャー(タブ・ブックマーク・アプリ・スペースを Omarchy のメニューで選んで開く)(Omarchy の既定のキーと重ならない) |
 | **窓** | Hyprland のつなぎ(`crates/prelude-core/src/hyprland.rs`)。**タブ = 作業領域**。ブックマークを開くと、アプリがタブの番号の作業領域に開く(`Super + 数字` でそのまま行き来できる)。並べ方・大きさ・浮かせ方は Omarchy に任せ、PRELUDE は並べ直さない |
 | **AI** | `prelude skill install` で `~/.agents/skills` にスキルを置く(Omarchy の AI 全部が読む) |
 
@@ -34,6 +35,37 @@ scripts/omarchy.sh install
 確かめる: `scripts/omarchy.sh status`。外す: `scripts/omarchy.sh uninstall`(`~/.config/prelude` の設定・スペースは残す)。
 
 バーの部品の置き場所は、バーの上でドラッグするか `omarchy bar move prelude.bar --section centerBegin`。部品の設定は `omarchy bar set prelude.bar maxWidth 400`(題名の最大の幅)・`launcher <コマンド>`(左クリック)。
+
+## サイドバー
+
+バーの部品のプラグイン(`omarchy/plugin/Sidebar.qml`)が、Quickshell の layer-shell の窓(名前空間 `prelude-sidebar`)で出す。別のプログラムは要らない。コアとは `prelude` コマンドだけで話す(`prelude watch` の知らせで `prelude raw state.get` などを読み直し、押したら `prelude raw <命令>`)。
+
+| どこ | 押すと |
+|---|---|
+| 上のスペースの名前 | スペースの一覧。押すと切り替え |
+| `‹` / `×` | 細い列(番号と印だけ)にする / 閉じる。細い列の上の印を押すと広げる |
+| タブ | 切り替え。中クリック・乗せると出る × で閉じる、右クリックで複製。分割したタブはペインの行が続く(押すとそのペインへ) |
+| 閉じたタブを開き直す | 閉じたタブがあるときだけ出る |
+| ブックマーク | 開く(開いていればそのタブへ。開いているものは明るい)。右クリックでそのフォルダをファイラで。フォルダは押すと開閉 |
+| 新しいタブ | 種類の一覧(Web はランチャー、ほかはレシピ) |
+
+設定は、バーの部品の設定(`~/.config/omarchy/shell.json` の `prelude.bar` の項目)に書く。保存するとすぐ効く:
+
+```bash
+omarchy bar set prelude.bar sidebarWidth 300
+```
+
+| 名前 | 既定 | 中身 |
+|---|---|---|
+| `sidebarWidth` | 260 | サイドバーの幅(160〜800) |
+| `sidebarCompactWidth` | 48 | 細い列の幅(32〜120) |
+| `sidebarSide` | `left` | 置く側(`left`・`right`) |
+| `sidebarOpen` | `false` | シェルの起動のときに開いておく |
+| `click` | `sidebar` | 左クリックですること。`launcher` にすると前と同じランチャー |
+
+- 開いているか・細い列かは、シェルが動いている間だけ覚える。部品のある画面に出る(画面が 2 枚なら、押した方の画面)
+- Omarchy のシェルはプラグインのファイルの変更を読み直すが、作り直した部品が反映されないことがある。`scripts/omarchy.sh install` の後で効かなければ `omarchy restart shell`
+- 名前を変える・並べ替える・フォルダを作るなどは、まだ `prelude` コマンドから(文字の入力欄を持たないため)
 
 ## 窓のつなぎ(段 1)
 
@@ -66,5 +98,5 @@ PRELUDE_CORE_SOCK=/tmp/prelude-test.sock ~/.local/bin/prelude-core --state /tmp/
 
 ## まだ
 
-- PRELUDE のサイドバー(UI は作り直し中)。今は バー・メニュー・ランチャー・`prelude` コマンドから使う
+- サイドバーでの名前の変更・ドラッグでの並べ替え・アイコン(今は種類の文字)
 - Arch のパッケージ(PKGBUILD)
