@@ -6,6 +6,7 @@
 // 設定(shell.json のこの部品の項目。`omarchy bar set prelude.bar <名前> <値>`):
 //   maxWidth          バーの題名の最大の幅(既定 320)
 //   launcher          ランチャーのコマンド(既定 prelude-omarchy-launcher)
+//   newTab            新しいタブのコマンド(既定 prelude-omarchy-newtab。空いた作業領域で Omarchy のアプリの一覧)
 //   click             左クリック: "sidebar"(既定)・"launcher"
 //   sidebarWidth      サイドバーの幅(既定 260、160〜800)
 //   sidebarCompactWidth  細い列の幅(既定はバーの P のボタンと同じ幅。数を書けばその幅、16〜120)
@@ -28,6 +29,7 @@ BarWidget {
   property bool online: false
   readonly property int maxLabelWidth: Number(setting("maxWidth", 320))
   readonly property string launcher: String(setting("launcher", "prelude-omarchy-launcher"))
+  readonly property string newTab: String(setting("newTab", "prelude-omarchy-newtab"))
   readonly property string click: String(setting("click", "sidebar"))
   readonly property int sidebarWidth: SidebarModel.width(setting("sidebarWidth", 260), 260, 160, 800)
   // バーの P のボタン(印と左右の余白)の幅
@@ -82,7 +84,7 @@ BarWidget {
       wideWidth: root.sidebarWidth
       compactWidth: root.sidebarCompactWidth
       side: root.sidebarSide
-      launcher: root.launcher
+      newTab: root.newTab
       fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
       onCloseRequested: root.sidebarShown = false
       onCompactToggled: root.sidebarCompact = !root.sidebarCompact

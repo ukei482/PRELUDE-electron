@@ -22,7 +22,7 @@ PanelWindow {
   property int wideWidth: 260
   property int compactWidth: 48
   property string side: "left"
-  property string launcher: "prelude-omarchy-launcher"
+  property string newTab: "prelude-omarchy-newtab"
   property string fontFamily: Style.font.family
   signal closeRequested()
   signal compactToggled()
@@ -33,10 +33,8 @@ PanelWindow {
   property var bookmarks: []
   property var folders: []
   property var spaces: []
-  property var recipes: []
   property var expanded: ({})
   property bool spacesOpen: false
-  property bool newOpen: false
 
   readonly property int barWidth: compact ? compactWidth : wideWidth
   readonly property color fg: Commons.Color.foreground
@@ -55,7 +53,6 @@ PanelWindow {
 
   readonly property var tabRows: Model.tabRows(win.core)
   readonly property var bookmarkRows: Model.bookmarkRows(win.core, win.bookmarks, win.folders, win.expanded)
-  readonly property var newKinds: Model.newKinds(win.recipes)
 
   WlrLayershell.namespace: "prelude-sidebar"
   WlrLayershell.layer: WlrLayer.Top
@@ -105,13 +102,12 @@ PanelWindow {
     win.bookmarks = Model.parse(parts[1], [])
     win.folders = Model.parse(parts[2], [])
     win.spaces = Model.parse(parts[3], [])
-    win.recipes = Model.parse(parts[4], [])
   }
 
   // 命令の名前は決まった文字だけ。使用者のデータはここに入らない
   Process {
     id: fetch
-    command: ["bash", "-lc", "for c in state.get bookmark.list folder.list space.list recipe.list; do prelude raw \"$c\" 2>/dev/null || echo null; printf '\\036\\n'; done"]
+    command: ["bash", "-lc", "for c in state.get bookmark.list folder.list space.list; do prelude raw \"$c\" 2>/dev/null || echo null; printf '\\036\\n'; done"]
     stdout: StdioCollector { onStreamFinished: win.readAll(text) }
   }
 
@@ -442,39 +438,18 @@ PanelWindow {
       }
     }
 
-    // 下: 新しいタブ(押すと種類の一覧)
+    // 下: 新しいタブ。種類は選ばせず、Omarchy のアプリの一覧に任せる(空いた作業領域で開き、出た窓をコアが引き取る。Super+Alt+Space と同じ)
     Column {
       id: footer
       anchors.bottom: parent.bottom
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.margins: Style.space(4)
-      spacing: Style.space(1)
-
-      Repeater {
-        model: win.newOpen && !win.compact ? win.newKinds : []
-        delegate: Row1 {
-          required property var modelData
-          depth: 1
-          mark: Model.kindMark(modelData.kind)
-          text: modelData.name
-          onClicked: function(mouse) {
-            win.newOpen = false
-            if (modelData.kind === "web") win.run(win.launcher)
-            else win.send("tab.open", { pane: { type: modelData.kind } })
-          }
-        }
-      }
 
       Row1 {
         mark: "+"
         text: "新しいタブ"
-        enabled: win.online
-        opacity: win.online ? 1 : 0.5
-        onClicked: function(mouse) {
-          if (win.compact) win.run(win.launcher)
-          else win.newOpen = !win.newOpen
-        }
+        onClicked: function(mouse) { win.run(win.newTab) }
       }
     }
   }
