@@ -67,6 +67,9 @@ pub enum Note {
     Focus { tab: u64, pane: Option<u64> },
     /// PRELUDE を通さずに開いた普通の窓がタブに出てきた。tree はそのタブの今の並びで、この窓はペイン 0(「PRELUDE を通さずに開いた窓」)
     Foreign { tab: u64, con: i64, app: String, title: String, focused: bool, tree: Tree },
+    /// PRELUDE を通さずに開いた窓を、番号 num のタブのペインにする(無ければタブを作る)。並べ方を読まないつなぎ(Hyprland)が使う。
+    /// con は窓を指す数(Hyprland は窓のアドレス)
+    Adopt { num: u32, con: i64, app: String, title: String, focused: bool },
     /// 使用者がコンポジタで窓を動かした。タブの番号と、そのタブの今の並び(窓のあるペインだけ)。無ければ窓が無くなった。
     /// 知らない番号はコンポジタで作った作業領域なので、新しいタブにする
     Layout(Vec<(u32, Option<Tree>)>),

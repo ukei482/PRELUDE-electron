@@ -1050,6 +1050,36 @@ mod compositor_layout {
     }
 
     #[test]
+    fn 番号の作業領域の窓を引き取る() {
+        let mut c = core("adopt");
+        // タブが無くても、番号のタブを作ってペインにする。選ばれていない窓では今のタブを変えない
+        assert!(c.note_adopt(3, 0x55aa, "foot", "端末", false));
+        let s = c.state();
+        assert_eq!((s.tabs.len(), s.tabs[0].num, s.active), (1, 3, None));
+        let foot = s.tabs[0].active_pane;
+        let w = c.wants().into_iter().find(|w| w.pane == foot).unwrap();
+        assert_eq!(w.window, Some(0x55aa));
+        // 同じ窓は 2 度引き取らない
+        assert!(!c.note_adopt(3, 0x55aa, "foot", "端末", false));
+        // 番号の順に並び、選ばれている窓なら今のタブ・ペインになる
+        assert!(c.note_adopt(1, 0x77, "chromium", "Web", true));
+        let s = c.state();
+        assert_eq!(s.tabs.iter().map(|t| t.num).collect::<Vec<_>>(), vec![1, 3]);
+        assert_eq!(s.active, Some(s.tabs[0].id));
+        // 同じ作業領域の 2 つめの窓は、そのタブの後ろのペイン
+        assert!(c.note_adopt(3, 0x88, "kate", "x.txt", true));
+        let t = c.state().tabs[1].clone();
+        let kate = t.active_pane;
+        assert_eq!(tree_of(&c, 3), row(P(foot), P(kate), 0.5));
+        assert_eq!(c.state().active, Some(t.id));
+        // 窓を閉じるとペインごと消える
+        assert!(c.note_exited(kate, true));
+        assert_eq!(tree_of(&c, 3), P(foot));
+        // 番号 0(タブでない作業領域)は引き取らない
+        assert!(!c.note_adopt(0, 0x99, "x", "", false));
+    }
+
+    #[test]
     fn スペースを出ると開き直せない窓は消える() {
         let mut c = core("space");
         let a = open(&mut c, "a");

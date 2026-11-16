@@ -10,7 +10,7 @@ const ctx = {};
 vm.runInNewContext(src, ctx);
 // 別の realm の配列は deepStrictEqual で一致しないので、JSON で持ち出す
 const M = Object.fromEntries(
-  ['tabRows', 'bookmarkRows', 'newKinds', 'width', 'parse'].map((k) => [k, (...a) => JSON.parse(JSON.stringify(ctx[k](...a)))]),
+  ['tabRows', 'bookmarkRows', 'newKinds', 'width', 'parse', 'hyprStyle'].map((k) => [k, (...a) => JSON.parse(JSON.stringify(ctx[k](...a)))]),
 );
 
 const state = {
@@ -90,4 +90,25 @@ test('返事を読む: 壊れていれば fallback', () => {
   assert.deepStrictEqual(M.parse('["Main"]\n', []), ['Main']);
   assert.deepStrictEqual(M.parse('null\n', []), []);
   assert.deepStrictEqual(M.parse('', []), []);
+});
+
+test('Hyprland の窓の決まり: 間(上・右・下・左)・枠・角丸・選ばれていない窓の枠の色', () => {
+  const text = [
+    '{"option":"general:gaps_out","css":"20 20 20 20","set":true}',
+    '{"option":"general:gaps_in","css":"5 5 5 5","set":true}',
+    '{"option":"general:border_size","int":2,"set":true}',
+    '{"option":"decoration:rounding","int":0,"set":true}',
+    '{"option":"general:col.inactive_border","gradient":"ff1e1e1e0deg","set":true}',
+  ].join('\n');
+  assert.deepStrictEqual(M.hyprStyle(text), {
+    gapsOut: { top: 20, right: 20, bottom: 20, left: 20 },
+    gapsIn: 5,
+    borderSize: 2,
+    rounding: 0,
+    borderColor: '#ff1e1e1e',
+  });
+  // 数だけの間、2 つの間(上下・左右)、読めないときは 0
+  assert.deepStrictEqual(M.hyprStyle('{"int":8}').gapsOut, { top: 8, right: 8, bottom: 8, left: 8 });
+  assert.deepStrictEqual(M.hyprStyle('{"css":"10 4"}').gapsOut, { top: 10, right: 4, bottom: 10, left: 4 });
+  assert.deepStrictEqual(M.hyprStyle(''), { gapsOut: { top: 0, right: 0, bottom: 0, left: 0 }, gapsIn: 0, borderSize: 0, rounding: 0, borderColor: '' });
 });

@@ -806,17 +806,58 @@ impl Core {
     /// インストール済みのアプリなら開き直せるように起動コマンドを持つ。変われば true
     pub fn note_foreign(&mut self, tab: u64, con: i64, app: &str, title: &str, focused: bool, tree: &Tree) -> bool {
         let Some(num) = self.tabs.tabs.iter().find(|t| t.id == tab).map(|t| t.num) else { return false };
-        let found = self.apps.list().iter().find(|a| a.id.to_lowercase() == app || a.cls == app).cloned();
+        let leaf = self.foreign_leaf(app, title);
+        let id = self.next_id();
+        self.apply_trees(&[(num, Some(replace_pane(tree, 0, id)))], [(id, leaf)].into());
+        let Some(t) = self.tabs.tabs.iter_mut().find(|t| t.id == tab).filter(|t| t.layout.has(id)) else { return false };
+        if focused {
+            t.active_pane = id;
+        }
+        self.windows.insert(id, con);
+        true
+    }
+
+    /// PRELUDE を通さずに開いた窓のペインの中身。インストール済みのアプリなら開き直せるように起動コマンドを持つ
+    fn foreign_leaf(&self, app: &str, title: &str) -> Leaf {
+        let found = self.apps.list().iter().find(|a| a.id.to_lowercase() == app.to_lowercase() || a.cls == app).cloned();
         let mut fields = Table::new();
         let name = found.as_ref().map(|a| a.name.as_str()).unwrap_or(if title.is_empty() { app } else { title });
         fields.insert("name".into(), Value::String(name.to_string()));
         fields.insert("cmd".into(), Value::String(found.as_ref().map(|a| a.exec.clone()).unwrap_or_default()));
         fields.insert("cls".into(), Value::String(app.to_string()));
+        Leaf { kind: "app".into(), fields }
+    }
+
+    /// PRELUDE を通さずに開いた窓を、番号 num のタブのペインにする(並べ方を読まないつなぎ。Hyprland)。
+    /// そのタブが無ければ作る(作業領域 = タブ)。窓はタブの最後のペインとして足す。focused なら今のタブ・ペインにする。
+    /// 既に持っている窓なら何もしない。変われば true
+    pub fn note_adopt(&mut self, num: u32, con: i64, app: &str, title: &str, focused: bool) -> bool {
+        if num == 0 || self.windows.values().any(|c| *c == con) {
+            return false;
+        }
+        let leaf = self.foreign_leaf(app, title);
         let id = self.next_id();
-        self.apply_trees(&[(num, Some(replace_pane(tree, 0, id)))], [(id, Leaf { kind: "app".into(), fields })].into());
-        let Some(t) = self.tabs.tabs.iter_mut().find(|t| t.id == tab).filter(|t| t.layout.has(id)) else { return false };
+        let pane = Layout::Pane { id, leaf };
+        let tab = match self.tabs.tabs.iter_mut().find(|t| t.num == num) {
+            Some(t) => {
+                let old = std::mem::replace(&mut t.layout, pane.clone());
+                t.layout = Layout::Split { dir: FDir::Row, ratio: 0.5, a: Box::new(old), b: Box::new(pane) };
+                if focused {
+                    t.active_pane = id;
+                }
+                t.id
+            }
+            None => {
+                let tid = self.next_id();
+                // タブは番号の順に並べる(作業領域の並びと同じ)
+                let at = self.tabs.tabs.iter().position(|t| t.num > num).unwrap_or(self.tabs.tabs.len());
+                self.tabs.tabs.insert(at, Tab { id: tid, num, layout: pane, active_pane: id, bookmark: None });
+                tid
+            }
+        };
+        // 今のタブにするのは選ばれている窓のときだけ(ほかの作業領域へ勝手に移らない)
         if focused {
-            t.active_pane = id;
+            self.tabs.active = Some(tab);
         }
         self.windows.insert(id, con);
         true

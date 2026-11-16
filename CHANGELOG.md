@@ -10,6 +10,8 @@
   - Hyprland の窓のつなぎ(`crates/prelude-core/src/hyprland.rs`。段 1「作業領域だけ指定する形」)。タブ = 作業領域で、アプリはタブの番号の作業領域に起動する。並べ方は Hyprland に任せ、作業領域の切り替えは読むだけでタブの切り替えにする。Lua の dispatch(Hyprland 0.5x・Omarchy 4)と前の形の両方に対応
   - Omarchy のバーの PRELUDE の部品(`omarchy/plugin/`。Quickshell のプラグイン `prelude.bar`)。スペースと今のタブを出し、押すと PRELUDE のランチャー(Omarchy のメニューで `prelude items` を選ぶ `prelude-omarchy-launcher`)、右クリックで Omarchy のメニューの「PRELUDE」
   - Omarchy のサイドバー(`omarchy/plugin/Sidebar.qml`)。バーの P を押すと画面の左端に開き、幅の分だけ場所を予約する。スペース・タブ(分割したペイン)・ブックマーク(フォルダの開閉)・新しいタブ。幅・置く側・起動のときに開くかは部品の設定(`omarchy bar set prelude.bar sidebarWidth 300` など)。左クリックをランチャーに戻すなら `click launcher`
+  - 開いている窓もタブにする: Hyprland のつなぎが `windows.adopt = "tabs"` のとき、番号の作業領域の窓(コアの起動のときに開いていたものと、後から PRELUDE を通さずに開いたもの)を、その番号のタブのペインにする(タブが無ければ作る)。前に PRELUDE が開いた窓は起動し直さずに結び付ける。Omarchy のおすすめの組み合わせは `adopt = "tabs"` にした
+  - Omarchy のサイドバーを窓と同じ決まりで置く: 画面の端との間は Hyprland の `gaps_out`、隣の窓との間は窓と窓の間、枠・角丸も Hyprland の設定に合わせる。細い列の幅は既定でバーの P のボタンと同じ
   - `scripts/omarchy.sh install|uninstall|status`: コア・コマンドを `~/.local/bin` に入れ、バーの部品・メニュー・キー(`Super + Alt + P`)・コアの自動起動を印の付いた塊で足す/外す
 - Rust 版のサイドバー: 分割したペインごとに × で閉じられる(分けた行の中と、今のタブの下のペインの行。乗せると出る)。最後のペインならタブごと閉じる
 - AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする

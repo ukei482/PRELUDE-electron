@@ -129,3 +129,33 @@ function width(value, fallback, min, max) {
   if (!isFinite(n) || n <= 0) n = fallback
   return Math.round(Math.max(min, Math.min(max, n)))
 }
+
+// Hyprland の窓の決まり。text は `hyprctl getoption <名前> -j` の返事を 1 行ずつ
+// (gaps_out・gaps_in・border_size・rounding・col.inactive_border の順)。読めないものは 0 と空
+function hyprStyle(text) {
+  var lines = String(text || "").split("\n")
+  var opt = function(i) { return parse(lines[i], {}) || {} }
+  // 間は "20 20 20 20"(上・右・下・左)か数
+  var sides = function(v) {
+    var n = String(v.css !== undefined ? v.css : (v.int !== undefined ? v.int : "")).trim().split(/\s+/).map(Number).filter(function(x) { return isFinite(x) })
+    var top = n.length > 0 ? n[0] : 0
+    var right = n.length > 1 ? n[1] : top
+    var bottom = n.length > 2 ? n[2] : top
+    var left = n.length > 3 ? n[3] : right
+    return { top: top, right: right, bottom: bottom, left: left }
+  }
+  var num = function(v) { var x = Number(v.int !== undefined ? v.int : v.css); return isFinite(x) && x > 0 ? Math.round(x) : 0 }
+  // 枠の色は "ff1e1e1e0deg"(AARRGGBB のあとに角度)。いくつか並ぶ(グラデーション)ときは最初の色
+  var color = function(v) {
+    var m = /^([0-9a-fA-F]{8})/.exec(String(v.gradient || v.str || "").trim())
+    return m ? "#" + m[1] : ""
+  }
+  var gin = sides(opt(1))
+  return {
+    gapsOut: sides(opt(0)),
+    gapsIn: Math.max(gin.top, gin.right, gin.bottom, gin.left),
+    borderSize: num(opt(2)),
+    rounding: num(opt(3)),
+    borderColor: color(opt(4))
+  }
+}
