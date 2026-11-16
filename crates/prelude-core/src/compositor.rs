@@ -212,7 +212,7 @@ pub enum Kind {
     Kwin,
     /// sway・SwayFX(i3 の IPC)
     Sway,
-    /// Hyprland(+ hy3)
+    /// Hyprland(段 1 まで。`hyprland.rs`)
     Hyprland,
 }
 
@@ -265,10 +265,8 @@ pub async fn start(tag: &str, notes: mpsc::UnboundedSender<Note>, opts: &Options
         }
         Some(Kind::Kwin) => crate::embed::start(tag, notes.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
         Some(Kind::Sway) => crate::sway::start(tag, notes.clone(), opts.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
-        Some(Kind::Hyprland) => {
-            eprintln!("prelude-core: the hyprland backend is not written yet");
-            None
-        }
+        // 段 1(作業領域だけ指定する形)まで。並べ方は Hyprland(Omarchy など)に任せる
+        Some(Kind::Hyprland) => crate::hyprland::start(tag, notes.clone(), opts.clone()).await.map(|h| Box::new(h) as Box<dyn Compositor>),
         None => None,
     };
     found.unwrap_or_else(|| {

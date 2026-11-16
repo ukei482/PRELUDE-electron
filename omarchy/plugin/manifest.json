@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "prelude.bar",
+  "name": "PRELUDE",
+  "version": "0.1.0",
+  "author": "PRELUDE",
+  "description": "PRELUDE のスペースと今のタブ。押すと PRELUDE のランチャー",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "PRELUDE",
+    "description": "PRELUDE のスペースと今のタブ。押すと PRELUDE のランチャー",
+    "category": "Compositor",
+    "allowMultiple": false,
+    "defaultSection": "left"
+  }
+}

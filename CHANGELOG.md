@@ -6,6 +6,10 @@
 ## [未リリース]
 
 ### 追加
+- Omarchy(Hyprland)に対応(`docs/omarchy.md`)
+  - Hyprland の窓のつなぎ(`crates/prelude-core/src/hyprland.rs`。段 1「作業領域だけ指定する形」)。タブ = 作業領域で、アプリはタブの番号の作業領域に起動する。並べ方は Hyprland に任せ、作業領域の切り替えは読むだけでタブの切り替えにする。Lua の dispatch(Hyprland 0.5x・Omarchy 4)と前の形の両方に対応
+  - Omarchy のバーの PRELUDE の部品(`omarchy/plugin/`。Quickshell のプラグイン `prelude.bar`)。スペースと今のタブを出し、押すと PRELUDE のランチャー(Omarchy のメニューで `prelude items` を選ぶ `prelude-omarchy-launcher`)、右クリックで Omarchy のメニューの「PRELUDE」
+  - `scripts/omarchy.sh install|uninstall|status`: コア・コマンドを `~/.local/bin` に入れ、バーの部品・メニュー・キー(`Super + Alt + P`)・コアの自動起動を印の付いた塊で足す/外す
 - Rust 版のサイドバー: 分割したペインごとに × で閉じられる(分けた行の中と、今のタブの下のペインの行。乗せると出る)。最後のペインならタブごと閉じる
 - AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする
 - MCP のサーバー `prelude mcp`(標準入出力)。PRELUDE の命令を AI のツールにする(状態・一覧・開く・タブ・ペイン・スペース・ブックマーク・フォルダ。30 個)。消す・閉じるツールには印を付け、人からもらったブックマークの起動コマンドは AI からは実行させない。例: `claude mcp add prelude -- prelude mcp`。`prelude` のコマンドでも、ブックマークを番号(b3)で指せる

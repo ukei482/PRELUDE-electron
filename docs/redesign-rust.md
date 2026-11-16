@@ -255,8 +255,9 @@ class = "org.kde.konsole"                     # 省略できる。窓を見分�
 |---|---|---|
 | sway・SwayFX | 4 | `sway.rs`(i3 の IPC)。配置の木を sway の分割として組み、sway の木を読み戻してコアの木に合わせる |
 | KWin | 2 | `embed.rs`・`embed.js`。KWin には木構造の並べ方が無いので、配置の木から場所を出して窓を重ねる。KDE で使う人のために残す(保守が重くなったら段を下げる) |
+| Hyprland | 1 | `hyprland.rs`。「作業領域だけ指定する形」: exec に作業領域を付けて起動し、作業領域の切り替えを読むだけ。Lua の dispatch(0.5x から)を先に試し、通らなければ前の形。Omarchy で使う(`docs/omarchy.md`) |
 
-- Hyprland・GNOME などは、要る人がつなぎを足せる。Hyprland なら hy3(i3 風の木構造のプラグイン)が `[layout]` に合う。素の Hyprland は比率を戻しにくく、niri はスクロール型で形が合わない
+- GNOME などは、要る人がつなぎを足せる。Hyprland を段 2 以上にするなら hy3(i3 風の木構造のプラグイン)が `[layout]` に合う。素の Hyprland は比率を戻しにくく、niri はスクロール型で形が合わない
 - つなぎのトレイトには版を付けない(下の「UI」の「トレイトの版」)
 
 ---
@@ -554,9 +555,9 @@ Omarchy は OS ごと持つことで完成形を作っている。PRELUDE は同
 - **環境ごとの「おすすめの組み合わせ」を配る**: 環境の上に載せる設定の束。例えば Omarchy 向けなら、任せる段は「作業領域だけ指定」、端末は foot、AI は Omarchy の既定、メニューの項目(`omarchy-menu.jsonc`)とキーの断片を足す。OS にはならずに、入れた瞬間から気持ちよく動く状態に近づける
 
 ### Omarchy の上で PRELUDE が使うところ
-- 窓: Hyprland。今はつなぎが無いので段 0 で動く。つなぎは「作業領域だけ指定」(段 1)から作る
+- 窓: Hyprland のつなぎ(`hyprland.rs`)。「作業領域だけ指定」(段 1)
 - サイドバー: Hyprland は layer-shell に対応。Omarchy のバーのプラグインとして PRELUDE の部品を作る道もある
-- ランチャー・バー: メニューの JSONC に PRELUDE の項目、バーのプラグインで `prelude watch --bar`
+- ランチャー・バー: Omarchy 4 のバーは Quickshell のプラグイン。PRELUDE の部品(`omarchy/plugin/`。`prelude watch --bar` を読み、押すとランチャー)、メニューの JSONC に PRELUDE の項目、ランチャーは Omarchy のメニュー(`omarchy-menu-select`)で `prelude items` を選ぶ(`omarchy/prelude-omarchy-launcher`)。入れるのは `scripts/omarchy.sh`(`docs/omarchy.md`)
 - AI: Omarchy は `~/.agents/skills` を各 AI にリンクするので、PRELUDE のスキルをそこに置けば Omarchy の AI 全部が使える
 - 配布: Arch 用の PKGBUILD が要る
 

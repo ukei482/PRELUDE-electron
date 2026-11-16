@@ -1,0 +1,28 @@
+#!/bin/bash
+# PRELUDE のランチャーを Omarchy のメニューで出す(バーの PRELUDE を押したとき・Super+Alt+P)。
+# 候補は `prelude items`(タブ・ブックマーク・アプリ・スペース)。選んだ行を `prelude open` に渡す。
+# 打った文字が候補に無ければ、その文字を開く(URL・フォルダ・ブックマークの名前)。
+set -uo pipefail
+
+notify() {
+  if command -v omarchy-notification-send >/dev/null; then omarchy-notification-send "$1"
+  elif command -v notify-send >/dev/null; then notify-send PRELUDE "$1"
+  else echo "$1" >&2
+  fi
+}
+
+if ! items=$(prelude items 2>&1); then
+  notify "PRELUDE のコアが動いていません: $items"
+  exit 1
+fi
+mapfile -t lines <<<"$items"
+
+if command -v omarchy-menu-select >/dev/null; then
+  choice=$(omarchy-menu-select PRELUDE "${lines[@]}" -- --width 640) || exit 0
+elif command -v walker >/dev/null; then
+  choice=$(printf '%s\n' "${lines[@]}" | walker --dmenu -p PRELUDE) || exit 0
+else
+  choice=$(printf '%s\n' "${lines[@]}" | fuzzel --dmenu --prompt 'PRELUDE ') || exit 0
+fi
+[[ -n $choice ]] || exit 0
+err=$(printf '%s\n' "$choice" | prelude open 2>&1) || notify "PRELUDE: $err"
