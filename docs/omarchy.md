@@ -51,6 +51,12 @@ scripts/omarchy.sh install
 PRELUDE_CORE_SOCK=/tmp/prelude-test.sock ~/.local/bin/prelude-core --state /tmp/prelude-test.json --spaces /tmp/prelude-spaces
 ```
 
+確かめたこと(2026-11-16。GPU の無いクラウドなので Hyprland そのものは起動できず、Hyprland 0.57.2 のソースと、その形で返す偽の Hyprland で確かめた):
+- `prelude-core` が Hyprland のつなぎ(段 1)を選び、起動・作業領域へ移す・作業領域を選ぶ・窓を閉じるを Lua の形で頼む。送った文は Lua として読め、引数の名前(`workspace`・`follow`・`window`)は Hyprland のソースにあるもの
+- exec は `/bin/sh -c` で動き、作業領域の決まりは環境変数で子へ受け継がれる(`cd …; PRELUDE_PANE=… exec sh -c …` で効く)。dispatch はフラグ無しの `/dispatch …` で送る(hyprctl と同じ)
+- 0.57 の `workspacev2` は「指す名前,見せる名前」、`j/clients` の作業領域には `address` がある。どちらの名前でもタブの番号を読む
+- Hyprland で作業領域を移るとタブが変わり、タブでない作業領域では何もしない。窓の題名は `prelude watch --bar` に出る。ランチャーは候補を `omarchy-menu-select` に渡して選んだ行を開き、コアが止まっていれば通知する
+
 ## 前の Omarchy(3.x。waybar)
 
 `scripts/omarchy.sh` は `~/.config/hypr/hyprland.conf` があればそこにキーと自動起動を足す。バーは waybar なので、`~/.config/waybar/config.jsonc` に手で足す:

@@ -53,8 +53,9 @@ pub enum Event {
         addr: String,
         title: String,
     },
-    /// 作業領域を選んだ(名前)
+    /// 作業領域を選んだ。0.5x は「指す名前,見せる名前」、前の版は「番号,名前」
     Workspace {
+        addr: String,
         name: String,
     },
 }
@@ -76,7 +77,10 @@ pub fn parse_event(line: &str) -> Option<Event> {
             let (addr, title) = data.split_once(',')?;
             Some(Event::Title { addr: addr.into(), title: title.into() })
         }
-        "workspacev2" => Some(Event::Workspace { name: data.split_once(',')?.1.to_string() }),
+        "workspacev2" => {
+            let (addr, name) = data.split_once(',')?;
+            Some(Event::Workspace { addr: addr.into(), name: name.into() })
+        }
         _ => None,
     }
 }
@@ -93,6 +97,12 @@ pub fn ws_target(num: u32, suffix: &str) -> String {
     } else {
         format!("name:{}", ws_name(num, suffix))
     }
+}
+
+/// 作業領域の名前の候補からタブの番号。見せる名前を付け直した作業領域(Hyprland 0.5x の規則の名前)もあるので、
+/// 見せる名前 → 指す名前(`name:` は外す)の順に試す
+pub fn ws_num_any(names: &[&str], suffix: &str) -> Option<u32> {
+    names.iter().find_map(|n| ws_num(n.strip_prefix("name:").unwrap_or(n), suffix))
 }
 
 /// シェルの 1 語にする('…')
@@ -182,6 +192,8 @@ pub struct Client {
     pub pid: u32,
     pub title: String,
     pub ws: String,
+    /// 作業領域の指す名前(0.5x の `address`。前の版は番号)
+    pub ws_addr: String,
     pub floating: bool,
 }
 
@@ -194,6 +206,11 @@ pub fn clients(v: &Value) -> Vec<Client> {
                     pid: c["pid"].as_i64().unwrap_or(0).max(0) as u32,
                     title: c["title"].as_str().unwrap_or("").to_string(),
                     ws: c["workspace"]["name"].as_str().unwrap_or("").to_string(),
+                    ws_addr: c["workspace"]["address"]
+                        .as_str()
+                        .map(String::from)
+                        .or_else(|| c["workspace"]["id"].as_i64().map(|i| i.to_string()))
+                        .unwrap_or_default(),
                     floating: c["floating"].as_bool().unwrap_or(false),
                 })
                 .collect()
@@ -239,7 +256,8 @@ pub fn match_pane<'a>(pending: impl Iterator<Item = (u64, &'a str)>, c: &Client,
     by_env
 }
 
-/// コマンドのソケット(`.socket.sock`)に 1 つ送って、返事を読む(Hyprland は返事の後に閉じる)
+/// コマンドのソケット(`.socket.sock`)に 1 つ送って、返事を読む(Hyprland は返事の後に閉じる)。
+/// 頭の `/` より前はフラグ(`j/clients` の j)。dispatch はフラグ無しの `/dispatch …` で送る(hyprctl と同じ。コマンドの中の `/` をフラグの区切りと取り違えさせない)
 async fn request(dir: &Path, cmd: &str) -> std::io::Result<String> {
     let mut s = UnixStream::connect(dir.join(".socket.sock")).await?;
     s.write_all(cmd.as_bytes()).await?;
@@ -318,11 +336,10 @@ async fn start_in(dir: PathBuf, tag: &str, notes: mpsc::UnboundedSender<Note>, o
         });
     }
     let suffix = ws_suffix(&opts.workspace_prefix, tag);
-    let cur_ws = request(&dir, "j/activeworkspace")
-        .await
-        .ok()
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .and_then(|v| ws_num(v["name"].as_str()?, &suffix));
+    let cur_ws = request(&dir, "j/activeworkspace").await.ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| {
+        let id = v["id"].to_string();
+        ws_num_any(&[v["name"].as_str().unwrap_or(""), v["address"].as_str().unwrap_or(""), &id], &suffix)
+    });
     let level = opts.level(Level::Workspace);
     let h = Hypr {
         dir,
@@ -405,7 +422,7 @@ impl Hypr {
     async fn dispatch(&mut self, d: Dispatch) {
         let ok = |r: &std::io::Result<String>| r.as_ref().is_ok_and(|t| t.trim() == "ok");
         if self.lua != Some(false) {
-            let r = request(&self.dir, &format!("dispatch {}", d.lua())).await;
+            let r = request(&self.dir, &format!("/dispatch {}", d.lua())).await;
             if ok(&r) {
                 self.lua = Some(true);
                 return;
@@ -415,7 +432,7 @@ impl Hypr {
                 return;
             }
         }
-        let r = request(&self.dir, &format!("dispatch {}", d.legacy())).await;
+        let r = request(&self.dir, &format!("/dispatch {}", d.legacy())).await;
         if ok(&r) {
             self.lua = Some(false);
         } else {
@@ -507,7 +524,7 @@ impl Hypr {
         let _ = self.notes.send(Note::Title { pane, title: c.title.chars().take(300).collect() });
         // exec の決まりが効かなかった窓(既に動いているプロセスが開いた窓)だけ、タブの作業領域へ移す
         if let Some(n) = tab_nums(&self.scene).get(&pane).copied() {
-            if ws_num(&c.ws, &self.suffix) != Some(n) {
+            if ws_num_any(&[&c.ws, &c.ws_addr], &self.suffix) != Some(n) {
                 self.dispatch(Dispatch::Move { addr: c.addr, ws: ws_target(n, &self.suffix) }).await;
             }
             self.placed.insert(pane, n);
@@ -537,9 +554,9 @@ impl Hypr {
                     self.later(Msg::Gone(pane), GONE_WAIT);
                 }
             }
-            Event::Workspace { name } => {
+            Event::Workspace { addr, name } => {
                 // 読むだけ: 使用者が Hyprland で選んだ作業領域が、タブの切り替えになる。タブでない作業領域なら何もしない
-                self.cur_ws = ws_num(&name, &self.suffix);
+                self.cur_ws = ws_num_any(&[&name, &addr], &self.suffix);
                 let tab = self.cur_ws.and_then(|n| self.scene.tabs.iter().find(|t| t.num == n)).map(|t| t.id);
                 if let Some(tab) = tab {
                     self.last_active = Some(tab);
@@ -566,7 +583,12 @@ mod tests {
         );
         assert_eq!(parse_event("closewindow>>abc"), Some(Event::Close { addr: "abc".into() }));
         assert_eq!(parse_event("windowtitlev2>>abc,x, y"), Some(Event::Title { addr: "abc".into(), title: "x, y".into() }));
-        assert_eq!(parse_event("workspacev2>>2,2:work"), Some(Event::Workspace { name: "2:work".into() }));
+        assert_eq!(parse_event("workspacev2>>2,2:work"), Some(Event::Workspace { addr: "2".into(), name: "2:work".into() }));
+        // 0.5x: 指す名前,見せる名前
+        assert_eq!(
+            parse_event("workspacev2>>name:3:work,3:work"),
+            Some(Event::Workspace { addr: "name:3:work".into(), name: "3:work".into() })
+        );
         assert_eq!(parse_event("workspace>>2"), None);
         assert_eq!(parse_event("garbage"), None);
         assert_eq!(norm_addr("0x5603ABC"), "5603abc");
@@ -580,6 +602,10 @@ mod tests {
         assert_eq!(ws_num("3", ""), Some(3));
         assert_eq!(ws_num("3:work", ":work"), Some(3));
         assert_eq!(ws_num("special:magic", ""), None);
+        // 見せる名前を付け直した作業領域は、指す名前で読む
+        assert_eq!(ws_num_any(&["Mail", "3"], ""), Some(3));
+        assert_eq!(ws_num_any(&["Mail", "name:3:work"], ":work"), Some(3));
+        assert_eq!(ws_num_any(&["Mail", "special:x"], ""), None);
     }
 
     #[test]
@@ -620,13 +646,20 @@ mod tests {
     fn 窓の一覧を読む() {
         let v = json!([{ "address": "0xABC", "pid": 42, "title": "t", "workspace": { "id": 2, "name": "2" }, "floating": true }, {}]);
         let c = clients(&v);
-        assert_eq!(c[0], Client { addr: "abc".into(), pid: 42, title: "t".into(), ws: "2".into(), floating: true });
+        assert_eq!(c[0], Client { addr: "abc".into(), pid: 42, title: "t".into(), ws: "2".into(), ws_addr: "2".into(), floating: true });
         assert_eq!(c[1].pid, 0);
     }
 
     #[test]
     fn 窓をペインに結び付ける() {
-        let c = Client { addr: "a".into(), pid: 10, title: "Docs — prelude:5 — Browser".into(), ws: "1".into(), floating: false };
+        let c = Client {
+            addr: "a".into(),
+            pid: 10,
+            title: "Docs — prelude:5 — Browser".into(),
+            ws: "1".into(),
+            ws_addr: "1".into(),
+            floating: false,
+        };
         let env = |pid: u32, e: &str| pid == 10 && e == "PRELUDE_PANE=3";
         // 題名の印が先
         assert_eq!(match_pane([(3, ""), (5, "prelude:5")].into_iter(), &c, &env), Some(5));
@@ -678,8 +711,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// 偽の Hyprland: Lua の dispatch は断り(前の Hyprland)、前の形だけ ok を返す。受けた頼みごとを送り出す
-    async fn fake(dir: &Path) -> (mpsc::UnboundedReceiver<String>, tokio::net::UnixListener) {
+    /// 偽の Hyprland。lua なら 0.5x(Omarchy 4。Lua の dispatch だけ通り、前の形は断る)、そうでなければ前の Hyprland(Lua を断る)。
+    /// 窓の一覧は 0.5x の形(作業領域に address)。通った頼みごとを送り出す
+    async fn fake(dir: &Path, lua: bool) -> (mpsc::UnboundedReceiver<String>, tokio::net::UnixListener) {
         let cmd = tokio::net::UnixListener::bind(dir.join(".socket.sock")).unwrap();
         let ev = tokio::net::UnixListener::bind(dir.join(".socket2.sock")).unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
@@ -690,18 +724,16 @@ mod tests {
                 let n = s.read(&mut buf).await.unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..n]).to_string();
                 let reply = match req.as_str() {
-                    "j/activeworkspace" => r#"{"id":1,"name":"1"}"#.to_string(),
-                    "j/clients" => {
-                        r#"[{"address":"0xbeef","pid":1,"title":"Docs prelude:5","workspace":{"id":1,"name":"1"},"floating":false}]"#
-                            .to_string()
+                    "j/activeworkspace" => r#"{"address":"1","id":1,"type":"numbered","name":"1"}"#.to_string(),
+                    "j/clients" => r#"[{"address":"0xbeef","pid":1,"title":"Docs prelude:5","workspace":{"address":"1","id":1,"type":"numbered","name":"1"},"floating":false}]"#.to_string(),
+                    r if r.starts_with("/dispatch ") && r.starts_with("/dispatch hl.") != lua => "Invalid dispatcher".to_string(),
+                    r if r.starts_with("/dispatch ") => {
+                        let _ = tx.send(r["/dispatch ".len()..].to_string());
+                        "ok".to_string()
                     }
-                    r if r.starts_with("dispatch hl.") => "Invalid dispatcher".to_string(),
-                    _ => "ok".to_string(),
+                    _ => "unknown request".to_string(),
                 };
                 let _ = s.write_all(reply.as_bytes()).await;
-                if req.starts_with("dispatch ") && !req.starts_with("dispatch hl.") {
-                    let _ = tx.send(req["dispatch ".len()..].to_string());
-                }
             }
         });
         (rx, ev)
@@ -712,11 +744,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn 偽の_hyprland_0_5x_は_lua_で送る() {
+        let dir = std::env::temp_dir().join(format!("prelude-hypr-lua-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut cmds, ev) = fake(&dir, true).await;
+        let (ntx, mut notes) = mpsc::unbounded_channel();
+        let h = start_in(dir.clone(), "", ntx, Options::default()).await.unwrap();
+        let (mut ev, _) = ev.accept().await.unwrap();
+        let web =
+            Want { pane: 5, cmd: "true".into(), cls: String::new(), cwd: "/".into(), rect: None, marker: "prelude:5".into(), window: None };
+        h.arrange(Scene {
+            panes: vec![web],
+            tabs: vec![TabScene { id: 20, num: 2, tree: Tree::Pane(5), active_pane: 5 }],
+            active: Some(20),
+        });
+        let exec = next(&mut cmds).await;
+        assert!(exec.starts_with(r#"hl.dsp.exec_cmd("cd '/' 2>/dev/null"#) && exec.ends_with(r#"{ workspace = "2 silent" })"#), "{exec}");
+        assert_eq!(next(&mut cmds).await, r#"hl.dsp.focus({ workspace = "2" })"#);
+        ev.write_all(b"openwindow>>beef,1,browser,Docs prelude:5\n").await.unwrap();
+        assert_eq!(next(&mut cmds).await, r#"hl.dsp.window.move({ workspace = "2", follow = false, window = "address:0xbeef" })"#);
+        assert_eq!(notes.recv().await, Some(Note::Claimed { pane: 5 }));
+        h.shutdown().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn 偽の_hyprland_で通す() {
         let dir = std::env::temp_dir().join(format!("prelude-hypr-fake-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let (mut cmds, ev) = fake(&dir).await;
+        let (mut cmds, ev) = fake(&dir, false).await;
         let (ntx, mut notes) = mpsc::unbounded_channel();
         let h = start_in(dir.clone(), "", ntx, Options::default()).await.unwrap();
         let (mut ev, _) = ev.accept().await.unwrap();
