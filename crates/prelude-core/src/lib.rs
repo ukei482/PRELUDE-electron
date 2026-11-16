@@ -10,6 +10,7 @@ pub mod apps;
 pub mod compositor;
 pub mod downloads;
 pub mod embed;
+pub mod hyprland;
 pub mod icons;
 pub mod launch;
 pub mod migrate;
