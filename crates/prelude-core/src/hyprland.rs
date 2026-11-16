@@ -7,6 +7,9 @@
 //! - 作業領域が切り替わったことは、イベント(`.socket2.sock`)を **読むだけ** で知り、タブの切り替えとしてコアに知らせる
 //! - PRELUDE でタブを選んだ・開いたときだけ、その作業領域へ移る(頼まれたときだけ。「取り合わない決まり」)
 //! - 間・角丸・窓の決まりは触らない(環境の見た目を上書きしない)
+//! - 設定の windows.adopt が tabs なら、PRELUDE を通さずに開いた窓も引き取る([`Note::Adopt`]。「PRELUDE を通さずに開いた窓」)。
+//!   コアの起動のときに開いていた窓は、まず前のペインの窓か(`PRELUDE_PANE`)を見て結び付け、残りを番号の作業領域のタブのペインにする
+//!   (タブが無ければ作る)。後から開いた窓は、PRELUDE が起動した窓でないと分かってから引き取る。浮いた窓・触らない窓・番号でない作業領域の窓は引き取らない
 //!
 //! Hyprland は 0.5x で設定と dispatch が Lua(`hl.dsp.…`)になった。Lua の形を先に試し、通らなければ前の形(`movetoworkspacesilent` など)で送る。
 use crate::compositor::{Compositor, Level, Note, Options, Scene, Tree};
@@ -24,6 +27,8 @@ use tokio::sync::{mpsc, oneshot};
 const WEB_WAIT: Duration = Duration::from_secs(30);
 /// 窓が閉じてから、次の窓を待つ時間(スプラッシュの後に本体の窓を出し直すアプリのため)
 const GONE_WAIT: Duration = Duration::from_secs(2);
+/// PRELUDE を通さずに開いた窓を引き取るまで待つ時間(Web のペインの印が題名に出るのを待つ)
+const ADOPT_WAIT: Duration = Duration::from_millis(1500);
 
 /// Hyprland のソケットのフォルダ。今の場所(`$XDG_RUNTIME_DIR/hypr/<印>`)、無ければ前の場所(`/tmp/hypr/<印>`)
 pub fn socket_dir(get: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
@@ -176,13 +181,17 @@ impl Dispatch {
 }
 
 /// `j/clients` の 1 つから、ペインを見分けるのに使うもの
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Client {
     pub addr: String,
     pub pid: u32,
     pub title: String,
     pub ws: String,
     pub floating: bool,
+    /// 窓の名前(class。Wayland の app_id)
+    pub class: String,
+    /// 最後に選ばれた窓(focusHistoryID が 0)
+    pub focused: bool,
 }
 
 pub fn clients(v: &Value) -> Vec<Client> {
@@ -195,6 +204,8 @@ pub fn clients(v: &Value) -> Vec<Client> {
                     title: c["title"].as_str().unwrap_or("").to_string(),
                     ws: c["workspace"]["name"].as_str().unwrap_or("").to_string(),
                     floating: c["floating"].as_bool().unwrap_or(false),
+                    class: c["class"].as_str().unwrap_or("").to_string(),
+                    focused: c["focusHistoryID"].as_i64() == Some(0),
                 })
                 .collect()
         })
@@ -239,6 +250,23 @@ pub fn match_pane<'a>(pending: impl Iterator<Item = (u64, &'a str)>, c: &Client,
     by_env
 }
 
+/// 窓のアドレス(0x 無しの 16 進) ⇔ コアの窓の数(con)
+pub fn addr_con(addr: &str) -> Option<i64> {
+    i64::from_str_radix(addr, 16).ok().filter(|c| *c > 0)
+}
+
+pub fn con_addr(con: i64) -> String {
+    format!("{con:x}")
+}
+
+/// 引き取ってよい窓なら、そのタブの番号。浮いた窓・触らない窓(class)・番号でない作業領域の窓は None
+pub fn adopt_num(c: &Client, suffix: &str, ignore: &[String]) -> Option<u32> {
+    if c.floating || c.addr.is_empty() || ignore.iter().any(|i| i.eq_ignore_ascii_case(&c.class)) {
+        return None;
+    }
+    ws_num(&c.ws, suffix)
+}
+
 /// コマンドのソケット(`.socket.sock`)に 1 つ送って、返事を読む(Hyprland は返事の後に閉じる)
 async fn request(dir: &Path, cmd: &str) -> std::io::Result<String> {
     let mut s = UnixStream::connect(dir.join(".socket.sock")).await?;
@@ -255,6 +283,8 @@ enum Msg {
     Gone(u64),
     /// Web のペインの窓が出なかった
     WebTimeout(u64),
+    /// PRELUDE を通さずに開いた窓を引き取るか確かめる
+    Adopt(String),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -324,6 +354,8 @@ async fn start_in(dir: PathBuf, tag: &str, notes: mpsc::UnboundedSender<Note>, o
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
         .and_then(|v| ws_num(v["name"].as_str()?, &suffix));
     let level = opts.level(Level::Workspace);
+    // 起動のときに開いていた窓(前のペインの窓か、引き取る窓)
+    let startup = Some(clients_at(&dir).await);
     let h = Hypr {
         dir,
         tx: tx.clone(),
@@ -336,6 +368,9 @@ async fn start_in(dir: PathBuf, tag: &str, notes: mpsc::UnboundedSender<Note>, o
         scene: Scene::default(),
         cur_ws,
         last_active: None,
+        adopt: opts.adopt,
+        ignore: opts.ignore.clone(),
+        startup,
     };
     tokio::spawn(h.run(rx));
     Some(Handle { tx, level })
@@ -364,6 +399,16 @@ struct Hypr {
     cur_ws: Option<u32>,
     /// 最後に合わせた今のタブ(変わったときだけ作業領域を選ぶ)
     last_active: Option<u64>,
+    /// PRELUDE を通さずに開いた窓を引き取る(設定の windows.adopt)
+    adopt: bool,
+    /// 触らない窓(class)
+    ignore: Vec<String>,
+    /// 起動のときに開いていた窓。最初に合わせるときに使い切る
+    startup: Option<Vec<Client>>,
+}
+
+async fn clients_at(dir: &Path) -> Vec<Client> {
+    request(dir, "j/clients").await.ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).map(|v| clients(&v)).unwrap_or_default()
 }
 
 impl Hypr {
@@ -378,6 +423,7 @@ impl Hypr {
                         let _ = self.notes.send(Note::Exited { pane, had_window: true });
                     }
                 }
+                Msg::Adopt(addr) => self.adopt_window(&addr).await,
                 Msg::WebTimeout(pane) => {
                     if self.panes.get(&pane).is_some_and(|p| p.addr.is_none()) {
                         self.panes.remove(&pane);
@@ -424,12 +470,64 @@ impl Hypr {
     }
 
     async fn clients(&self) -> Vec<Client> {
-        request(&self.dir, "j/clients")
-            .await
-            .ok()
-            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-            .map(|v| clients(&v))
-            .unwrap_or_default()
+        clients_at(&self.dir).await
+    }
+
+    /// ペインに窓を結び付けたことにする(コアに知らせ、タブの番号を覚える)
+    fn bind(&mut self, pane: u64, marker: &str, c: &Client, num: Option<u32>) {
+        self.panes.insert(pane, Pane { marker: marker.to_string(), addr: Some(c.addr.clone()) });
+        if let Some(n) = num {
+            self.placed.insert(pane, n);
+        }
+        let _ = self.notes.send(Note::Claimed { pane });
+        if !c.title.is_empty() {
+            let _ = self.notes.send(Note::Title { pane, title: c.title.chars().take(300).collect() });
+        }
+    }
+
+    /// 窓をコアに渡して、番号の作業領域のタブのペインにしてもらう
+    fn send_adopt(&self, c: &Client, num: u32) {
+        let Some(con) = addr_con(&c.addr) else { return };
+        let _ = self.notes.send(Note::Adopt { num, con, app: c.class.clone(), title: c.title.clone(), focused: c.focused });
+    }
+
+    /// 後から開いた窓を引き取る(待った後で、まだどのペインの窓でもなければ)
+    async fn adopt_window(&mut self, addr: &str) {
+        if !self.adopt || self.pane_of(addr).is_some() {
+            return;
+        }
+        let Some(c) = self.clients().await.into_iter().find(|c| c.addr == addr) else { return };
+        if let Some(n) = adopt_num(&c, &self.suffix, &self.ignore) {
+            self.send_adopt(&c, n);
+        }
+    }
+
+    /// 起動のときに開いていた窓: 前のペインの窓(`PRELUDE_PANE`・Web の印)なら結び付け、残りは引き取る
+    fn take_startup(&mut self, scene: &Scene) {
+        let Some(mut start) = self.startup.take() else { return };
+        let nums = tab_nums(scene);
+        for w in &scene.panes {
+            if self.panes.contains_key(&w.pane) || w.window.is_some() {
+                continue;
+            }
+            let one = [(w.pane, w.marker.as_str())];
+            if let Some(i) = start.iter().position(|c| !c.floating && match_pane(one.iter().copied(), c, &procs::has_env).is_some()) {
+                let c = start.remove(i);
+                self.bind(w.pane, &w.marker, &c, nums.get(&w.pane).copied());
+            }
+        }
+        if !self.adopt {
+            return;
+        }
+        let held: HashSet<i64> = scene.panes.iter().filter_map(|w| w.window).collect();
+        for c in &start {
+            if addr_con(&c.addr).is_some_and(|con| held.contains(&con)) {
+                continue;
+            }
+            if let Some(n) = adopt_num(c, &self.suffix, &self.ignore) {
+                self.send_adopt(c, n);
+            }
+        }
     }
 
     /// コアの状態に合わせる: 閉じたペインの窓を閉じる・新しいペインを起動する・番号の変わったタブの窓を移す・PRELUDE で選んだタブへ移る
@@ -443,10 +541,20 @@ impl Hypr {
             }
             self.placed.remove(&id);
         }
+        // 最初に合わせるとき: 開いていた窓のうち、前のペインの窓は起動し直さずに結び付ける
+        self.take_startup(&scene);
         let nums = tab_nums(&scene);
         for w in &scene.panes {
-            // 既にある窓を渡されるのは段 4 の引き取りだけ。このつなぎは引き取らない
-            if self.panes.contains_key(&w.pane) || w.window.is_some() || w.cmd.trim().is_empty() {
+            if self.panes.contains_key(&w.pane) {
+                continue;
+            }
+            // 引き取った窓(コアが持つ窓の数): 起動はせず、その窓をペインの窓にする
+            if let Some(con) = w.window {
+                let c = Client { addr: con_addr(con), ..Default::default() };
+                self.bind(w.pane, "", &c, nums.get(&w.pane).copied());
+                continue;
+            }
+            if w.cmd.trim().is_empty() {
                 continue;
             }
             let num = nums.get(&w.pane).copied();
@@ -489,7 +597,7 @@ impl Hypr {
 
     /// 出てきた窓(または題名が変わった窓)を、まだ窓の無いペインに結び付ける
     async fn try_claim(&mut self, addr: &str) {
-        if self.panes.values().all(|p| p.addr.is_some()) || self.pane_of(addr).is_some() {
+        if self.pane_of(addr).is_some() || (!self.adopt && self.panes.values().all(|p| p.addr.is_some())) {
             return;
         }
         let Some(c) = self.clients().await.into_iter().find(|c| c.addr == addr) else { return };
@@ -499,7 +607,13 @@ impl Hypr {
         }
         let pending: Vec<(u64, String)> =
             self.panes.iter().filter(|(_, p)| p.addr.is_none()).map(|(id, p)| (*id, p.marker.clone())).collect();
-        let Some(pane) = match_pane(pending.iter().map(|(id, m)| (*id, m.as_str())), &c, &procs::has_env) else { return };
+        let Some(pane) = match_pane(pending.iter().map(|(id, m)| (*id, m.as_str())), &c, &procs::has_env) else {
+            // どのペインの窓でもない: PRELUDE を通さずに開いた窓。Web のペインの印が出るかもしれないので、少し待ってから引き取る
+            if self.adopt {
+                self.later(Msg::Adopt(c.addr.clone()), ADOPT_WAIT);
+            }
+            return;
+        };
         if let Some(p) = self.panes.get_mut(&pane) {
             p.addr = Some(c.addr.clone());
         }
@@ -555,6 +669,25 @@ impl Hypr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 引き取る窓の番号() {
+        let c = |ws: &str, class: &str, floating: bool| Client {
+            addr: "5591c8fd47e0".into(),
+            ws: ws.into(),
+            class: class.into(),
+            floating,
+            ..Default::default()
+        };
+        let none: Vec<String> = vec![];
+        assert_eq!(adopt_num(&c("2", "foot", false), "", &none), Some(2));
+        assert_eq!(adopt_num(&c("2", "foot", true), "", &none), None);
+        assert_eq!(adopt_num(&c("special:scratch", "foot", false), "", &none), None);
+        assert_eq!(adopt_num(&c("2", "Foot", false), "", &["foot".to_string()]), None);
+        assert_eq!(addr_con("5591c8fd47e0").map(con_addr).as_deref(), Some("5591c8fd47e0"));
+        assert_eq!(addr_con(""), None);
+    }
+
     use crate::compositor::{TabScene, Want};
     use serde_json::json;
 
@@ -620,13 +753,20 @@ mod tests {
     fn 窓の一覧を読む() {
         let v = json!([{ "address": "0xABC", "pid": 42, "title": "t", "workspace": { "id": 2, "name": "2" }, "floating": true }, {}]);
         let c = clients(&v);
-        assert_eq!(c[0], Client { addr: "abc".into(), pid: 42, title: "t".into(), ws: "2".into(), floating: true });
+        assert_eq!(c[0], Client { addr: "abc".into(), pid: 42, title: "t".into(), ws: "2".into(), floating: true, ..Default::default() });
         assert_eq!(c[1].pid, 0);
     }
 
     #[test]
     fn 窓をペインに結び付ける() {
-        let c = Client { addr: "a".into(), pid: 10, title: "Docs — prelude:5 — Browser".into(), ws: "1".into(), floating: false };
+        let c = Client {
+            addr: "a".into(),
+            pid: 10,
+            title: "Docs — prelude:5 — Browser".into(),
+            ws: "1".into(),
+            floating: false,
+            ..Default::default()
+        };
         let env = |pid: u32, e: &str| pid == 10 && e == "PRELUDE_PANE=3";
         // 題名の印が先
         assert_eq!(match_pane([(3, ""), (5, "prelude:5")].into_iter(), &c, &env), Some(5));
@@ -678,12 +818,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// 偽の Hyprland: Lua の dispatch は断り(前の Hyprland)、前の形だけ ok を返す。受けた頼みごとを送り出す
-    async fn fake(dir: &Path) -> (mpsc::UnboundedReceiver<String>, tokio::net::UnixListener) {
+    const DOCS: &str = r#"[{"address":"0xbeef","pid":1,"title":"Docs prelude:5","workspace":{"id":1,"name":"1"},"floating":false}]"#;
+
+    /// 偽の Hyprland: Lua の dispatch は断り(前の Hyprland)、前の形だけ ok を返す。受けた頼みごとを送り出す。
+    /// 窓の一覧は、最初(コアの起動のとき)だけ startup を返し、後は DOCS
+    async fn fake(dir: &Path, startup: &'static str) -> (mpsc::UnboundedReceiver<String>, tokio::net::UnixListener) {
         let cmd = tokio::net::UnixListener::bind(dir.join(".socket.sock")).unwrap();
         let ev = tokio::net::UnixListener::bind(dir.join(".socket2.sock")).unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
         tokio::spawn(async move {
+            let mut first = true;
             loop {
                 let Ok((mut s, _)) = cmd.accept().await else { break };
                 let mut buf = vec![0u8; 4096];
@@ -692,8 +836,9 @@ mod tests {
                 let reply = match req.as_str() {
                     "j/activeworkspace" => r#"{"id":1,"name":"1"}"#.to_string(),
                     "j/clients" => {
-                        r#"[{"address":"0xbeef","pid":1,"title":"Docs prelude:5","workspace":{"id":1,"name":"1"},"floating":false}]"#
-                            .to_string()
+                        let r = if first { startup } else { DOCS };
+                        first = false;
+                        r.to_string()
                     }
                     r if r.starts_with("dispatch hl.") => "Invalid dispatcher".to_string(),
                     _ => "ok".to_string(),
@@ -716,7 +861,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("prelude-hypr-fake-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let (mut cmds, ev) = fake(&dir).await;
+        let (mut cmds, ev) = fake(&dir, "[]").await;
         let (ntx, mut notes) = mpsc::unbounded_channel();
         let h = start_in(dir.clone(), "", ntx, Options::default()).await.unwrap();
         let (mut ev, _) = ev.accept().await.unwrap();
@@ -745,6 +890,52 @@ mod tests {
         // PRELUDE でペインを閉じたら、その窓を閉じる
         h.arrange(Scene { panes: vec![], ..scene(20) });
         assert_eq!(next(&mut cmds).await, "closewindow address:0xbeef");
+        h.shutdown().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn 起動のときに開いていた窓() {
+        let dir = std::env::temp_dir().join(format!("prelude-hypr-start-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 前の Web のペイン(印の窓)・端末(作業領域 3、選ばれている)・浮いた窓・名前の作業領域の窓
+        let startup = r#"[
+            {"address":"0xbeef","pid":1,"title":"Docs prelude:5","workspace":{"name":"1"},"floating":false,"class":"chromium","focusHistoryID":2},
+            {"address":"0xf00d","pid":1,"title":"端末","workspace":{"name":"3"},"floating":false,"class":"foot","focusHistoryID":0},
+            {"address":"0xd1a1","pid":1,"title":"dialog","workspace":{"name":"3"},"floating":true,"class":"x","focusHistoryID":1},
+            {"address":"0xcafe","pid":1,"title":"s","workspace":{"name":"special:magic"},"floating":false,"class":"y","focusHistoryID":3}
+        ]"#;
+        let (mut cmds, ev) = fake(&dir, startup).await;
+        let (ntx, mut notes) = mpsc::unbounded_channel();
+        let h = start_in(dir.clone(), "", ntx, Options::default()).await.unwrap();
+        let (_ev, _) = ev.accept().await.unwrap();
+        let web =
+            Want { pane: 5, cmd: "true".into(), cls: String::new(), cwd: "/".into(), rect: None, marker: "prelude:5".into(), window: None };
+        let tab = TabScene { id: 20, num: 2, tree: Tree::Pane(5), active_pane: 5 };
+        h.arrange(Scene { panes: vec![web.clone()], tabs: vec![tab.clone()], active: None });
+        // 前のペインの窓は起動し直さずに結び付ける。残りの普通の窓は、その作業領域のタブのペインにしてもらう
+        let mut got = vec![];
+        for _ in 0..3 {
+            got.push(tokio::time::timeout(Duration::from_secs(2), notes.recv()).await.unwrap().unwrap());
+        }
+        assert_eq!(got[0], Note::Claimed { pane: 5 });
+        assert!(matches!(got[1], Note::Title { pane: 5, .. }));
+        assert_eq!(got[2], Note::Adopt { num: 3, con: 0xf00d, app: "foot".into(), title: "端末".into(), focused: true });
+        // 引き取った窓のペインは起動しない。閉じたらその窓を閉じる
+        let foot = Want {
+            pane: 7,
+            cmd: "foot".into(),
+            cls: "foot".into(),
+            cwd: "/".into(),
+            rect: None,
+            marker: String::new(),
+            window: Some(0xf00d),
+        };
+        let t3 = TabScene { id: 21, num: 3, tree: Tree::Pane(7), active_pane: 7 };
+        h.arrange(Scene { panes: vec![web.clone(), foot], tabs: vec![tab.clone(), t3], active: None });
+        h.arrange(Scene { panes: vec![web], tabs: vec![tab], active: None });
+        assert_eq!(next(&mut cmds).await, "closewindow address:0xf00d");
         h.shutdown().await;
         let _ = std::fs::remove_dir_all(&dir);
     }

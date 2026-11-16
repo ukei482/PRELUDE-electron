@@ -27,7 +27,7 @@ scripts/omarchy.sh install
 ```
 
 - コア(`prelude-core`)と `prelude` コマンドをビルドして `~/.local/bin` に入れる。ビルド済みなら `--no-build`
-- 設定が無ければ `~/.config/prelude/settings.toml` に `profile = "omarchy"` を書く(窓は「作業領域だけ指定」、端末は foot、PRELUDE を通さずに開いた窓は引き取らない)
+- 設定が無ければ `~/.config/prelude/settings.toml` に `profile = "omarchy"` を書く(窓は「作業領域だけ指定」、端末は foot、番号の作業領域の窓は PRELUDE を通さずに開いたものもタブにする)
 - バーの部品を `~/.config/omarchy/plugins/prelude.bar/` に複写し、`omarchy plugin enable prelude.bar left --after omarchy.workspaces` で並べる
 - メニューの項目を `~/.config/omarchy/extensions/omarchy-menu.jsonc` に、キーを `~/.config/hypr/bindings.lua` に、コアの自動起動を `~/.config/hypr/autostart.lua` に足す。どれも `PRELUDE >>>` と `PRELUDE <<<` の印の間だけで、流し直しても 1 つ
 - Hyprland の中で流せば、その場でコアも起動する
@@ -38,7 +38,7 @@ scripts/omarchy.sh install
 
 ## サイドバー
 
-バーの部品のプラグイン(`omarchy/plugin/Sidebar.qml`)が、Quickshell の layer-shell の窓(名前空間 `prelude-sidebar`)で出す。別のプログラムは要らない。コアとは `prelude` コマンドだけで話す(`prelude watch` の知らせで `prelude raw state.get` などを読み直し、押したら `prelude raw <命令>`)。
+バーの部品のプラグイン(`omarchy/plugin/Sidebar.qml`)が、Quickshell の layer-shell の窓(名前空間 `prelude-sidebar`)で出す。窓と同じ決まりで置く: 画面の端(上・下・横)との間は Hyprland の `gaps_out`、隣の窓との間は窓と窓の間(`gaps_in` の 2 倍)。枠の太さ・色(選ばれていない窓の色)・角丸も Hyprland の設定(`border_size`・`col.inactive_border`・`rounding`)に合わせる。別のプログラムは要らない。コアとは `prelude` コマンドだけで話す(`prelude watch` の知らせで `prelude raw state.get` などを読み直し、押したら `prelude raw <命令>`)。
 
 | どこ | 押すと |
 |---|---|
@@ -58,7 +58,7 @@ omarchy bar set prelude.bar sidebarWidth 300
 | 名前 | 既定 | 中身 |
 |---|---|---|
 | `sidebarWidth` | 260 | サイドバーの幅(160〜800) |
-| `sidebarCompactWidth` | 48 | 細い列の幅(32〜120) |
+| `sidebarCompactWidth` | P のボタンの幅 | 細い列の幅(16〜120)。書かなければバーの P のボタンと同じ幅 |
 | `sidebarSide` | `left` | 置く側(`left`・`right`) |
 | `sidebarOpen` | `false` | シェルの起動のときに開いておく |
 | `click` | `sidebar` | 左クリックですること。`launcher` にすると前と同じランチャー |
@@ -74,7 +74,10 @@ omarchy bar set prelude.bar sidebarWidth 300
 - アプリは Hyprland の exec に作業領域を付けて起動する(Lua の `hl.dsp.exec_cmd(…, { workspace = "N silent" })`。前の Hyprland なら `exec [workspace N silent] …`)。作業領域は選ばない
 - 出てきた窓は、起動したプロセスの環境変数 `PRELUDE_PANE`(Web のペインは題名の印)でペインに結び付ける。既に動いているブラウザが開いた窓のように exec の決まりが効かなかった窓だけ、タブの作業領域へ移す
 - Hyprland で作業領域を移ると、PRELUDE の今のタブも変わる(読むだけ)。PRELUDE でタブを選ぶ・開くと、その作業領域へ移る
-- 浮いた窓・PRELUDE を通さずに開いた窓には触らない。間・角丸・窓の決まり(`windows.gaps_*`・`corner_radius`)も Hyprland では当てはめない(見た目は Omarchy のもの)
+- **開いている窓もタブにする**(`windows.adopt = "tabs"`。`profile = "omarchy"` の既定): コアを起動したとき、番号の作業領域(1・2…)に開いていた窓を、その番号のタブのペインにする(タブが無ければ作る)。前に PRELUDE が開いた窓なら(`PRELUDE_PANE`・Web の印)、起動し直さずにそのペインに結び付ける。後から PRELUDE を通さずに開いた窓も、少し待って(Web のペインの窓でないと分かってから)引き取る。引き取った窓は PRELUDE の持ち物で、タブ・ペインを閉じると窓も閉じる。窓を閉じるとペインも消える
+  - 引き取らない窓: 浮いた窓、`windows.ignore` の窓、番号でない作業領域(special など)の窓。引き取りをやめるなら `prelude config set windows.adopt none`(コアを起動し直すと効く)
+  - インストール済みのアプリと分かる窓は、閉じたタブを開き直せる(起動コマンドを持つ)。分からない窓(Omarchy の Web アプリなど)は開き直せない
+- 浮いた窓には触らない。間・角丸・窓の決まり(`windows.gaps_*`・`corner_radius`)も Hyprland では当てはめない(見た目は Omarchy のもの)
 - 分割で開く・ブックマークの配置どおりに並べる(段 2 から)は、Hyprland ではまだ。hy3 のつなぎを書けば段 2 以上にできる
 
 コアを試すときは、ふだんのコアと別にする(タブの作業領域の名前に印が付くので、ふだんの作業領域と取り合わない):

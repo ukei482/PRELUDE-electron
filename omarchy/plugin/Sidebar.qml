@@ -1,5 +1,7 @@
 // Omarchy の上の PRELUDE のサイドバー(docs/omarchy.md の「サイドバー」、docs/redesign-rust.md の「サイドバー」)。
 // 画面の端に layer-shell で貼り付き、幅の分だけ場所を予約する(Hyprland はほかの窓をその横に並べる)。
+// 窓と同じ決まりで置く: 画面の端との間は Hyprland の gaps_out、隣の窓との間は窓と窓の間(gaps_in の 2 倍)、
+// 枠の太さ・色(選ばれていない窓の色)・角丸も Hyprland の設定から読む。
 // コアとは `prelude` コマンドだけでやり取りする: `prelude watch` の知らせで `prelude raw …` を読み直し、
 // 押されたら `prelude raw <命令> <引数>` を送る(サイドバーにだけ許された操作は作らない)。
 // 開け閉め・幅・置く側は BarWidget.qml が決める(バーの P を押すと開け閉め)。
@@ -44,6 +46,13 @@ PanelWindow {
   readonly property int rowH: Style.space(26)
   readonly property int pad: Style.space(8)
 
+  // Hyprland の窓の決まり(読めるまでは間も枠も無し)
+  property var hypr: Model.hyprStyle("")
+  readonly property int edge: win.side === "right" ? hypr.gapsOut.right : hypr.gapsOut.left
+  // 隣の窓との間を窓と窓の間に合わせる。Hyprland は予約に端の余白(margins)を足し、その端から gaps_out だけ離して窓を置くので、
+  // 予約は「幅 + 窓と窓の間 − gaps_out」にする
+  readonly property int zone: Math.max(0, barWidth + 2 * hypr.gapsIn - edge)
+
   readonly property var tabRows: Model.tabRows(win.core)
   readonly property var bookmarkRows: Model.bookmarkRows(win.core, win.bookmarks, win.folders, win.expanded)
   readonly property var newKinds: Model.newKinds(win.recipes)
@@ -57,8 +66,14 @@ PanelWindow {
     top: true
     bottom: true
   }
+  margins {
+    top: win.hypr.gapsOut.top
+    bottom: win.hypr.gapsOut.bottom
+    left: win.side !== "right" ? win.hypr.gapsOut.left : 0
+    right: win.side === "right" ? win.hypr.gapsOut.right : 0
+  }
   implicitWidth: barWidth
-  exclusiveZone: barWidth
+  exclusiveZone: zone
   color: "transparent"
 
   // ---------------------------------------------------------------- コアとのやり取り
@@ -127,7 +142,17 @@ PanelWindow {
     onTriggered: win.refresh()
   }
 
-  Component.onCompleted: refresh()
+  // Hyprland の間・枠・角丸を読む(決まった命令だけ。使用者のデータは入らない)
+  Process {
+    id: hyprOpts
+    command: ["bash", "-lc", "for o in general:gaps_out general:gaps_in general:border_size decoration:rounding general:col.inactive_border; do hyprctl getoption \"$o\" -j 2>/dev/null | tr -d '\\n'; echo; done"]
+    stdout: StdioCollector { onStreamFinished: win.hypr = Model.hyprStyle(text) }
+  }
+
+  Component.onCompleted: {
+    hyprOpts.running = true
+    refresh()
+  }
 
   // ---------------------------------------------------------------- 見た目の部品
 
@@ -237,9 +262,13 @@ PanelWindow {
   Rectangle {
     anchors.fill: parent
     color: win.bg
+    radius: win.hypr.rounding
+    border.width: win.hypr.borderSize
+    border.color: win.hypr.borderColor || Style.normalBorderColor
 
-    // 隣の窓の側にだけ線を引く
+    // 枠が無く、画面の端に付けているときは、隣の窓の側にだけ線を引く
     Rectangle {
+      visible: win.hypr.borderSize === 0
       width: Style.spacing.hairline
       anchors.top: parent.top
       anchors.bottom: parent.bottom

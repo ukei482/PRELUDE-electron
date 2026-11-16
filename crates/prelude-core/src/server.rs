@@ -213,6 +213,12 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
                             shared.sync_embed(core);
                         }
                     }
+                    Note::Adopt { num, con, app, title, focused } => {
+                        if core.note_adopt(num, con, &app, &title, focused) {
+                            shared.changed(core, true);
+                            shared.sync_embed(core);
+                        }
+                    }
                     Note::Layout(tabs) => {
                         if core.note_layout(&tabs) {
                             shared.changed(core, true);

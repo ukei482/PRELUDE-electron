@@ -8,7 +8,7 @@
 //   launcher          ランチャーのコマンド(既定 prelude-omarchy-launcher)
 //   click             左クリック: "sidebar"(既定)・"launcher"
 //   sidebarWidth      サイドバーの幅(既定 260、160〜800)
-//   sidebarCompactWidth  細い列の幅(既定 48、32〜120)
+//   sidebarCompactWidth  細い列の幅(既定はバーの P のボタンと同じ幅。数を書けばその幅、16〜120)
 //   sidebarSide       置く側: "left"(既定)・"right"
 //   sidebarOpen       シェルの起動のときに開いておくか(既定 false)
 import QtQuick
@@ -30,7 +30,9 @@ BarWidget {
   readonly property string launcher: String(setting("launcher", "prelude-omarchy-launcher"))
   readonly property string click: String(setting("click", "sidebar"))
   readonly property int sidebarWidth: SidebarModel.width(setting("sidebarWidth", 260), 260, 160, 800)
-  readonly property int sidebarCompactWidth: SidebarModel.width(setting("sidebarCompactWidth", 48), 48, 32, 120)
+  // バーの P のボタン(印と左右の余白)の幅
+  readonly property int buttonWidth: Math.round(mark.implicitWidth + Style.spacing.controlPaddingX * 2)
+  readonly property int sidebarCompactWidth: SidebarModel.width(setting("sidebarCompactWidth", 0), buttonWidth, 16, 120)
   readonly property string sidebarSide: String(setting("sidebarSide", "left")) === "right" ? "right" : "left"
 
   // サイドバーは部品の窓と同じ画面に出す。開いているか・細い列かは、シェルが動いている間だけ覚える

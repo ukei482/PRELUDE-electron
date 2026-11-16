@@ -1,7 +1,8 @@
-# おすすめの組み合わせ: Omarchy(Arch + Hyprland + Omarchy のシェル)。窓の配置は Omarchy に任せ、作業領域だけ指定する
+# おすすめの組み合わせ: Omarchy(Arch + Hyprland + Omarchy のシェル)。窓の配置は Omarchy に任せ、作業領域だけ指定する。
+# 番号の作業領域の窓は、PRELUDE を通さずに開いたものもタブのペインにする(adopt)
 # (docs/redesign-rust.md の「Omarchy から学んだこと」「作業領域だけ指定する形」)
 terminal = "foot"
 
 [windows]
 level = "workspace"
-adopt = "none"
+adopt = "tabs"
