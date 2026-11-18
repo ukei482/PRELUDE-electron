@@ -348,9 +348,11 @@ PanelWindow {
             mark: modelData === win.core.space ? "●" : "○"
             text: String(modelData)
             active: modelData === win.core.space
+            // 一覧を閉じるとこの行は消える(その後は win も modelData も読めない)ので、送ってから閉じる
             onClicked: function(mouse) {
+              var name = String(modelData)
+              if (name !== win.core.space) win.send("space.switch", { name: name })
               win.spacesOpen = false
-              if (modelData !== win.core.space) win.send("space.switch", { name: String(modelData) })
             }
           }
         }
