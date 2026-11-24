@@ -72,7 +72,8 @@ omarchy bar set prelude.bar sidebarWidth 300
 設定の `windows.level` の上限は Hyprland では `workspace`(段 1)。`profile = "omarchy"` もそれを選ぶ。
 
 - アプリは Hyprland の exec に作業領域を付けて起動する(Lua の `hl.dsp.exec_cmd(…, { workspace = "N silent" })`。前の Hyprland なら `exec [workspace N silent] …`)。作業領域は選ばない
-- 出てきた窓は、起動したプロセスの環境変数 `PRELUDE_PANE`(Web のペインは題名の印)でペインに結び付ける。既に動いているブラウザが開いた窓のように exec の決まりが効かなかった窓だけ、タブの作業領域へ移す
+- 出てきた窓は、起動したプロセスの環境変数 `PRELUDE_PANE`(Web のペインは題名の印)でペインに結び付ける。既に動いているアプリ(Obsidian・ブラウザなど)の窓は exec の決まりが効かないので、起動の直前にその窓の名前に「タブの作業領域へ、静かに」の決まりを一時的に足し(Lua の `hl.window_rule`。`hyprctl eval` で足し、窓を結び付けたら・15 秒たったら外す)、最初からタブの作業領域に出す。それでも外れた窓だけ後から移し、そのコマンドの窓の名前を覚えて次からは決まりを足す
+- 同じタブのペインは、配置の木の順(左・上から)に 1 つずつ起動する。前のペインの窓が出てから次を起動する(3 秒待っても出なければ次へ)。Hyprland は窓の来た順に分けるので、ブックマークを開くたびに同じ並びになる
 - Hyprland で作業領域を移ると、PRELUDE の今のタブも変わる(読むだけ)。PRELUDE でタブを選ぶ・開くと、その作業領域へ移る
 - **開いている窓もタブにする**(`windows.adopt = "tabs"`。`profile = "omarchy"` の既定): コアを起動したとき、番号の作業領域(1・2…)に開いていた窓を、その番号のタブのペインにする(タブが無ければ作る)。前に PRELUDE が開いた窓なら(`PRELUDE_PANE`・Web の印)、起動し直さずにそのペインに結び付ける。後から PRELUDE を通さずに開いた窓も、少し待って(Web のペインの窓でないと分かってから)引き取る。引き取った窓は PRELUDE の持ち物で、タブ・ペインを閉じると窓も閉じる。窓を閉じるとペインも消える
   - 引き取らない窓: 浮いた窓、`windows.ignore` の窓、番号でない作業領域(special など)の窓。引き取りをやめるなら `prelude config set windows.adopt none`(コアを起動し直すと効く)

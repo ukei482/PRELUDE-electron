@@ -11,6 +11,10 @@
 //!   コアの起動のときに開いていた窓は、まず前のペインの窓か(`PRELUDE_PANE`)を見て結び付け、残りを番号の作業領域のタブのペインにする
 //!   (タブが無ければ作る)。後から開いた窓は、PRELUDE が起動した窓でないと分かってから引き取る。浮いた窓・触らない窓・番号でない作業領域の窓は引き取らない
 //!
+//! - 窓は最初からタブの作業領域に出す(一度出てから動かさない)。既に動いているアプリ(Obsidian・ブラウザなど)の窓は exec の決まりが効かないので、
+//!   起動の直前に、その窓の名前(class)に「タブの作業領域へ、静かに」の決まりを一時的に足し、窓を結び付けたら外す(席取りの決まり。Lua の Hyprland だけ)
+//! - 同じタブのペインは、配置の木の順に 1 つずつ起動する(前の窓が出てから次)。Hyprland は窓の来た順に分けるので、毎回同じ並びになる
+//!
 //! Hyprland は 0.5x で設定と dispatch が Lua(`hl.dsp.…`)になった。Lua の形を先に試し、通らなければ前の形(`movetoworkspacesilent` など)で送る。
 use crate::compositor::{Compositor, Level, Note, Options, Scene, Tree};
 use crate::procs;
@@ -18,7 +22,7 @@ use crate::sway::{ws_name, ws_num, ws_suffix};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, oneshot};
@@ -29,6 +33,10 @@ const WEB_WAIT: Duration = Duration::from_secs(30);
 const GONE_WAIT: Duration = Duration::from_secs(2);
 /// PRELUDE を通さずに開いた窓を引き取るまで待つ時間(Web のペインの印が題名に出るのを待つ)
 const ADOPT_WAIT: Duration = Duration::from_millis(1500);
+/// 起動したペインの窓を待つ時間。過ぎたら、窓が出ていなくても同じタブの次のペインを起動する
+const LAUNCH_WAIT: Duration = Duration::from_secs(3);
+/// 席取りの決まりを残す時間の上限(窓が出なくても外す)
+const PLACE_WAIT: Duration = Duration::from_secs(15);
 
 /// Hyprland のソケットのフォルダ。今の場所(`$XDG_RUNTIME_DIR/hypr/<印>`)、無ければ前の場所(`/tmp/hypr/<印>`)
 pub fn socket_dir(get: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
@@ -180,6 +188,80 @@ impl Dispatch {
     }
 }
 
+/// 窓の名前(小文字)の一覧を、Hyprland の窓の決まりの class に合う正規表現にする(大文字・小文字を区別しない)。無ければ None
+pub fn class_regex(keys: &[String]) -> Option<String> {
+    let alts: Vec<String> = keys
+        .iter()
+        .filter(|k| !k.is_empty())
+        .map(|k| {
+            let mut o = String::new();
+            for c in k.chars() {
+                if "\\.+*?()|[]{}^$".contains(c) {
+                    o.push('\\');
+                }
+                o.push(c);
+            }
+            o
+        })
+        .collect();
+    (!alts.is_empty()).then(|| format!("(?i)^({})$", alts.join("|")))
+}
+
+/// 席取りの決まりの名前(ペインごと。別のソケットのコアと取り合わないよう、作業領域の名前の後ろも付ける)
+pub fn place_name(suffix: &str, pane: u64) -> String {
+    let tag: String = suffix.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    format!("prelude-place{tag}-{pane}")
+}
+
+/// 席取りの決まりを足す Lua。この class の窓は、出たときから作業領域 ws に静かに置かれる。後で外せるよう、決まりを表 `prelude_place` に覚える
+pub fn place_rule_lua(name: &str, re: &str, ws: &str) -> String {
+    let n = lua_str(name);
+    format!(
+        "prelude_place = prelude_place or {{}}; prelude_place[{n}] = hl.window_rule({{ name = {n}, match = {{ class = {} }}, workspace = {} }})",
+        lua_str(re),
+        lua_str(&format!("{ws} silent"))
+    )
+}
+
+/// 席取りの決まりを外す Lua。見つからなければ誤りを返す(外せなかったことを記録に残すため)
+pub fn unplace_rule_lua(name: &str) -> String {
+    let n = lua_str(name);
+    format!(
+        "local r = prelude_place and prelude_place[{n}]; if not r then error(\"no rule \" .. {n}) end; r:set_enabled(false); prelude_place[{n}] = nil"
+    )
+}
+
+/// ペイン → (タブの順, タブの中の配置の木の順)。起動の順に使う
+pub fn launch_order(scene: &Scene) -> HashMap<u64, (usize, usize)> {
+    let mut m = HashMap::new();
+    for (ti, t) in scene.tabs.iter().enumerate() {
+        let mut l = vec![];
+        leaves(&t.tree, &mut l);
+        for (li, p) in l.into_iter().enumerate() {
+            m.insert(p, (ti, li));
+        }
+    }
+    m
+}
+
+/// 待っているペイン(順に並んだペインとそのタブの番号)のうち、今起動するもの。
+/// タブごとに先頭の 1 つだけで、そのタブに窓を待っているペインがあれば起動しない。タブの無いペインはすぐ起動する
+pub fn next_launches(queue: &[(u64, Option<u32>)], waiting: &HashSet<u32>) -> Vec<u64> {
+    let mut seen = HashSet::new();
+    let mut out = vec![];
+    for (pane, num) in queue {
+        match num {
+            None => out.push(*pane),
+            Some(n) => {
+                if seen.insert(*n) && !waiting.contains(n) {
+                    out.push(*pane);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// `j/clients` の 1 つから、ペインを見分けるのに使うもの
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Client {
@@ -285,6 +367,10 @@ enum Msg {
     WebTimeout(u64),
     /// PRELUDE を通さずに開いた窓を引き取るか確かめる
     Adopt(String),
+    /// 待っているペインを起動できるか確かめる(前の窓を待つ時間が過ぎた)
+    Pump,
+    /// 席取りの決まりを外す(待つ時間が過ぎた)
+    Unplace(u64),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -371,6 +457,9 @@ async fn start_in(dir: PathBuf, tag: &str, notes: mpsc::UnboundedSender<Note>, o
         adopt: opts.adopt,
         ignore: opts.ignore.clone(),
         startup,
+        queue: vec![],
+        rules: None,
+        learned: HashMap::new(),
     };
     tokio::spawn(h.run(rx));
     Some(Handle { tx, level })
@@ -380,6 +469,18 @@ struct Pane {
     marker: String,
     /// 結び付けた窓(0x 無し)
     addr: Option<String>,
+    /// 起動したコマンド(引き取った窓は空)
+    cmd: String,
+    /// 起動した時(窓を待つ間は、同じタブの次のペインを起動しない)
+    since: Instant,
+    /// 席取りの決まりを足した
+    rule: bool,
+}
+
+impl Pane {
+    fn bound(marker: &str, addr: &str) -> Pane {
+        Pane { marker: marker.to_string(), addr: Some(addr.to_string()), cmd: String::new(), since: Instant::now(), rule: false }
+    }
 }
 
 struct Hypr {
@@ -405,6 +506,12 @@ struct Hypr {
     ignore: Vec<String>,
     /// 起動のときに開いていた窓。最初に合わせるときに使い切る
     startup: Option<Vec<Client>>,
+    /// まだ起動していないペイン(同じタブの前のペインの窓を待つ)
+    queue: Vec<crate::compositor::Want>,
+    /// Lua の eval で窓の決まりを足せるか(分かるまで None)
+    rules: Option<bool>,
+    /// exec の決まりが効かずに別の作業領域に出た窓の名前(コマンド → class。小文字)。次からは最初から席取りの決まりを足す
+    learned: HashMap<String, String>,
 }
 
 async fn clients_at(dir: &Path) -> Vec<Client> {
@@ -419,19 +526,29 @@ impl Hypr {
                 Msg::Event(e) => self.event(e).await,
                 Msg::Gone(pane) => {
                     if self.panes.get(&pane).is_some_and(|p| p.addr.is_none()) {
+                        self.unplace(pane).await;
                         self.panes.remove(&pane);
                         let _ = self.notes.send(Note::Exited { pane, had_window: true });
+                        self.pump().await;
                     }
                 }
+                Msg::Pump => self.pump().await,
+                Msg::Unplace(pane) => self.unplace(pane).await,
                 Msg::Adopt(addr) => self.adopt_window(&addr).await,
                 Msg::WebTimeout(pane) => {
                     if self.panes.get(&pane).is_some_and(|p| p.addr.is_none()) {
+                        self.unplace(pane).await;
                         self.panes.remove(&pane);
                         let _ = self.notes.send(Note::Exited { pane, had_window: false });
+                        self.pump().await;
                     }
                 }
-                // 窓の持ち主は Hyprland(と使用者)。終わるときも窓は閉じない
+                // 窓の持ち主は Hyprland(と使用者)。終わるときも窓は閉じない。席取りの決まりは外す
                 Msg::Shutdown(done) => {
+                    let ids: Vec<u64> = self.panes.keys().copied().collect();
+                    for id in ids {
+                        self.unplace(id).await;
+                    }
                     let _ = done.send(());
                     return;
                 }
@@ -473,9 +590,100 @@ impl Hypr {
         clients_at(&self.dir).await
     }
 
+    /// Lua を動かす(`hyprctl eval`)。通ったか
+    async fn eval(&mut self, code: &str) -> bool {
+        let r = request(&self.dir, &format!("eval {code}")).await;
+        let ok = r.as_ref().is_ok_and(|t| matches!(t.trim(), "" | "ok"));
+        if ok {
+            self.rules = Some(true);
+        } else {
+            if self.rules.is_none() {
+                self.rules = Some(false); // 前の Hyprland: 席取りの決まりは使わない(窓は前のとおり後から移す)
+            }
+            eprintln!("prelude-core: hyprland refused eval {code} ({})", r.unwrap_or_else(|e| e.to_string()).trim());
+        }
+        ok
+    }
+
+    /// 席取りの決まりを足す窓の名前。前に別の作業領域に出たコマンドなら覚えた名前、ほかは窓の名前の候補のうち、今その名前の窓があるもの
+    /// (既に動いているアプリの窓だけが exec の決まりから漏れる)
+    fn place_keys(&self, w: &crate::compositor::Want, open: &HashSet<String>) -> Vec<String> {
+        if let Some(c) = self.learned.get(w.cmd.trim()) {
+            return vec![c.clone()];
+        }
+        crate::launch::keys_of(&w.cmd, &w.cls).into_iter().filter(|k| open.contains(k)).collect()
+    }
+
+    /// 席取りの決まりを外す(足していれば)
+    async fn unplace(&mut self, pane: u64) {
+        if !self.panes.get(&pane).is_some_and(|p| p.rule) {
+            return;
+        }
+        if let Some(p) = self.panes.get_mut(&pane) {
+            p.rule = false;
+        }
+        let code = unplace_rule_lua(&place_name(&self.suffix, pane));
+        self.eval(&code).await;
+    }
+
+    /// 待っているペインのうち、起動できるものを起動する(タブごとに配置の木の順に 1 つずつ)
+    async fn pump(&mut self) {
+        if self.queue.is_empty() {
+            return;
+        }
+        let nums = tab_nums(&self.scene);
+        let order = launch_order(&self.scene);
+        self.queue.sort_by_key(|w| order.get(&w.pane).copied().unwrap_or((usize::MAX, 0)));
+        let waiting: HashSet<u32> = self
+            .panes
+            .iter()
+            .filter(|(_, p)| p.addr.is_none() && p.since.elapsed() < LAUNCH_WAIT)
+            .filter_map(|(id, _)| nums.get(id).copied())
+            .collect();
+        let q: Vec<(u64, Option<u32>)> = self.queue.iter().map(|w| (w.pane, nums.get(&w.pane).copied())).collect();
+        let go = next_launches(&q, &waiting);
+        if go.is_empty() {
+            return;
+        }
+        // 今ある窓の名前(席取りの決まりが要るか見る)。Lua の決まりが使えないと分かっていれば読まない
+        let open: HashSet<String> = if self.rules == Some(false) || self.lua == Some(false) {
+            HashSet::new()
+        } else {
+            self.clients().await.into_iter().map(|c| c.class.to_lowercase()).filter(|c| !c.is_empty()).collect()
+        };
+        for id in go {
+            let Some(i) = self.queue.iter().position(|w| w.pane == id) else { continue };
+            let w = self.queue.remove(i);
+            self.launch(w, nums.get(&id).copied(), &open).await;
+        }
+    }
+
+    /// ペインを起動する。既に動いているアプリなら、先に席取りの決まりを足す
+    async fn launch(&mut self, w: crate::compositor::Want, num: Option<u32>, open: &HashSet<String>) {
+        let ws = num.map(|n| ws_target(n, &self.suffix));
+        let mut rule = false;
+        if let Some(ws) = &ws {
+            if self.rules != Some(false) && self.lua != Some(false) {
+                if let Some(re) = class_regex(&self.place_keys(&w, open)) {
+                    rule = self.eval(&place_rule_lua(&place_name(&self.suffix, w.pane), &re, ws)).await;
+                }
+            }
+        }
+        let line = exec_line(&w.cmd, &w.cwd, w.pane, self.core_sock.as_deref());
+        self.dispatch(Dispatch::Exec { line, ws }).await;
+        if !w.marker.is_empty() {
+            self.later(Msg::WebTimeout(w.pane), WEB_WAIT);
+        }
+        if rule {
+            self.later(Msg::Unplace(w.pane), PLACE_WAIT);
+        }
+        self.later(Msg::Pump, LAUNCH_WAIT);
+        self.panes.insert(w.pane, Pane { marker: w.marker, addr: None, cmd: w.cmd.trim().to_string(), since: Instant::now(), rule });
+    }
+
     /// ペインに窓を結び付けたことにする(コアに知らせ、タブの番号を覚える)
     fn bind(&mut self, pane: u64, marker: &str, c: &Client, num: Option<u32>) {
-        self.panes.insert(pane, Pane { marker: marker.to_string(), addr: Some(c.addr.clone()) });
+        self.panes.insert(pane, Pane::bound(marker, &c.addr));
         if let Some(n) = num {
             self.placed.insert(pane, n);
         }
@@ -534,7 +742,9 @@ impl Hypr {
     async fn sync(&mut self, scene: Scene) {
         let ids: HashSet<u64> = scene.panes.iter().map(|w| w.pane).collect();
         let closing: Vec<u64> = self.panes.keys().copied().filter(|id| !ids.contains(id)).collect();
+        self.queue.retain(|w| ids.contains(&w.pane));
         for id in closing {
+            self.unplace(id).await;
             // PRELUDE でペインを閉じた(頼まれた)ときだけ窓を閉じる
             if let Some(addr) = self.panes.remove(&id).and_then(|p| p.addr) {
                 self.dispatch(Dispatch::Close { addr }).await;
@@ -545,7 +755,7 @@ impl Hypr {
         self.take_startup(&scene);
         let nums = tab_nums(&scene);
         for w in &scene.panes {
-            if self.panes.contains_key(&w.pane) {
+            if self.panes.contains_key(&w.pane) || self.queue.iter().any(|q| q.pane == w.pane) {
                 continue;
             }
             // 引き取った窓(コアが持つ窓の数): 起動はせず、その窓をペインの窓にする
@@ -557,15 +767,11 @@ impl Hypr {
             if w.cmd.trim().is_empty() {
                 continue;
             }
-            let num = nums.get(&w.pane).copied();
-            let line = exec_line(&w.cmd, &w.cwd, w.pane, self.core_sock.as_deref());
-            self.dispatch(Dispatch::Exec { line, ws: num.map(|n| ws_target(n, &self.suffix)) }).await;
-            if !w.marker.is_empty() {
-                self.later(Msg::WebTimeout(w.pane), WEB_WAIT);
-            }
-            self.panes.insert(w.pane, Pane { marker: w.marker.clone(), addr: None });
+            // 起動は pump が、タブごとに配置の木の順に 1 つずつ
+            self.queue.push(w.clone());
         }
         self.scene = scene;
+        self.pump().await;
         // タブの番号が変わった(前のタブを閉じた)窓を、新しい作業領域へ移す
         let moves: Vec<(String, u32, u64)> = self
             .panes
@@ -619,13 +825,21 @@ impl Hypr {
         }
         let _ = self.notes.send(Note::Claimed { pane });
         let _ = self.notes.send(Note::Title { pane, title: c.title.chars().take(300).collect() });
-        // exec の決まりが効かなかった窓(既に動いているプロセスが開いた窓)だけ、タブの作業領域へ移す
+        self.unplace(pane).await;
+        // exec の決まりも席取りの決まりも効かなかった窓(既に動いているプロセスが開いた窓)だけ、タブの作業領域へ移す。
+        // そのコマンドの窓の名前を覚え、次からは最初から席取りの決まりを足す
         if let Some(n) = tab_nums(&self.scene).get(&pane).copied() {
             if ws_num(&c.ws, &self.suffix) != Some(n) {
+                let cmd = self.panes.get(&pane).map(|p| p.cmd.clone()).unwrap_or_default();
+                if !cmd.is_empty() && !c.class.is_empty() {
+                    self.learned.insert(cmd, c.class.to_lowercase());
+                }
                 self.dispatch(Dispatch::Move { addr: c.addr, ws: ws_target(n, &self.suffix) }).await;
             }
             self.placed.insert(pane, n);
         }
+        // このタブの次のペインを起動する
+        self.pump().await;
     }
 
     async fn event(&mut self, e: Event) {
@@ -689,6 +903,7 @@ mod tests {
     }
 
     use crate::compositor::{TabScene, Want};
+    use prelude_format::Dir as FDir;
     use serde_json::json;
 
     #[test]
@@ -727,6 +942,39 @@ mod tests {
         assert_eq!(Dispatch::Focus { ws: "4".into() }.legacy(), "workspace 4");
         assert_eq!(Dispatch::Close { addr: "abc".into() }.legacy(), "closewindow address:0xabc");
         assert_eq!(lua_str("a\\b\nc"), r#""a\\b\nc""#);
+    }
+
+    #[test]
+    fn 席取りの決まり() {
+        assert_eq!(class_regex(&[]), None);
+        assert_eq!(class_regex(&["md.obsidian.obsidian".into(), "obsidian".into()]).unwrap(), r"(?i)^(md\.obsidian\.obsidian|obsidian)$");
+        assert_eq!(place_name("", 5), "prelude-place-5");
+        assert_eq!(place_name(":prelude.d1", 5), "prelude-placepreluded1-5");
+        let add = place_rule_lua("prelude-place-5", "(?i)^(foot)$", "2");
+        assert_eq!(
+            add,
+            r#"prelude_place = prelude_place or {}; prelude_place["prelude-place-5"] = hl.window_rule({ name = "prelude-place-5", match = { class = "(?i)^(foot)$" }, workspace = "2 silent" })"#
+        );
+        let rm = unplace_rule_lua("prelude-place-5");
+        assert!(rm.contains(r#"prelude_place["prelude-place-5"]"#) && rm.contains("set_enabled(false)") && rm.contains("error("), "{rm}");
+    }
+
+    #[test]
+    fn 起動の順() {
+        // 同じタブは先頭の 1 つだけ。窓を待っているタブは起動しない。タブの無いペインはすぐ
+        let q = [(5, Some(2)), (6, Some(2)), (7, Some(3)), (8, None), (9, Some(4))];
+        assert_eq!(next_launches(&q, &HashSet::new()), vec![5, 7, 8, 9]);
+        assert_eq!(next_launches(&q, &HashSet::from([2, 4])), vec![7, 8]);
+        // 配置の木の順(左・上から)
+        let tree = Tree::Split {
+            dir: FDir::Row,
+            ratio: 0.5,
+            a: Box::new(Tree::Pane(6)),
+            b: Box::new(Tree::Split { dir: FDir::Col, ratio: 0.5, a: Box::new(Tree::Pane(5)), b: Box::new(Tree::Pane(7)) }),
+        };
+        let scene = Scene { panes: vec![], tabs: vec![TabScene { id: 1, num: 1, tree, active_pane: 6 }], active: None };
+        let o = launch_order(&scene);
+        assert!(o[&6] < o[&5] && o[&5] < o[&7]);
     }
 
     #[test]
@@ -823,6 +1071,15 @@ mod tests {
     /// 偽の Hyprland: Lua の dispatch は断り(前の Hyprland)、前の形だけ ok を返す。受けた頼みごとを送り出す。
     /// 窓の一覧は、最初(コアの起動のとき)だけ startup を返し、後は DOCS
     async fn fake(dir: &Path, startup: &'static str) -> (mpsc::UnboundedReceiver<String>, tokio::net::UnixListener) {
+        fake_with(dir, startup, DOCS).await
+    }
+
+    /// 偽の Hyprland(後の窓の一覧を選べる)。Lua の eval は ok を返し、`eval …` のまま送り出す
+    async fn fake_with(
+        dir: &Path,
+        startup: &'static str,
+        later: &'static str,
+    ) -> (mpsc::UnboundedReceiver<String>, tokio::net::UnixListener) {
         let cmd = tokio::net::UnixListener::bind(dir.join(".socket.sock")).unwrap();
         let ev = tokio::net::UnixListener::bind(dir.join(".socket2.sock")).unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
@@ -836,7 +1093,7 @@ mod tests {
                 let reply = match req.as_str() {
                     "j/activeworkspace" => r#"{"id":1,"name":"1"}"#.to_string(),
                     "j/clients" => {
-                        let r = if first { startup } else { DOCS };
+                        let r = if first { startup } else { later };
                         first = false;
                         r.to_string()
                     }
@@ -846,6 +1103,8 @@ mod tests {
                 let _ = s.write_all(reply.as_bytes()).await;
                 if req.starts_with("dispatch ") && !req.starts_with("dispatch hl.") {
                     let _ = tx.send(req["dispatch ".len()..].to_string());
+                } else if req.starts_with("eval ") {
+                    let _ = tx.send(req);
                 }
             }
         });
@@ -936,6 +1195,55 @@ mod tests {
         h.arrange(Scene { panes: vec![web.clone(), foot], tabs: vec![tab.clone(), t3], active: None });
         h.arrange(Scene { panes: vec![web], tabs: vec![tab], active: None });
         assert_eq!(next(&mut cmds).await, "closewindow address:0xf00d");
+        h.shutdown().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn 動いているアプリの窓は最初からタブの作業領域へ_次のペインは窓が出てから() {
+        let dir = std::env::temp_dir().join(format!("prelude-hypr-place-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 既に Obsidian の窓が開いている(作業領域 1)。後で出る窓は作業領域 2
+        let later = r#"[
+            {"address":"0xaaa","pid":1,"title":"old","workspace":{"name":"1"},"floating":false,"class":"md.obsidian.Obsidian"},
+            {"address":"0xbeef","pid":1,"title":"note prelude:5","workspace":{"name":"2"},"floating":false,"class":"md.obsidian.Obsidian"}
+        ]"#;
+        let (mut cmds, ev) = fake_with(&dir, "[]", later).await;
+        let (ntx, _notes) = mpsc::unbounded_channel();
+        let h = start_in(dir.clone(), "", ntx, Options::default()).await.unwrap();
+        let (mut ev, _) = ev.accept().await.unwrap();
+        let want = |pane: u64, cmd: &str, cls: &str| Want {
+            pane,
+            cmd: cmd.into(),
+            cls: cls.into(),
+            cwd: "/".into(),
+            rect: None,
+            marker: format!("prelude:{pane}"),
+            window: None,
+        };
+        let tree = Tree::Split { dir: FDir::Row, ratio: 0.5, a: Box::new(Tree::Pane(5)), b: Box::new(Tree::Pane(6)) };
+        // 木の順と逆に渡しても、左(5)から起動する
+        h.arrange(Scene {
+            panes: vec![want(6, "true", ""), want(5, "obsidian", "md.obsidian.obsidian")],
+            tabs: vec![TabScene { id: 20, num: 2, tree, active_pane: 5 }],
+            active: Some(20),
+        });
+        // Obsidian は動いているので、先に席取りの決まりを足してから起動する
+        let add = next(&mut cmds).await;
+        assert!(add.starts_with("eval ") && add.contains(r#"prelude_place["prelude-place-5"] = hl.window_rule"#), "{add}");
+        assert!(add.contains(r"md\\.obsidian\\.obsidian") && add.contains(r#"workspace = "2 silent""#), "{add}");
+        let exec = next(&mut cmds).await;
+        assert!(exec.starts_with("exec [workspace 2 silent]") && exec.contains("PRELUDE_PANE=5"), "{exec}");
+        assert_eq!(next(&mut cmds).await, "workspace 2");
+        // 5 の窓が出るまで 6 は起動しない
+        assert!(tokio::time::timeout(Duration::from_millis(300), cmds.recv()).await.is_err());
+        // 窓が出た: 最初から作業領域 2 なので移さない。決まりを外し、6 を起動する
+        ev.write_all(b"openwindow>>beef,2,md.obsidian.Obsidian,note prelude:5\n").await.unwrap();
+        let rm = next(&mut cmds).await;
+        assert!(rm.starts_with("eval ") && rm.contains("set_enabled(false)"), "{rm}");
+        let exec = next(&mut cmds).await;
+        assert!(exec.starts_with("exec [workspace 2 silent]") && exec.contains("PRELUDE_PANE=6"), "{exec}");
         h.shutdown().await;
         let _ = std::fs::remove_dir_all(&dir);
     }
