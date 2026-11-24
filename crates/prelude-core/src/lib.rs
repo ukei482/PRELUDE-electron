@@ -22,4 +22,5 @@ pub mod server;
 pub mod state;
 pub mod sway;
 pub mod trash;
+pub mod weburl;
 pub mod xdg;

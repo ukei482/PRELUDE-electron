@@ -237,8 +237,9 @@ impl Core {
         if title.is_empty() {
             return Err(fail(ErrorCode::BadRequest, "No title"));
         }
-        let layout =
-            self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
+        let layout = self
+            .bookmark_layout(&self.tabs.tabs[i].layout)
+            .ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
         let dir = self.space_folder(folder, true)?;
         std::fs::create_dir_all(&dir).map_err(io)?;
         let path = unique(&dir, &file_name(title));
@@ -254,8 +255,9 @@ impl Core {
             self.tabs.tabs[i].bookmark.clone().ok_or_else(|| fail(ErrorCode::BadRequest, "This tab was not opened from a bookmark"))?;
         // 書くのは今のスペースの中だけ(ほかの所の .prelude を開いたタブは、上書きせずに保存してもらう)
         let path = s(&self.space_bookmark(&path)?);
-        let layout =
-            self.reopenable(&self.tabs.tabs[i].layout).ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
+        let layout = self
+            .bookmark_layout(&self.tabs.tabs[i].layout)
+            .ok_or_else(|| fail(ErrorCode::BadRequest, "Nothing in this tab can be reopened"))?;
         // 題名・paths・知らない項目は残し、配置だけを替える
         let mut bm = self.read_bookmark(&path)?;
         bm.layout = layout.to_node();

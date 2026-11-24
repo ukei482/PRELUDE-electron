@@ -1080,6 +1080,39 @@ mod compositor_layout {
     }
 
     #[test]
+    fn web_アプリの窓は_url_の_web_のペインにして保存する() {
+        let mut c = core("webapp");
+        let hey = App {
+            name: "HEY".into(),
+            exec: "omarchy-launch-webapp https://app.hey.com".into(),
+            cls: String::new(),
+            id: "HEY".into(),
+            icon: String::new(),
+        };
+        c.set_apps(fixed(vec![hey]));
+        // Omarchy の Web アプリ(chromium --app=URL)の窓は、.desktop の URL の Web のペイン
+        assert!(c.note_adopt(2, 0x42, "chrome-app.hey.com__-Default", "HEY", true));
+        // .desktop の無い Web アプリの窓は、窓の名前から URL を戻す
+        assert!(c.note_adopt(2, 0x43, "chrome-x.com__home-Default", "X", false));
+        // URL の分からない窓(開き直せない)は保存しない
+        assert!(c.note_adopt(2, 0x44, "unknown-app", "?", false));
+        let path = ok(&mut c, Command::BookmarkSave { tab: None, title: "Web アプリ".into(), folder: String::new() });
+        let text = std::fs::read_to_string(path.as_str().unwrap()).unwrap();
+        let bm = prelude_format::Bookmark::parse(&text, HOME).unwrap();
+        let urls: Vec<String> = match &bm.layout {
+            prelude_format::Node::Split { a, b, .. } => [a, b]
+                .iter()
+                .map(|n| match n.as_ref() {
+                    prelude_format::Node::Leaf(l) => format!("{}:{}", l.kind, l.str("url")),
+                    _ => panic!("{n:?}"),
+                })
+                .collect(),
+            n => panic!("{n:?}"),
+        };
+        assert_eq!(urls, vec!["web:https://app.hey.com", "web:https://x.com/home"]);
+    }
+
+    #[test]
     fn スペースを出ると開き直せない窓は消える() {
         let mut c = core("space");
         let a = open(&mut c, "a");
