@@ -195,6 +195,13 @@ fn leaf_of(spec: &PaneSpec) -> Result<Leaf, Fail> {
     Ok(Leaf { kind: kind.to_string(), fields })
 }
 
+/// URL の Web のペイン
+fn web_leaf(url: &str) -> Leaf {
+    let mut fields = Table::new();
+    fields.insert("url".into(), Value::String(url.to_string()));
+    Leaf { kind: "web".into(), fields }
+}
+
 fn json_to_toml(v: &Json) -> Option<Value> {
     serde_json::from_value::<Value>(v.clone()).ok()
 }
@@ -471,8 +478,7 @@ impl Core {
 
     fn save_tabs(&self, t: &Tabs) -> SavedTabs {
         // 開き直せない窓は書かない(「PRELUDE を通さずに開いた窓」)。それだけのタブも残さない
-        let keep = |id: u64, l: &Leaf| !(self.windows.contains_key(&id) && l.str("cmd").is_empty());
-        let kept: Vec<(&Tab, Layout)> = t.tabs.iter().filter_map(|tab| Some((tab, tab.layout.filtered(&keep)?))).collect();
+        let kept: Vec<(&Tab, Layout)> = t.tabs.iter().filter_map(|tab| Some((tab, self.reopenable(&tab.layout)?))).collect();
         let active = t.active.and_then(|a| kept.iter().position(|(x, _)| x.id == a)).unwrap_or(0);
         let tabs = kept
             .iter()
@@ -814,12 +820,18 @@ impl Core {
             t.active_pane = id;
         }
         self.windows.insert(id, con);
+        self.note_title(id, title.to_string());
         true
     }
 
-    /// PRELUDE を通さずに開いた窓のペインの中身。インストール済みのアプリなら開き直せるように起動コマンドを持つ
+    /// PRELUDE を通さずに開いた窓のペインの中身。インストール済みのアプリなら開き直せるように起動コマンドを持つ。
+    /// ブラウザの Web アプリの窓(`--app=<URL>`)は、その URL の Web のペインにする
     fn foreign_leaf(&self, app: &str, title: &str) -> Leaf {
-        let found = self.apps.list().iter().find(|a| a.id.to_lowercase() == app.to_lowercase() || a.cls == app).cloned();
+        let apps = self.apps.list();
+        if let Some((url, _)) = crate::weburl::app_window_url(app, &apps) {
+            return web_leaf(&url);
+        }
+        let found = apps.iter().find(|a| a.id.to_lowercase() == app.to_lowercase() || a.cls == app).cloned();
         let mut fields = Table::new();
         let name = found.as_ref().map(|a| a.name.as_str()).unwrap_or(if title.is_empty() { app } else { title });
         fields.insert("name".into(), Value::String(name.to_string()));
@@ -860,6 +872,7 @@ impl Core {
             self.tabs.active = Some(tab);
         }
         self.windows.insert(id, con);
+        self.note_title(id, title.to_string());
         true
     }
 
@@ -1099,7 +1112,24 @@ impl Core {
 
     /// 開き直せるペインだけの配置(PRELUDE を通さずに開いた、開き直せない窓のペインを除く)。何も残らなければ None
     fn reopenable(&self, layout: &Layout) -> Option<Layout> {
-        layout.filtered(&|id, l: &Leaf| !(self.windows.contains_key(&id) && l.str("cmd").is_empty()))
+        layout.filtered(&|id, l: &Leaf| {
+            !(self.windows.contains_key(&id) && l.str("cmd").is_empty() && Self::web_url(l).is_none_or(str::is_empty))
+        })
+    }
+
+    /// ブックマークに保存する配置。PRELUDE を通さずに開いた普通のブラウザの窓は、ブラウザの履歴を窓の題名で引いて、
+    /// 今のページの URL の Web のペインにする(docs/redesign-rust.md の「ブラウザの窓の URL」)。引けなければアプリのまま
+    pub(crate) fn bookmark_layout(&self, layout: &Layout) -> Option<Layout> {
+        let mut layout = layout.clone();
+        for (id, l) in layout.clone().panes() {
+            let (Some(title), true, "app") = (self.titles.get(&id), self.windows.contains_key(&id), l.kind.as_str()) else { continue };
+            if let Some(url) = crate::weburl::from_history(l.str("cls"), title) {
+                if let Some(leaf) = layout.leaf_mut(id) {
+                    *leaf = web_leaf(&url);
+                }
+            }
+        }
+        self.reopenable(&layout)
     }
 
     /// i のタブを閉じる。今のタブなら、同じ位置(無ければ 1 つ上)のタブを今のタブにする。開き直せるように覚えておく

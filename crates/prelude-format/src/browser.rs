@@ -14,6 +14,17 @@ pub struct Browser {
     pub class: &'static str,
     /// URL を新しい窓で開く語(`{}` が URL)
     open: &'static [&'static str],
+    /// 履歴のファイルの置き場所(PRELUDE を通さずに開いた窓の URL を、ブックマークに保存するときに引く)
+    pub history: History,
+}
+
+/// ブラウザの履歴のファイルの置き場所
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum History {
+    /// Chromium 系: 設定のフォルダ(`$XDG_CONFIG_HOME` から)。プロファイルごとの `History`(表 `urls`)
+    Chromium(&'static str),
+    /// Firefox 系: プロファイルを置くフォルダ(ホームから)。プロファイルごとの `places.sqlite`(表 `moz_places`)
+    Firefox(&'static [&'static str]),
 }
 
 /// Chromium 系: アドレスバーとタブの無い窓(PRELUDE のタブと二重にならない)
@@ -23,17 +34,116 @@ const NEW_WINDOW: &[&str] = &["--new-window", "{}"];
 
 /// 知っているブラウザ(auto で探す順)。ペインに合う Chromium 系を先に置く
 pub const BROWSERS: [Browser; 10] = [
-    Browser { name: "chromium", class: "chromium", open: APP },
-    Browser { name: "chromium-browser", class: "chromium-browser", open: APP },
-    Browser { name: "google-chrome-stable", class: "google-chrome", open: APP },
-    Browser { name: "google-chrome", class: "google-chrome", open: APP },
-    Browser { name: "brave", class: "brave-browser", open: APP },
-    Browser { name: "brave-browser", class: "brave-browser", open: APP },
-    Browser { name: "vivaldi", class: "vivaldi-stable", open: APP },
-    Browser { name: "microsoft-edge", class: "microsoft-edge", open: APP },
-    Browser { name: "firefox", class: "firefox", open: NEW_WINDOW },
-    Browser { name: "librewolf", class: "librewolf", open: NEW_WINDOW },
+    Browser { name: "chromium", class: "chromium", open: APP, history: CHROMIUM },
+    Browser { name: "chromium-browser", class: "chromium-browser", open: APP, history: CHROMIUM },
+    Browser { name: "google-chrome-stable", class: "google-chrome", open: APP, history: CHROME },
+    Browser { name: "google-chrome", class: "google-chrome", open: APP, history: CHROME },
+    Browser { name: "brave", class: "brave-browser", open: APP, history: BRAVE },
+    Browser { name: "brave-browser", class: "brave-browser", open: APP, history: BRAVE },
+    Browser { name: "vivaldi", class: "vivaldi-stable", open: APP, history: History::Chromium("vivaldi") },
+    Browser { name: "microsoft-edge", class: "microsoft-edge", open: APP, history: History::Chromium("microsoft-edge") },
+    Browser {
+        name: "firefox",
+        class: "firefox",
+        open: NEW_WINDOW,
+        history: History::Firefox(&[".mozilla/firefox", ".config/mozilla/firefox"]),
+    },
+    Browser {
+        name: "librewolf",
+        class: "librewolf",
+        open: NEW_WINDOW,
+        history: History::Firefox(&[".librewolf", ".config/librewolf/librewolf"]),
+    },
 ];
+const CHROMIUM: History = History::Chromium("chromium");
+const CHROME: History = History::Chromium("google-chrome");
+const BRAVE: History = History::Chromium("BraveSoftware/Brave-Browser");
+
+/// 窓の名前(class・app_id)のブラウザ
+pub fn by_class(class: &str) -> Option<Browser> {
+    BROWSERS.iter().find(|b| b.class.eq_ignore_ascii_case(class) || b.name.eq_ignore_ascii_case(class)).copied()
+}
+
+impl Browser {
+    /// 履歴のファイル(プロファイルごと)。home はホーム、config は `$XDG_CONFIG_HOME`
+    pub fn history_files(&self, home: &Path, config: &Path) -> Vec<std::path::PathBuf> {
+        let (roots, file) = match self.history {
+            History::Chromium(dir) => (vec![config.join(dir)], "History"),
+            History::Firefox(dirs) => (dirs.iter().map(|d| home.join(d)).collect(), "places.sqlite"),
+        };
+        let mut out: Vec<_> = roots
+            .iter()
+            .filter_map(|r| std::fs::read_dir(r).ok())
+            .flatten()
+            .flatten()
+            .map(|e| e.path().join(file))
+            .filter(|p| p.is_file())
+            .collect();
+        out.sort();
+        out
+    }
+}
+
+/// Chromium 系で `--app=<URL>` として開いた窓(Omarchy の Web アプリなど)の名前は `chrome-<URL の名前>-<プロファイル>`
+/// (例 `chrome-hey.com__-Default`)。その `<URL の名前>`。ほかの窓なら None
+pub fn app_window_name(class: &str) -> Option<&str> {
+    let (prefix, rest) = class.split_once('-')?;
+    if !["chrome", "chromium", "brave", "msedge", "vivaldi"].iter().any(|p| p.eq_ignore_ascii_case(prefix)) {
+        return None;
+    }
+    let (name, profile) = rest.rsplit_once('-')?;
+    (!name.is_empty() && !profile.is_empty()).then_some(name)
+}
+
+/// Chromium が URL から `--app` の窓の名前を作る形(ホスト + `_` + パス。`/` などのファイル名に使えない文字は `_`)
+fn app_name_of(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let rest = &rest[..rest.find(['?', '#']).unwrap_or(rest.len())];
+    let (host, path) = rest.find('/').map_or((rest, "/"), |i| (&rest[..i], &rest[i..]));
+    let host = host.rsplit('@').next().unwrap_or(host);
+    let host = host.split(':').next().unwrap_or(host).to_lowercase();
+    let bad = |c: char| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control();
+    Some(format!("{host}_{path}").chars().map(|c| if bad(c) { '_' } else { c }).collect())
+}
+
+/// URL が `--app` の窓の名前([`app_window_name`])に合うか。両端の `_` は比べない(ブラウザの版で付き方が違う)
+pub fn app_url_matches(url: &str, name: &str) -> bool {
+    app_name_of(url).is_some_and(|n| n.trim_matches('_') == name.trim_matches('_'))
+}
+
+/// 窓の名前だけから URL を戻す(開いた .desktop が見つからないとき)。パスの `_` は `/` にする(元の `_` は戻せない)
+pub fn app_url_guess(name: &str) -> Option<String> {
+    let (host, path) = name.split_once('_').unwrap_or((name, ""));
+    if !host.contains('.') || !host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        return None;
+    }
+    let path = path.replace('_', "/");
+    let path = if path.starts_with('/') { path } else { format!("/{path}") };
+    Some(format!("https://{host}{path}"))
+}
+
+/// 起動コマンドの中の http(s) の URL(`--app=<URL>`・`omarchy-launch-webapp <URL>` など)
+pub fn url_in_command(cmd: &str) -> Option<&str> {
+    cmd.split_whitespace().map(|w| w.trim_matches(['"', '\'']).trim_start_matches("--app=").trim_matches(['"', '\''])).find(|w| {
+        let l = w.to_ascii_lowercase();
+        l.starts_with("https://") || l.starts_with("http://")
+    })
+}
+
+/// 窓の題名から、ページの題名の候補(長い順)。窓の題名は「ページの題名 - ブラウザの名前」のことが多いので、後ろの「 - …」を 2 つまで外す
+pub fn page_titles(window: &str) -> Vec<String> {
+    let mut t = window.trim();
+    let mut out = vec![];
+    for _ in 0..3 {
+        if t.is_empty() {
+            break;
+        }
+        out.push(t.to_string());
+        let Some(i) = [" - ", " — ", " – "].iter().filter_map(|s| t.rfind(s)).max() else { break };
+        t = t[..i].trim_end();
+    }
+    out
+}
 
 /// 使うブラウザ: 設定の値(auto か、名前・パス)と PATH から。知らないブラウザなら URL だけを渡す
 #[derive(Debug, Clone, PartialEq)]
@@ -150,6 +260,37 @@ mod tests {
         let c = choose("", &path).unwrap();
         assert_eq!((c.program, c.browser.unwrap().name), (d.join("chromium").to_string_lossy().into_owned(), "chromium"));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn web_アプリの窓の名前と_url() {
+        assert_eq!(app_window_name("chrome-hey.com__-Default"), Some("hey.com__"));
+        assert_eq!(app_window_name("brave-mail.google.com__mail_u_0_-Profile 1"), Some("mail.google.com__mail_u_0_"));
+        assert_eq!(app_window_name("chromium"), None);
+        assert_eq!(app_window_name("org.kde.okular"), None);
+        assert!(app_url_matches("https://hey.com", "hey.com__"));
+        assert!(app_url_matches("https://HEY.com/", "hey.com"));
+        assert!(app_url_matches("https://mail.google.com/mail/u/0/?tab=x", "mail.google.com__mail_u_0_"));
+        assert!(!app_url_matches("https://hey.com/x", "hey.com__"));
+        assert_eq!(app_url_guess("hey.com__").as_deref(), Some("https://hey.com/"));
+        assert_eq!(app_url_guess("web.whatsapp.com").as_deref(), Some("https://web.whatsapp.com/"));
+        assert_eq!(app_url_guess("mail.google.com__mail_u_0_").as_deref(), Some("https://mail.google.com/mail/u/0/"));
+        // PRELUDE の印のページ(file://)などは戻さない
+        assert_eq!(app_url_guess("__home_u_.cache_prelude_prelude-pane.html"), None);
+        assert_eq!(url_in_command("omarchy-launch-webapp \"https://hey.com\""), Some("https://hey.com"));
+        assert_eq!(url_in_command("chromium --app=https://x.com/ --foo"), Some("https://x.com/"));
+        assert_eq!(url_in_command("chromium %U"), None);
+    }
+
+    #[test]
+    fn 窓の題名から_ページの題名() {
+        assert_eq!(page_titles("GitHub - Chromium"), s(&["GitHub - Chromium", "GitHub"]));
+        assert_eq!(page_titles("a - b — Mozilla Firefox"), s(&["a - b — Mozilla Firefox", "a - b", "a"]));
+        assert_eq!(page_titles(" 題名 "), s(&["題名"]));
+        assert!(page_titles("").is_empty());
+        assert_eq!(by_class("Chromium").map(|b| b.name), Some("chromium"));
+        assert_eq!(by_class("brave-browser").map(|b| b.history), Some(BRAVE));
+        assert_eq!(by_class("foot"), None);
     }
 
     #[test]

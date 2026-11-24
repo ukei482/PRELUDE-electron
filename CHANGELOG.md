@@ -17,6 +17,8 @@
   - Omarchy のサイドバー: 分割したタブのペインの行をたためる(タブの行の ▾・▸ を押す。たたむとペインの数を出す)。ペインの行の × が、乗せても押す前に消えて押せなかったのを直した
   - `scripts/omarchy.sh install` で入れ直したときは Omarchy のシェルを起動し直す(プラグインの読み直しだけでは、開いているサイドバーが前のコードのまま動き続けていた)
   - Hyprland のつなぎ: 1 つしか動かないアプリ(Claude・Chrome のアプリなど)のペインを開き直すと、前から動いているプロセスが窓を開くので別の窓と思って引き取り、同じアプリのペインが 2 つになっていたのを直した。プロセスで見分けられない窓は、窓の無いペインのうち class の同じものに結び付ける
+  - Omarchy で窓が一度出てから動くのをなくす: 既に動いているアプリ(Obsidian・ブラウザなど)の窓は、起動の直前に一時的な窓の決まり(`hl.window_rule`。窓を結び付けたら外す)を足して、最初からタブの作業領域に出す。外れて出た窓は窓の名前を覚え、次からは決まりを足す。同じタブのペインは配置の木の順に 1 つずつ起動し(前の窓が出てから。待つのは 3 秒まで)、Hyprland の並びが毎回同じになるようにした
+  - ブラウザの窓の URL をブックマークに保存する: PRELUDE を通さずに開いたブラウザの窓は、URL の無いアプリのペインになっていた。Omarchy の Web アプリ(Chromium 系の `--app=<URL>`。窓の名前が `chrome-<URL>-Default`)は、窓の名前と .desktop の起動コマンドから URL を決めて Web のペインにする(閉じたタブ・起動し直しでも開き直せる)。普通のブラウザの窓は、ブックマークに保存するときだけ、ブラウザの履歴(Chromium 系の `History`・Firefox 系の `places.sqlite`)を窓の題名で引いて、今のページの URL の Web のペインとして書く(`crates/prelude-core/src/weburl.rs`。履歴は写しを読み、ブラウザの中とは話さない)
   - `scripts/omarchy.sh install|uninstall|status`: コア・コマンドを `~/.local/bin` に入れ、バーの部品・メニュー・キー(`Super + Alt + P`)・コアの自動起動を印の付いた塊で足す/外す
 - Rust 版のサイドバー: 分割したペインごとに × で閉じられる(分けた行の中と、今のタブの下のペインの行。乗せると出る)。最後のペインならタブごと閉じる
 - AI のための PRELUDE のスキル(`skills/prelude/`: `SKILL.md`・`format.md`)。PRELUDE の考え方・守る決まり・よくある頼みごと・ファイルの形を AI に教える。`prelude skill show` で出し、`prelude skill install` で `~/.agents/skills`(Omarchy・Codex なども使う)と `~/.claude/skills` に書き出す(ほかのスキルは上書きしない)。NixOS のモジュールはログインのたびに書き出す(`services.prelude.skill.enable`)。`prelude new` の値の頭の `~` はホームにする
