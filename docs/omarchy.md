@@ -76,7 +76,9 @@ omarchy bar set prelude.bar sidebarWidth 300
 - Hyprland で作業領域を移ると、PRELUDE の今のタブも変わる(読むだけ)。PRELUDE でタブを選ぶ・開くと、その作業領域へ移る
 - **開いている窓もタブにする**(`windows.adopt = "tabs"`。`profile = "omarchy"` の既定): コアを起動したとき、番号の作業領域(1・2…)に開いていた窓を、その番号のタブのペインにする(タブが無ければ作る)。前に PRELUDE が開いた窓なら(`PRELUDE_PANE`・Web の印)、起動し直さずにそのペインに結び付ける。後から PRELUDE を通さずに開いた窓も、少し待って(Web のペインの窓でないと分かってから)引き取る。引き取った窓は PRELUDE の持ち物で、タブ・ペインを閉じると窓も閉じる。窓を閉じるとペインも消える
   - 引き取らない窓: 浮いた窓、`windows.ignore` の窓、番号でない作業領域(special など)の窓。引き取りをやめるなら `prelude config set windows.adopt none`(コアを起動し直すと効く)
-  - インストール済みのアプリと分かる窓は、閉じたタブを開き直せる(起動コマンドを持つ)。分からない窓(Omarchy の Web アプリなど)は開き直せない
+  - インストール済みのアプリと分かる窓は、閉じたタブを開き直せる(起動コマンドを持つ)。分からない窓は開き直せない
+  - Omarchy の Web アプリ(`omarchy-launch-webapp`。Chromium の `--app=<URL>` で、窓の名前が `chrome-<URL>-Default`)の窓は、その URL の Web のペインになる。ブックマークにも URL が書かれ、開き直すと PRELUDE の Web のペインとして開く
+  - 普通のブラウザの窓(`Super + Shift + B` など)は、ブックマークに保存するときに、ブラウザの履歴を窓の題名で引いて今のページの URL を書く(Chromium 系・Firefox 系)。見つからなければ(履歴を残さない窓・題名が同じでない・保存した直後のページ)今まで通り URL の無いブラウザのアプリとして書く
 - 浮いた窓には触らない。間・角丸・窓の決まり(`windows.gaps_*`・`corner_radius`)も Hyprland では当てはめない(見た目は Omarchy のもの)
 - 分割で開く・ブックマークの配置どおりに並べる(段 2 から)は、Hyprland ではまだ。hy3 のつなぎを書けば段 2 以上にできる
 
