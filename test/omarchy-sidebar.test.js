@@ -44,6 +44,19 @@ test('タブの行: 分割したタブはペインの行が続き、題名が無
   );
 });
 
+test('タブの行: たたんだ分割のタブはペインの行を出さない', () => {
+  const rows = M.tabRows(state, { 2: true });
+  assert.deepStrictEqual(
+    rows.map((r) => [r.row, r.id, r.panes, r.collapsed]),
+    [
+      ['tab', 1, 1, false],
+      ['tab', 2, 2, true],
+    ],
+  );
+  // 分割していないタブは、たたむ印があってもたたまない
+  assert.strictEqual(M.tabRows(state, { 1: true })[0].collapsed, false);
+});
+
 test('タブの行: 状態が無くても空', () => {
   assert.deepStrictEqual(M.tabRows(null).length, 0);
   assert.deepStrictEqual(M.tabRows({}).length, 0);

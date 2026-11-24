@@ -34,6 +34,8 @@ PanelWindow {
   property var folders: []
   property var spaces: []
   property var expanded: ({})
+  // たたんだ分割のタブ(タブの id → true)
+  property var collapsed: ({})
   property bool spacesOpen: false
 
   readonly property int barWidth: compact ? compactWidth : wideWidth
@@ -51,7 +53,7 @@ PanelWindow {
   // 予約は「幅 + 窓と窓の間 − gaps_out」にする
   readonly property int zone: Math.max(0, barWidth + 2 * hypr.gapsIn - edge)
 
-  readonly property var tabRows: Model.tabRows(win.core)
+  readonly property var tabRows: Model.tabRows(win.core, win.collapsed)
   readonly property var bookmarkRows: Model.bookmarkRows(win.core, win.bookmarks, win.folders, win.expanded)
 
   WlrLayershell.namespace: "prelude-sidebar"
@@ -161,10 +163,18 @@ PanelWindow {
     verticalAlignment: Text.AlignVCenter
   }
 
-  // 1 行。左に印、右に題名。hover で薄く塗る
+  function toggleFold(tab) {
+    var next = {}
+    for (var k in win.collapsed) next[k] = win.collapsed[k]
+    next[tab] = !next[tab]
+    win.collapsed = next
+  }
+
+  // 1 行。左に印、右に題名。hover で薄く塗る。foldable なら印(▾・▸)を押すとたたむ/広げる
   component Row1: Rectangle {
     id: r
     property string mark: ""
+    property bool foldable: false
     property string text: ""
     property string note: ""
     property bool active: false
@@ -173,11 +183,15 @@ PanelWindow {
     property bool closable: false
     signal clicked(var mouse)
     signal closeClicked()
+    signal foldClicked()
 
     width: parent ? parent.width : 0
     height: win.rowH
     radius: Style.cornerRadius
-    color: active ? Style.selectedFill : (area.containsMouse ? Style.hoverFill : "transparent")
+    color: active ? Style.selectedFill : (hover.hovered ? Style.hoverFill : "transparent")
+
+    // 行の上にある間ずっと真(× や印の上に移っても切れない。MouseArea の containsMouse は上の部品に移ると切れ、× が消えて押せなかった)
+    HoverHandler { id: hover }
 
     MouseArea {
       id: area
@@ -199,6 +213,12 @@ PanelWindow {
       font.pixelSize: Style.font.bodySmall
       color: r.active || r.lit ? win.accent : win.dim
       elide: Text.ElideNone
+      MouseArea {
+        visible: r.foldable && !win.compact
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: r.foldClicked()
+      }
     }
 
     Label {
@@ -225,7 +245,7 @@ PanelWindow {
 
     Label {
       id: closeBox
-      visible: !win.compact && r.closable && area.containsMouse
+      visible: !win.compact && r.closable && hover.hovered
       anchors.right: parent.right
       anchors.rightMargin: Style.space(4)
       width: visible ? Style.space(18) : 0
@@ -375,10 +395,13 @@ PanelWindow {
             readonly property bool isPane: modelData.row === "pane"
             visible: !(isPane && win.compact)
             height: visible ? win.rowH : 0
+            readonly property bool isSplit: !isPane && modelData.panes > 1
             depth: isPane ? 1 : 0
-            mark: isPane ? modelData.mark : (win.compact ? String(modelData.num) : modelData.mark)
+            // 分割したタブは、種類の印の代わりにたたむ印(押すとペインの行をたたむ/広げる)
+            foldable: isSplit
+            mark: isPane ? modelData.mark : (win.compact ? String(modelData.num) : (isSplit ? (modelData.collapsed ? "▸" : "▾") : modelData.mark))
             text: modelData.title
-            note: isPane ? "" : String(modelData.num)
+            note: isPane ? "" : (isSplit && modelData.collapsed ? modelData.panes + " · " : "") + modelData.num
             active: modelData.active
             closable: true
             onClicked: function(mouse) {
@@ -389,6 +412,7 @@ PanelWindow {
               else if (mouse.button === Qt.RightButton) win.send("tab.duplicate", { tab: { id: modelData.id } })
               else win.send("tab.activate", { tab: { id: modelData.id } })
             }
+            onFoldClicked: win.toggleFold(modelData.id)
             onCloseClicked: isPane ? win.send("pane.close", { pane: modelData.id }) : win.send("tab.close", { tab: { id: modelData.id } })
           }
         }

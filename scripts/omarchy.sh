@@ -117,6 +117,8 @@ install_all() {
   # バーの部品。Omarchy は部品の中のシンボリックリンクを許さないので、複写する(入れ直すときは上書き)
   if [[ -d $CFG/omarchy || -n ${OMARCHY_PATH:-} ]] || have omarchy; then
     say "バーに PRELUDE を足す"
+    local updating=0
+    [[ -d $PLUGIN_DIR ]] && updating=1
     rm -rf "$PLUGIN_DIR"
     mkdir -p "$PLUGIN_DIR"
     cp "$SRC"/plugin/*.json "$SRC"/plugin/*.qml "$SRC"/plugin/*.js "$PLUGIN_DIR/"
@@ -126,6 +128,8 @@ install_all() {
       omarchy plugin disable omarchy.workspaces </dev/null >/dev/null 2>&1 || true
       omarchy plugin enable "$PLUGIN_ID" left --after omarchy.menu </dev/null ||
         warn "バーに並べられませんでした。omarchy plugin enable $PLUGIN_ID left を手で流してください"
+      # 入れ直したとき: プラグインの読み直しでは、もう作ったサイドバーは前のコードのまま動き続けるので、シェルを起動し直す
+      if ((updating)); then omarchy restart shell </dev/null >/dev/null 2>&1 || warn "シェルを起動し直せませんでした。omarchy restart shell を手で流してください"; fi
     fi
     say "メニューに PRELUDE を足す"
     put_menu
