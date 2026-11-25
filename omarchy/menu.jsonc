@@ -2,7 +2,10 @@
   // PRELUDE の項目(scripts/omarchy.sh が ~/.config/omarchy/extensions/omarchy-menu.jsonc に足す)。
   // バーの PRELUDE を右クリック、または `omarchy menu summon prelude` で開く
   "prelude": {"icon":"󰕮","label":"PRELUDE","description":"スペース・ブックマーク・タブ"},
-  "prelude.open": {"icon":"󰍉","label":"開く","description":"タブ・ブックマーク・アプリ・スペースを選んで開く","action":"prelude-omarchy-launcher"},
+  "prelude.new": {"icon":"󰐕","label":"新しいタブ","description":"Omarchy のアプリの一覧で選んだアプリを新しいタブに(Super+Alt+Space)","action":"prelude-omarchy-newtab"},
+  "prelude.split": {"icon":"","label":"分割して開く","description":"選んだアプリを今のタブに足す","action":"prelude-omarchy-newtab --split"},
+  "prelude.bookmark": {"icon":"󰃀","label":"ブックマーク","description":"今のタブをブックマークにする(上書き・新しく保存)","action":"prelude-omarchy-bookmark"},
+  "prelude.open": {"icon":"󰍉","label":"開く","description":"タブ・ブックマーク・スペースを選んで開く(Super+Alt+P)","action":"prelude-omarchy-launcher"},
   "prelude.agent": {"icon":"󰚩","label":"AI","description":"今のブックマークのフォルダで既定の AI を開く","action":"prelude new agent"},
   "prelude.files": {"icon":"󰉋","label":"ファイラ","description":"今のブックマークのフォルダを開く","action":"prelude new files"},
   "prelude.save": {"icon":"󰃀","label":"ブックマークに今の並びを保存","description":"今のタブの並びを、そのタブのブックマークに上書きする","action":"prelude bookmark overwrite"},

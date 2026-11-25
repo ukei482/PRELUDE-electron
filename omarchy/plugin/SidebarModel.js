@@ -36,9 +36,10 @@ function kindMark(kind) {
   return KIND_MARK[kind] || (kind ? String(kind).charAt(0).toUpperCase() : "·")
 }
 
-// タブの行。分割したタブは、その下にペインの行を付ける
-function tabRows(state) {
+// タブの行。分割したタブは、その下にペインの行を付ける(collapsed[タブの id] が真なら、たたんで付けない)
+function tabRows(state, collapsed) {
   var st = state || {}
+  var fold = collapsed || {}
   var out = []
   var tabs = st.tabs || []
   for (var i = 0; i < tabs.length; i++) {
@@ -55,9 +56,11 @@ function tabRows(state) {
       kind: cur.type || "",
       mark: kindMark(cur.type),
       active: t.id === st.active,
-      bookmark: t.bookmark || ""
+      bookmark: t.bookmark || "",
+      panes: ls.length,
+      collapsed: ls.length > 1 && !!fold[t.id]
     })
-    if (ls.length > 1) {
+    if (ls.length > 1 && !fold[t.id]) {
       for (var k = 0; k < ls.length; k++) {
         out.push({
           row: "pane",
@@ -102,14 +105,6 @@ function bookmarkRows(state, bookmarks, folders, expanded) {
     out.push({ row: "folder", path: fd.path, title: fd.title || base(fd.path), expanded: !!exp[fd.path], hasOpen: hasOpen, count: inside.length })
     if (exp[fd.path]) for (var d = 0; d < inside.length; d++) out.push(row(inside[d], 1))
   }
-  return out
-}
-
-// 新しいタブで開ける種類(Web はランチャーから)
-function newKinds(recipes) {
-  var out = [{ kind: "web", name: "Web" }]
-  var rs = recipes || []
-  for (var i = 0; i < rs.length; i++) if (rs[i].type !== "settings") out.push({ kind: rs[i].type, name: rs[i].name || rs[i].type })
   return out
 }
 

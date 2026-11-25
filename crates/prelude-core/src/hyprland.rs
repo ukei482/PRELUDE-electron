@@ -317,19 +317,24 @@ pub fn tab_nums(scene: &Scene) -> HashMap<u64, u32> {
     m
 }
 
-/// まだ窓の無いペインのうち、この窓のもの。Web のペインは題名の印、ほかは窓のプロセスの `PRELUDE_PANE`
-pub fn match_pane<'a>(pending: impl Iterator<Item = (u64, &'a str)>, c: &Client, has_env: &dyn Fn(u32, &str) -> bool) -> Option<u64> {
+/// まだ窓の無いペインのうち、この窓のもの。pending は (ペイン, 題名の印, 窓の class)。
+/// Web のペインは題名の印、ほかは窓のプロセスの `PRELUDE_PANE`。どれでもなければ class の同じペイン
+/// (1 つしか動かないアプリ(Claude・Chrome のアプリなど)は、起動したプロセスでなく前から動いているプロセスが窓を開くので、環境変数では見分けられない)
+pub fn match_pane<'a>(pending: impl Iterator<Item = (u64, &'a str, &'a str)>, c: &Client, has_env: &dyn Fn(u32, &str) -> bool) -> Option<u64> {
     let mut by_env = None;
-    for (pane, marker) in pending {
+    let mut by_cls = None;
+    for (pane, marker, cls) in pending {
         if !marker.is_empty() {
             if c.title.contains(marker) {
                 return Some(pane);
             }
         } else if by_env.is_none() && c.pid > 0 && has_env(c.pid, &format!("{}={pane}", crate::launch::PANE_ENV)) {
             by_env = Some(pane);
+        } else if by_cls.is_none() && !cls.is_empty() && cls.eq_ignore_ascii_case(&c.class) {
+            by_cls = Some(pane);
         }
     }
-    by_env
+    by_env.or(by_cls)
 }
 
 /// 窓のアドレス(0x 無しの 16 進) ⇔ コアの窓の数(con)
@@ -467,6 +472,8 @@ async fn start_in(dir: PathBuf, tag: &str, notes: mpsc::UnboundedSender<Note>, o
 
 struct Pane {
     marker: String,
+    /// 窓の class(分かれば)
+    cls: String,
     /// 結び付けた窓(0x 無し)
     addr: Option<String>,
     /// 起動したコマンド(引き取った窓は空)
@@ -478,8 +485,8 @@ struct Pane {
 }
 
 impl Pane {
-    fn bound(marker: &str, addr: &str) -> Pane {
-        Pane { marker: marker.to_string(), addr: Some(addr.to_string()), cmd: String::new(), since: Instant::now(), rule: false }
+    fn bound(marker: &str, cls: &str, addr: &str) -> Pane {
+        Pane { marker: marker.to_string(), cls: cls.to_string(), addr: Some(addr.to_string()), cmd: String::new(), since: Instant::now(), rule: false }
     }
 }
 
@@ -678,12 +685,12 @@ impl Hypr {
             self.later(Msg::Unplace(w.pane), PLACE_WAIT);
         }
         self.later(Msg::Pump, LAUNCH_WAIT);
-        self.panes.insert(w.pane, Pane { marker: w.marker, addr: None, cmd: w.cmd.trim().to_string(), since: Instant::now(), rule });
+        self.panes.insert(w.pane, Pane { marker: w.marker, cls: w.cls, addr: None, cmd: w.cmd.trim().to_string(), since: Instant::now(), rule });
     }
 
     /// ペインに窓を結び付けたことにする(コアに知らせ、タブの番号を覚える)
     fn bind(&mut self, pane: u64, marker: &str, c: &Client, num: Option<u32>) {
-        self.panes.insert(pane, Pane::bound(marker, &c.addr));
+        self.panes.insert(pane, Pane::bound(marker, &c.class, &c.addr));
         if let Some(n) = num {
             self.placed.insert(pane, n);
         }
@@ -718,7 +725,7 @@ impl Hypr {
             if self.panes.contains_key(&w.pane) || w.window.is_some() {
                 continue;
             }
-            let one = [(w.pane, w.marker.as_str())];
+            let one = [(w.pane, w.marker.as_str(), w.cls.as_str())];
             if let Some(i) = start.iter().position(|c| !c.floating && match_pane(one.iter().copied(), c, &procs::has_env).is_some()) {
                 let c = start.remove(i);
                 self.bind(w.pane, &w.marker, &c, nums.get(&w.pane).copied());
@@ -811,9 +818,9 @@ impl Hypr {
         if c.floating {
             return;
         }
-        let pending: Vec<(u64, String)> =
-            self.panes.iter().filter(|(_, p)| p.addr.is_none()).map(|(id, p)| (*id, p.marker.clone())).collect();
-        let Some(pane) = match_pane(pending.iter().map(|(id, m)| (*id, m.as_str())), &c, &procs::has_env) else {
+        let pending: Vec<(u64, String, String)> =
+            self.panes.iter().filter(|(_, p)| p.addr.is_none()).map(|(id, p)| (*id, p.marker.clone(), p.cls.clone())).collect();
+        let Some(pane) = match_pane(pending.iter().map(|(id, m, k)| (*id, m.as_str(), k.as_str())), &c, &procs::has_env) else {
             // どのペインの窓でもない: PRELUDE を通さずに開いた窓。Web のペインの印が出るかもしれないので、少し待ってから引き取る
             if self.adopt {
                 self.later(Msg::Adopt(c.addr.clone()), ADOPT_WAIT);
@@ -1017,10 +1024,16 @@ mod tests {
         };
         let env = |pid: u32, e: &str| pid == 10 && e == "PRELUDE_PANE=3";
         // 題名の印が先
-        assert_eq!(match_pane([(3, ""), (5, "prelude:5")].into_iter(), &c, &env), Some(5));
+        assert_eq!(match_pane([(3, "", ""), (5, "prelude:5", "")].into_iter(), &c, &env), Some(5));
         // 印が無ければプロセスの環境変数
-        assert_eq!(match_pane([(4, ""), (3, "")].into_iter(), &c, &env), Some(3));
-        assert_eq!(match_pane([(4, ""), (6, "prelude:6")].into_iter(), &c, &env), None);
+        assert_eq!(match_pane([(4, "", ""), (3, "", "")].into_iter(), &c, &env), Some(3));
+        assert_eq!(match_pane([(4, "", ""), (6, "prelude:6", "")].into_iter(), &c, &env), None);
+        // 環境変数で見分けられない(前から動いているプロセスが開いた)窓は、class の同じペイン。環境変数が先
+        let app = Client { class: "com.anthropic.Claude".into(), pid: 99, ..c.clone() };
+        assert_eq!(match_pane([(4, "", "foot"), (7, "", "com.anthropic.claude")].into_iter(), &app, &env), Some(7));
+        assert_eq!(match_pane([(4, "", "foot")].into_iter(), &app, &env), None);
+        let both = Client { class: "foot".into(), ..c.clone() };
+        assert_eq!(match_pane([(4, "", "foot"), (3, "", "")].into_iter(), &both, &env), Some(3));
     }
 
     #[test]

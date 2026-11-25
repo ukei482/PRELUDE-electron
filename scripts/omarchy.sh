@@ -6,10 +6,10 @@
 #   scripts/omarchy.sh status                 入っているもの
 #
 # 足すもの(どれも印の付いた塊なので、何度流しても 1 つだけ。外すときは塊ごと消す):
-#   ~/.local/bin/prelude, prelude-core, prelude-omarchy-launcher
-#   ~/.config/omarchy/plugins/prelude.bar/        バーの部品(スペースと今のタブ。押すとランチャー)
+#   ~/.local/bin/prelude, prelude-core, prelude-omarchy-launcher, prelude-omarchy-newtab, prelude-omarchy-bookmark
+#   ~/.config/omarchy/plugins/prelude.bar/        バーの部品(スペースと今のタブ。押すとサイドバー)。Omarchy の作業領域の部品は外す(タブ = 作業領域なので)
 #   ~/.config/omarchy/extensions/omarchy-menu.jsonc  メニューの「PRELUDE」
-#   ~/.config/hypr/bindings.lua                   Super+Alt+P でランチャー
+#   ~/.config/hypr/bindings.lua                   Super+Alt+P でランチャー、Super+Alt+Space で新しいタブ(空いた作業領域で Omarchy のアプリの一覧)
 #   ~/.config/hypr/autostart.lua                  ログインのときにコアを起動
 #   ~/.config/prelude/settings.toml               profile = "omarchy"(無いときだけ作る)
 set -euo pipefail
@@ -27,6 +27,7 @@ HYPRCONF="$CFG/hypr/hyprland.conf"
 BEGIN="PRELUDE >>> (scripts/omarchy.sh)"
 END="PRELUDE <<<"
 KEY="SUPER + ALT + P"
+NEWTAB_KEY="SUPER + ALT + SPACE"
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf 'omarchy.sh: %s\n' "$*" >&2; }
@@ -103,7 +104,7 @@ install_all() {
   [[ $nobuild == --no-build ]] || build
   have prelude || [[ -x $BIN/prelude ]] || { warn "prelude コマンドがありません"; exit 1; }
   case ":$PATH:" in *":$BIN:"*) ;; *) warn "$BIN が PATH にありません(Omarchy は既定で入っています)" ;; esac
-  install -m 755 "$SRC/prelude-omarchy-launcher" "$BIN/"
+  install -m 755 "$SRC/prelude-omarchy-launcher" "$SRC/prelude-omarchy-newtab" "$SRC/prelude-omarchy-bookmark" "$BIN/"
 
   # 設定: おすすめの組み合わせを omarchy に(使用者が書いた設定は触らない)
   mkdir -p "$CFG/prelude"
@@ -116,13 +117,19 @@ install_all() {
   # バーの部品。Omarchy は部品の中のシンボリックリンクを許さないので、複写する(入れ直すときは上書き)
   if [[ -d $CFG/omarchy || -n ${OMARCHY_PATH:-} ]] || have omarchy; then
     say "バーに PRELUDE を足す"
+    local updating=0
+    [[ -d $PLUGIN_DIR ]] && updating=1
     rm -rf "$PLUGIN_DIR"
     mkdir -p "$PLUGIN_DIR"
     cp "$SRC"/plugin/*.json "$SRC"/plugin/*.qml "$SRC"/plugin/*.js "$PLUGIN_DIR/"
     if have omarchy-shell; then omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true; fi
     if have omarchy; then
-      omarchy plugin enable "$PLUGIN_ID" left --after omarchy.workspaces </dev/null ||
+      # Omarchy の作業領域の部品は、PRELUDE のタブ(バーの部品・サイドバー)と同じものを出すので外す。uninstall で戻す
+      omarchy plugin disable omarchy.workspaces </dev/null >/dev/null 2>&1 || true
+      omarchy plugin enable "$PLUGIN_ID" left --after omarchy.menu </dev/null ||
         warn "バーに並べられませんでした。omarchy plugin enable $PLUGIN_ID left を手で流してください"
+      # 入れ直したとき: プラグインの読み直しでは、もう作ったサイドバーは前のコードのまま動き続けるので、シェルを起動し直す
+      if ((updating)); then omarchy restart shell </dev/null >/dev/null 2>&1 || warn "シェルを起動し直せませんでした。omarchy restart shell を手で流してください"; fi
     fi
     say "メニューに PRELUDE を足す"
     put_menu
@@ -133,11 +140,12 @@ install_all() {
   # Hyprland: キーと自動起動。Omarchy 4 は Lua の設定、前の版は hyprland.conf
   if [[ -f $BINDINGS || -f $AUTOSTART ]]; then
     say "Hyprland に $KEY とコアの自動起動を足す"
-    put_block "$BINDINGS" "--" "o.bind(\"$KEY\", \"PRELUDE\", \"prelude-omarchy-launcher\")"
+    put_block "$BINDINGS" "--" "o.bind(\"$KEY\", \"PRELUDE\", \"prelude-omarchy-launcher\")
+o.rebind(\"$NEWTAB_KEY\", \"PRELUDE new tab\", \"prelude-omarchy-newtab\")"
     put_block "$AUTOSTART" "--" 'o.launch_on_start("prelude-core")'
   elif [[ -f $HYPRCONF ]]; then
     say "Hyprland(hyprland.conf)に Super+Alt+P とコアの自動起動を足す"
-    put_block "$HYPRCONF" "#" $'bind = SUPER ALT, P, exec, prelude-omarchy-launcher\nexec-once = prelude-core'
+    put_block "$HYPRCONF" "#" $'bind = SUPER ALT, P, exec, prelude-omarchy-launcher\nunbind = SUPER ALT, SPACE\nbind = SUPER ALT, SPACE, exec, prelude-omarchy-newtab\nexec-once = prelude-core'
   else
     warn "Hyprland の設定が見つかりません。キーと自動起動は飛ばします"
   fi
@@ -149,24 +157,25 @@ install_all() {
     else setsid "$BIN/prelude-core" >/dev/null 2>&1 &
     fi
   fi
-  say "できました。バーの P を押すとサイドバー、$KEY でランチャー、右クリックで PRELUDE のメニュー(部品が古いままなら omarchy restart shell)"
+  say "できました。バーの P を押すとサイドバー、$NEWTAB_KEY で新しいタブ、$KEY でランチャー、右クリックで PRELUDE のメニュー(部品が古いままなら omarchy restart shell)"
 }
 
 uninstall_all() {
   if have omarchy && [[ -d $PLUGIN_DIR ]]; then omarchy plugin disable "$PLUGIN_ID" </dev/null || true; fi
+  if have omarchy; then omarchy plugin enable omarchy.workspaces left --after omarchy.menu </dev/null >/dev/null 2>&1 || true; fi
   rm -rf "$PLUGIN_DIR"
   if have omarchy-shell; then omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true; fi
   drop_menu
   drop_block "$BINDINGS" "--"
   drop_block "$AUTOSTART" "--"
   drop_block "$HYPRCONF" "#"
-  rm -f "$BIN/prelude-omarchy-launcher"
+  rm -f "$BIN/prelude-omarchy-launcher" "$BIN/prelude-omarchy-newtab" "$BIN/prelude-omarchy-bookmark"
   say "外しました(コア・コマンド・~/.config/prelude は残しています。止めるなら pkill -x prelude-core)"
 }
 
 status() {
   local f
-  for f in "$BIN/prelude" "$BIN/prelude-core" "$BIN/prelude-omarchy-launcher" "$PLUGIN_DIR/manifest.json"; do
+  for f in "$BIN/prelude" "$BIN/prelude-core" "$BIN/prelude-omarchy-launcher" "$BIN/prelude-omarchy-newtab" "$BIN/prelude-omarchy-bookmark" "$PLUGIN_DIR/manifest.json"; do
     [[ -e $f ]] && echo "ok  $f" || echo "--  $f"
   done
   for f in "$MENU" "$BINDINGS" "$AUTOSTART" "$HYPRCONF"; do

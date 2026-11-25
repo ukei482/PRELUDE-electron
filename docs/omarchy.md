@@ -7,10 +7,13 @@ Omarchy(Arch + Hyprland + Quickshell の `omarchy-shell`。4.0 から)の上で�
 
 | どこ | 何 |
 |---|---|
-| **バー** | 左(作業領域の右)に PRELUDE の部品。スペースと今のタブの題名を出し、乗せるとタブの一覧。**左クリックでサイドバーを開け閉め**(開いている間は P に下線)、中クリックで AI のペイン、右クリックで PRELUDE のメニュー |
-| **サイドバー** | 画面の左端に貼り付き、幅の分だけ場所を予約する(窓はその右に並ぶ)。スペース・タブ・ブックマーク・新しいタブ。下の「サイドバー」 |
-| **メニュー** | Omarchy のメニューに「PRELUDE」(開く・AI・ファイラ・ブックマークに保存・設定・コアの起動し直し)。`omarchy menu summon prelude` でも開く |
-| **キー** | `Super + Alt + P` で PRELUDE のランチャー(タブ・ブックマーク・アプリ・スペースを Omarchy のメニューで選んで開く)(Omarchy の既定のキーと重ならない) |
+| **バー** | 左(Omarchy のメニューの右)に PRELUDE の部品。Omarchy の作業領域の部品(1 2 3…)は外す(タブ = 作業領域なので、PRELUDE の部品とサイドバーが代わりに出す)。スペースと今のタブの題名を出し、乗せるとタブの一覧。**左クリックでサイドバーを開け閉め**(開いている間は P に下線)、中クリックで AI のペイン、右クリックで PRELUDE のメニュー。題名の右に **新しいタブ・分割して開く・ブックマーク** のボタン(部品の設定 `buttons false` で隠す) |
+| **サイドバー** | 画面の左端に貼り付き、幅の分だけ場所を予約する(窓はその右に並ぶ)。スペース・タブ・ブックマーク・新しいタブのボタン。下の「サイドバー」 |
+| **新しいタブ** | `Super + Alt + Space`(Omarchy の既定のアプリの一覧のキーを置き換える)・サイドバーの「+ 新しいタブ」・メニューの「新しいタブ」。Omarchy のアプリの一覧を開き、選んだアプリの窓を空いた番号の作業領域へ移して(付いていく)、コアが引き取って新しいタブにする(`prelude-omarchy-newtab`)。先に作業領域を移さないので、選ばずに閉じれば何も変わらない。PRELUDE 側に種類を選ぶ画面は持たない |
+| **分割して開く** | バーのボタン。アプリの一覧を開き、選んだ窓を今の作業領域に出して、今のタブのペインにする(`prelude-omarchy-newtab --split`。並べ方は Hyprland) |
+| **ブックマーク** | バーのボタン。ブックマークから開いたタブなら「今の並びで上書き」か「新しく保存」、そうでなければ名前を聞いて保存する(`prelude-omarchy-bookmark`) |
+| **メニュー** | Omarchy のメニューに「PRELUDE」(新しいタブ・開く・AI・ファイラ・ブックマークに保存・設定・コアの起動し直し)。`omarchy menu summon prelude` でも開く |
+| **キー** | `Super + Alt + P` で PRELUDE のランチャー(タブ・ブックマーク・スペースを Omarchy のメニューで選ぶ。アプリは出さない)、`Super + Alt + Space` で新しいタブ |
 | **窓** | Hyprland のつなぎ(`crates/prelude-core/src/hyprland.rs`)。**タブ = 作業領域**。ブックマークを開くと、アプリがタブの番号の作業領域に開く(`Super + 数字` でそのまま行き来できる)。並べ方・大きさ・浮かせ方は Omarchy に任せ、PRELUDE は並べ直さない |
 | **AI** | `prelude skill install` で `~/.agents/skills` にスキルを置く(Omarchy の AI 全部が読む) |
 
@@ -28,7 +31,7 @@ scripts/omarchy.sh install
 
 - コア(`prelude-core`)と `prelude` コマンドをビルドして `~/.local/bin` に入れる。ビルド済みなら `--no-build`
 - 設定が無ければ `~/.config/prelude/settings.toml` に `profile = "omarchy"` を書く(窓は「作業領域だけ指定」、端末は foot、番号の作業領域の窓は PRELUDE を通さずに開いたものもタブにする)
-- バーの部品を `~/.config/omarchy/plugins/prelude.bar/` に複写し、`omarchy plugin enable prelude.bar left --after omarchy.workspaces` で並べる
+- バーの部品を `~/.config/omarchy/plugins/prelude.bar/` に複写し、`omarchy plugin disable omarchy.workspaces` で Omarchy の作業領域の部品を外し、`omarchy plugin enable prelude.bar left --after omarchy.menu` で並べる。キーは `Super + Alt + P`(ランチャー)と `Super + Alt + Space`(新しいタブ。`o.rebind` で置き換える)。外すと(`uninstall`)作業領域の部品と Omarchy のキーに戻る
 - メニューの項目を `~/.config/omarchy/extensions/omarchy-menu.jsonc` に、キーを `~/.config/hypr/bindings.lua` に、コアの自動起動を `~/.config/hypr/autostart.lua` に足す。どれも `PRELUDE >>>` と `PRELUDE <<<` の印の間だけで、流し直しても 1 つ
 - Hyprland の中で流せば、その場でコアも起動する
 
@@ -47,7 +50,7 @@ scripts/omarchy.sh install
 | タブ | 切り替え。中クリック・乗せると出る × で閉じる、右クリックで複製。分割したタブはペインの行が続く(押すとそのペインへ) |
 | 閉じたタブを開き直す | 閉じたタブがあるときだけ出る |
 | ブックマーク | 開く(開いていればそのタブへ。開いているものは明るい)。右クリックでそのフォルダをファイラで。フォルダは押すと開閉 |
-| 新しいタブ | 種類の一覧(Web はランチャー、ほかはレシピ) |
+| + 新しいタブ | `Super + Alt + Space` と同じ(Omarchy のアプリの一覧で選んだ窓を新しいタブに) |
 
 設定は、バーの部品の設定(`~/.config/omarchy/shell.json` の `prelude.bar` の項目)に書く。保存するとすぐ効く:
 

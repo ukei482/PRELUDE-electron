@@ -10,7 +10,7 @@ const ctx = {};
 vm.runInNewContext(src, ctx);
 // 別の realm の配列は deepStrictEqual で一致しないので、JSON で持ち出す
 const M = Object.fromEntries(
-  ['tabRows', 'bookmarkRows', 'newKinds', 'width', 'parse', 'hyprStyle'].map((k) => [k, (...a) => JSON.parse(JSON.stringify(ctx[k](...a)))]),
+  ['tabRows', 'bookmarkRows', 'width', 'parse', 'hyprStyle'].map((k) => [k, (...a) => JSON.parse(JSON.stringify(ctx[k](...a)))]),
 );
 
 const state = {
@@ -44,6 +44,19 @@ test('タブの行: 分割したタブはペインの行が続き、題名が無
   );
 });
 
+test('タブの行: たたんだ分割のタブはペインの行を出さない', () => {
+  const rows = M.tabRows(state, { 2: true });
+  assert.deepStrictEqual(
+    rows.map((r) => [r.row, r.id, r.panes, r.collapsed]),
+    [
+      ['tab', 1, 1, false],
+      ['tab', 2, 2, true],
+    ],
+  );
+  // 分割していないタブは、たたむ印があってもたたまない
+  assert.strictEqual(M.tabRows(state, { 1: true })[0].collapsed, false);
+});
+
 test('タブの行: 状態が無くても空', () => {
   assert.deepStrictEqual(M.tabRows(null).length, 0);
   assert.deepStrictEqual(M.tabRows({}).length, 0);
@@ -72,11 +85,6 @@ test('ブックマークの行: フォルダの外が先、閉じたフォルダ
       ['bookmark', '論文', 1],
     ],
   );
-});
-
-test('新しいタブの種類: Web が先、設定は出さない', () => {
-  const k = M.newKinds([{ name: 'Files', type: 'files' }, { name: 'Settings', type: 'settings' }]);
-  assert.deepStrictEqual(k.map((x) => x.kind), ['web', 'files']);
 });
 
 test('幅の設定: 文字でも読み、範囲に丸め、読めなければ既定', () => {

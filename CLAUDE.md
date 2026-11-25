@@ -15,7 +15,7 @@
 - `src/` — レンダラ。`app.js`(タブ・分割・ペイン)、`files.js`(フォルダ)、`field.js`(フィールド表示)、`fieldlayout.js`(フィールドのカードの配置の計算)、`bmfile.js`(ブックマークのファイル `.prelude` の読み書き)、`space.js`(スペース。ブックマークの並び・旧ブックマークの移し方・タブの保存の形)、`history.js`(開いた履歴と点数)、`term.js`(ホーム = 起動直後の白い端末)、`cli.js`(PRELUDE コマンドの命令)、ほか
   - `app.js` 以外は `app.js` より先に読み込まれ、共通関数(`h`、`ico`、`api` など)は呼び出し時に使う
 - `theme/` — ロック画面(kscreenlocker のシェルのパッケージ)と SDDM のテーマ。QML。見た目は `theme/common/Prompt.qml` で共通。入れる/外すのは `scripts/theme.sh`
-- `omarchy/` — Omarchy に載せる部品(バーのプラグイン `plugin/`。P を押すと出るサイドバー `Sidebar.qml` と、その行の計算 `SidebarModel.js`(テストは `test/omarchy-sidebar.test.js`)を含む・ランチャー・メニューの項目)。入れる/外すのは `scripts/omarchy.sh`、手順は `docs/omarchy.md`
+- `omarchy/` — Omarchy に載せる部品(バーのプラグイン `plugin/`。P を押すと出るサイドバー `Sidebar.qml` と、その行の計算 `SidebarModel.js`(テストは `test/omarchy-sidebar.test.js`)を含む・ランチャー・新しいタブと分割 `prelude-omarchy-newtab`(Omarchy のアプリの一覧で選んだ窓を新しいタブ・今のタブに)・ブックマークのボタン `prelude-omarchy-bookmark`・メニューの項目)。入れる/外すのは `scripts/omarchy.sh`、手順は `docs/omarchy.md`
 - `scripts/` — `prelude.sh`(起動・停止・デバッグ)、`omarchy.sh`(Omarchy に載せる/外す)、`release.sh`(版の作成・切替)、`shell-mode.sh`(plasmashell との切替)、`portal.sh`(アプリのダイアログを PRELUDE にする/戻す)
 - `test/` — `npm test`(Node の `node:test`)。DOM・Electron なしで動く計算だけをテストする
 - `crates/` — Rust 版(`docs/redesign-rust.md`。設計は話題ごとの節で、コードのコメントは「`docs/redesign-rust.md` の「窓のつなぎ」」のように節の名前で指す。節の名前を変えたらコメントも直す)。`cargo test`(Rust は `~/.cargo/bin`)。CI(`.github/workflows/test.yml`)は `cargo clippy --all-targets -- -D warnings` と `cargo test` を回す

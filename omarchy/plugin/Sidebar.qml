@@ -22,7 +22,7 @@ PanelWindow {
   property int wideWidth: 260
   property int compactWidth: 48
   property string side: "left"
-  property string launcher: "prelude-omarchy-launcher"
+  property string newTab: "prelude-omarchy-newtab"
   property string fontFamily: Style.font.family
   signal closeRequested()
   signal compactToggled()
@@ -33,10 +33,10 @@ PanelWindow {
   property var bookmarks: []
   property var folders: []
   property var spaces: []
-  property var recipes: []
   property var expanded: ({})
+  // たたんだ分割のタブ(タブの id → true)
+  property var collapsed: ({})
   property bool spacesOpen: false
-  property bool newOpen: false
 
   readonly property int barWidth: compact ? compactWidth : wideWidth
   readonly property color fg: Commons.Color.foreground
@@ -53,9 +53,8 @@ PanelWindow {
   // 予約は「幅 + 窓と窓の間 − gaps_out」にする
   readonly property int zone: Math.max(0, barWidth + 2 * hypr.gapsIn - edge)
 
-  readonly property var tabRows: Model.tabRows(win.core)
+  readonly property var tabRows: Model.tabRows(win.core, win.collapsed)
   readonly property var bookmarkRows: Model.bookmarkRows(win.core, win.bookmarks, win.folders, win.expanded)
-  readonly property var newKinds: Model.newKinds(win.recipes)
 
   WlrLayershell.namespace: "prelude-sidebar"
   WlrLayershell.layer: WlrLayer.Top
@@ -105,13 +104,12 @@ PanelWindow {
     win.bookmarks = Model.parse(parts[1], [])
     win.folders = Model.parse(parts[2], [])
     win.spaces = Model.parse(parts[3], [])
-    win.recipes = Model.parse(parts[4], [])
   }
 
   // 命令の名前は決まった文字だけ。使用者のデータはここに入らない
   Process {
     id: fetch
-    command: ["bash", "-lc", "for c in state.get bookmark.list folder.list space.list recipe.list; do prelude raw \"$c\" 2>/dev/null || echo null; printf '\\036\\n'; done"]
+    command: ["bash", "-lc", "for c in state.get bookmark.list folder.list space.list; do prelude raw \"$c\" 2>/dev/null || echo null; printf '\\036\\n'; done"]
     stdout: StdioCollector { onStreamFinished: win.readAll(text) }
   }
 
@@ -165,10 +163,18 @@ PanelWindow {
     verticalAlignment: Text.AlignVCenter
   }
 
-  // 1 行。左に印、右に題名。hover で薄く塗る
+  function toggleFold(tab) {
+    var next = {}
+    for (var k in win.collapsed) next[k] = win.collapsed[k]
+    next[tab] = !next[tab]
+    win.collapsed = next
+  }
+
+  // 1 行。左に印、右に題名。hover で薄く塗る。foldable なら印(▾・▸)を押すとたたむ/広げる
   component Row1: Rectangle {
     id: r
     property string mark: ""
+    property bool foldable: false
     property string text: ""
     property string note: ""
     property bool active: false
@@ -177,11 +183,15 @@ PanelWindow {
     property bool closable: false
     signal clicked(var mouse)
     signal closeClicked()
+    signal foldClicked()
 
     width: parent ? parent.width : 0
     height: win.rowH
     radius: Style.cornerRadius
-    color: active ? Style.selectedFill : (area.containsMouse ? Style.hoverFill : "transparent")
+    color: active ? Style.selectedFill : (hover.hovered ? Style.hoverFill : "transparent")
+
+    // 行の上にある間ずっと真(× や印の上に移っても切れない。MouseArea の containsMouse は上の部品に移ると切れ、× が消えて押せなかった)
+    HoverHandler { id: hover }
 
     MouseArea {
       id: area
@@ -203,6 +213,12 @@ PanelWindow {
       font.pixelSize: Style.font.bodySmall
       color: r.active || r.lit ? win.accent : win.dim
       elide: Text.ElideNone
+      MouseArea {
+        visible: r.foldable && !win.compact
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: r.foldClicked()
+      }
     }
 
     Label {
@@ -229,7 +245,7 @@ PanelWindow {
 
     Label {
       id: closeBox
-      visible: !win.compact && r.closable && area.containsMouse
+      visible: !win.compact && r.closable && hover.hovered
       anchors.right: parent.right
       anchors.rightMargin: Style.space(4)
       width: visible ? Style.space(18) : 0
@@ -352,9 +368,11 @@ PanelWindow {
             mark: modelData === win.core.space ? "●" : "○"
             text: String(modelData)
             active: modelData === win.core.space
+            // 一覧を閉じるとこの行は消える(その後は win も modelData も読めない)ので、送ってから閉じる
             onClicked: function(mouse) {
+              var name = String(modelData)
+              if (name !== win.core.space) win.send("space.switch", { name: name })
               win.spacesOpen = false
-              if (modelData !== win.core.space) win.send("space.switch", { name: String(modelData) })
             }
           }
         }
@@ -377,10 +395,13 @@ PanelWindow {
             readonly property bool isPane: modelData.row === "pane"
             visible: !(isPane && win.compact)
             height: visible ? win.rowH : 0
+            readonly property bool isSplit: !isPane && modelData.panes > 1
             depth: isPane ? 1 : 0
-            mark: isPane ? modelData.mark : (win.compact ? String(modelData.num) : modelData.mark)
+            // 分割したタブは、種類の印の代わりにたたむ印(押すとペインの行をたたむ/広げる)
+            foldable: isSplit
+            mark: isPane ? modelData.mark : (win.compact ? String(modelData.num) : (isSplit ? (modelData.collapsed ? "▸" : "▾") : modelData.mark))
             text: modelData.title
-            note: isPane ? "" : String(modelData.num)
+            note: isPane ? "" : (isSplit && modelData.collapsed ? modelData.panes + " · " : "") + modelData.num
             active: modelData.active
             closable: true
             onClicked: function(mouse) {
@@ -391,6 +412,7 @@ PanelWindow {
               else if (mouse.button === Qt.RightButton) win.send("tab.duplicate", { tab: { id: modelData.id } })
               else win.send("tab.activate", { tab: { id: modelData.id } })
             }
+            onFoldClicked: win.toggleFold(modelData.id)
             onCloseClicked: isPane ? win.send("pane.close", { pane: modelData.id }) : win.send("tab.close", { tab: { id: modelData.id } })
           }
         }
@@ -442,39 +464,18 @@ PanelWindow {
       }
     }
 
-    // 下: 新しいタブ(押すと種類の一覧)
+    // 下: 新しいタブ。種類は選ばせず、Omarchy のアプリの一覧に任せる(空いた作業領域で開き、出た窓をコアが引き取る。Super+Alt+Space と同じ)
     Column {
       id: footer
       anchors.bottom: parent.bottom
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.margins: Style.space(4)
-      spacing: Style.space(1)
-
-      Repeater {
-        model: win.newOpen && !win.compact ? win.newKinds : []
-        delegate: Row1 {
-          required property var modelData
-          depth: 1
-          mark: Model.kindMark(modelData.kind)
-          text: modelData.name
-          onClicked: function(mouse) {
-            win.newOpen = false
-            if (modelData.kind === "web") win.run(win.launcher)
-            else win.send("tab.open", { pane: { type: modelData.kind } })
-          }
-        }
-      }
 
       Row1 {
         mark: "+"
         text: "新しいタブ"
-        enabled: win.online
-        opacity: win.online ? 1 : 0.5
-        onClicked: function(mouse) {
-          if (win.compact) win.run(win.launcher)
-          else win.newOpen = !win.newOpen
-        }
+        onClicked: function(mouse) { win.run(win.newTab) }
       }
     }
   }
