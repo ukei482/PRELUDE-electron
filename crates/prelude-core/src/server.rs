@@ -144,11 +144,18 @@ pub async fn run(opt: Options, shutdown: impl Future<Output = ()>) -> io::Result
     std::fs::set_permissions(&opt.socket, std::fs::Permissions::from_mode(0o600))?;
 
     let tag = instance_tag(&opt.socket);
-    let mut core = Core::new(opt.home.clone(), opt.spaces_root.clone(), load_saved(&opt.state_file));
+    // 設定(settings.toml)。すぐ効く項目は下で当てはめる(起動し直しが要る項目は main.rs とここが使う)
+    let config = Config::load();
+    let mut saved = load_saved(&opt.state_file);
+    // tabs.restore = false なら、前回のタブを開き直さない(スペースとランチャーの点数は残す)
+    if !config.bool("tabs.restore") {
+        if let Some(s) = &mut saved {
+            s.forget_tabs();
+        }
+    }
+    let mut core = Core::new(opt.home.clone(), opt.spaces_root.clone(), saved);
     core.set_recipes(recipes::load(&opt.recipes_dir));
     core.set_tag(&tag);
-    // 設定(settings.toml)。すぐ効く項目を当てはめる(起動し直しが要る項目は main.rs が使う)
-    let config = Config::load();
     for w in &config.warnings {
         eprintln!("prelude-core: settings: {w}");
     }

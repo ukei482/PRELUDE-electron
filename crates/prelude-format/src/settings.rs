@@ -158,6 +158,13 @@ pub const ITEMS: &[Item] = &[
         "サイドバーの出し方。auto は layer-shell があればそれ、無ければ普通のウィンドウ",
         Apply::Restart,
     ),
+    item(
+        "tabs.restore",
+        Kind::Bool,
+        "true",
+        "起動のときに前回のタブのアプリを開き直す。false なら前回のタブを捨てて、タブ無しで始める",
+        Apply::Restart,
+    ),
     item("tabs.closed_max", Kind::Int { min: 0, max: 200 }, "20", "覚えておく閉じたタブの数(スペースごと)", Apply::Now),
 ];
 

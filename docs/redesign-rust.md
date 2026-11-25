@@ -469,6 +469,7 @@ side = "left"               # left・right
 surface = "auto"            # auto(layer-shell があればそれ)・layer・window
 
 [tabs]
+restore = true              # 起動のときに前回のタブのアプリを開き直す。false ならタブ無しで始める(起動し直すと効く)
 closed_max = 20             # 覚えておく閉じたタブの数
 ```
 - `level` は **上限**。つなぎがもっと上の段を持っていても、そこまでしかしない。`workspace` は「作業領域だけ指定する形」(「窓のつなぎ」)

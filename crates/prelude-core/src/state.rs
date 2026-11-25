@@ -310,6 +310,13 @@ pub struct Saved {
     pub history: BTreeMap<String, (f64, u64)>,
 }
 
+impl Saved {
+    /// どのスペースのタブも捨てる(設定の tabs.restore = false で起動したとき)。今のスペースとランチャーの点数は残す
+    pub fn forget_tabs(&mut self) {
+        self.spaces.clear();
+    }
+}
+
 /// 点数の半減期(Electron 版の history.js と同じ 14 日)と、残す数
 const HIST_HALF_MS: f64 = 14.0 * 24.0 * 3600e3;
 const HIST_MAX: usize = 500;

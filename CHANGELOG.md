@@ -6,6 +6,7 @@
 ## [未リリース]
 
 ### 追加
+- 設定 `tabs.restore`。`false` にすると、コアの起動のときに前回のタブのアプリを開き直さず、タブ無しで始める(既定は `true` で今までどおり)。`prelude config set tabs.restore false`
 - Omarchy(Hyprland)に対応(`docs/omarchy.md`)
   - Hyprland の窓のつなぎ(`crates/prelude-core/src/hyprland.rs`。段 1「作業領域だけ指定する形」)。タブ = 作業領域で、アプリはタブの番号の作業領域に起動する。並べ方は Hyprland に任せ、作業領域の切り替えは読むだけでタブの切り替えにする。Lua の dispatch(Hyprland 0.5x・Omarchy 4)と前の形の両方に対応
   - Omarchy のバーの PRELUDE の部品(`omarchy/plugin/`。Quickshell のプラグイン `prelude.bar`)。スペースと今のタブを出し、押すと PRELUDE のランチャー(Omarchy のメニューで `prelude items` を選ぶ `prelude-omarchy-launcher`)、右クリックで Omarchy のメニューの「PRELUDE」
