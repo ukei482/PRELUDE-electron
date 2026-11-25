@@ -227,6 +227,25 @@ fn 書き出して戻す() {
 }
 
 #[test]
+fn 前回のタブを捨てて始める() {
+    let root = spaces("forget");
+    std::fs::create_dir_all(root.join("Work")).unwrap();
+    std::fs::create_dir_all(root.join(SPACE_DEFAULT)).unwrap();
+    let mut c = Core::new(HOME, &root, None);
+    ok(&mut c, Command::TabOpen { pane: web("https://a/"), index: None });
+    ok(&mut c, Command::SpaceSwitch { name: "Work".into() });
+    ok(&mut c, Command::TabOpen { pane: web("https://work/"), index: None });
+    let mut saved = c.saved();
+    saved.forget_tabs();
+    // 今のスペースは残し、どのスペースのタブも無い
+    let mut back = Core::new(HOME, &root, Some(saved));
+    let s = back.state();
+    assert_eq!((s.space.as_str(), s.tabs.len()), ("Work", 0));
+    ok(&mut back, Command::SpaceSwitch { name: SPACE_DEFAULT.into() });
+    assert!(back.state().tabs.is_empty());
+}
+
+#[test]
 fn インストール済みでない起動コマンドは外して開く() {
     let root = spaces("trust");
     let dir = root.join(SPACE_DEFAULT);
